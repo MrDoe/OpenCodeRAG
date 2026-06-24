@@ -167,6 +167,8 @@ export async function scanWorkspaceFiles(
   async function processFile(filePath: string): Promise<WorkspaceFile> {
     const normalizedPath = normalizeFilePath(filePath);
 
+    logger?.info(`  Reading: ${filePath}`);
+
     if (manifest?.files[normalizedPath]) {
       try {
         const stat = await fs.stat(filePath);
@@ -198,6 +200,9 @@ export async function scanWorkspaceFiles(
       (imageVisionProvider !== null && imageExtractor.isImageFile(filePath));
 
     const buffer = isBinary ? await fs.readFile(filePath) : Buffer.alloc(0);
+    if (imageVisionProvider !== null && imageExtractor.isImageFile(filePath)) {
+      logger?.info(`  Describing image: ${filePath}`);
+    }
     const result = await dispatchExtraction(filePath, buffer, imageVisionProvider, imagePrompt, imageResizeMaxDimension);
 
     if (!result.ok) {
