@@ -311,9 +311,14 @@ export async function parseFileForSymbols(
 
     const name = extractName(node.type, node.text);
 
-    // Use tree-sitter AST-level sibling traversal for reliable doc comment detection
-    // (handles block comments, line comments, Python docstrings, HTML/XML comments, etc.)
-    const hasExistingDoc = node.leadingDoc !== undefined;
+    // Source-text scanning: detects any comment block preceding the symbol in raw source.
+    // Works even when tree-sitter AST nesting (e.g. export_statement wrapping
+    // class_declaration) prevents previousSibling traversal from finding the comment.
+    const sourceComment = extractLeadingComment(content, node.startIndex);
+
+    // Tree-sitter AST-level sibling traversal: handles Python docstrings inside
+    // function/class bodies (which source-text scanning cannot see).
+    const hasExistingDoc = sourceComment !== null || node.leadingDoc !== undefined;
 
     if (hasExistingDoc && skipExisting) continue;
 
@@ -328,4 +333,79 @@ export async function parseFileForSymbols(
   }
 
   return symbols;
+}
+
+/**
+ * Scan raw source text before a given byte offset to detect any existing doc
+ * comment block. Walks backward line-by-line, collecting consecutive comment
+ * lines until non-comment content or the start of the file is reached.
+ *
+ * Handles:
+ * - Multi-line `/** ... *``/ (no longer breaks on the closing `*``/ line)
+ * - Single-line `/** ... *``/
+ * - Line comments: `//`, `///`, `//!`
+ * - Hash comments: `#` (Python, Ruby, shell)
+ */
+export function extractLeadingComment(content: string, symbolStart: number): string | null {
+  const before = content.slice(0, Math.max(0, symbolStart)).trimEnd();
+  const lines = before.split("\n");
+
+  const commentLines: string[] = [];
+  let foundComment = false;
+  let inBlock = false;
+
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line) continue;
+    const trimmed = line.trim();
+
+    // Skip trailing blank lines before any comment is found
+    if (!trimmed && !foundComment && !inBlock) continue;
+
+    // Closing of a block comment: `*/`
+    if (trimmed.endsWith("*/")) {
+      commentLines.unshift(line);
+      foundComment = true;
+      // Single-line block comment like `/** foo */`
+      if (trimmed.startsWith("/**") || trimmed.startsWith("/*")) {
+        break;
+      }
+      inBlock = true;
+      continue;
+    }
+
+    // Inside a block comment — keep collecting until we find the opening
+    if (inBlock) {
+      commentLines.unshift(line);
+      if (trimmed.startsWith("/**") || trimmed.startsWith("/*")) {
+        inBlock = false;
+        break;
+      }
+      continue;
+    }
+
+    // Line comments
+    if (trimmed.startsWith("///") || trimmed.startsWith("//!") || trimmed.startsWith("//") || trimmed.startsWith("#")) {
+      commentLines.unshift(line);
+      foundComment = true;
+      continue;
+    }
+
+    // Doc continuation asterisk (e.g., ` * @param`)
+    if (trimmed.startsWith("*")) {
+      commentLines.unshift(line);
+      foundComment = true;
+      continue;
+    }
+
+    // Non-comment, non-empty → stop, we've gone too far
+    if (trimmed.length > 0) break;
+
+    // Empty line after finding comments → stop
+    if (foundComment) break;
+  }
+
+  // If we ended with inBlock still true, we found `*/` without a matching `/**`
+  // — still valid as an existing comment.
+  return foundComment ? commentLines.join("\n") : null;
 }
