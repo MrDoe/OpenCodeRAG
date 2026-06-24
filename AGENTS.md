@@ -56,6 +56,13 @@ This workspace has OpenCodeRAG indexed for semantic code and image search. Use t
 - If no results appear, the workspace may not be indexed yet — run `opencode-rag index`
 - Image descriptions are generated at index time using the configured vision provider; ensure `imageDescription` is configured in `opencode-rag.json` if your project includes images
 
+## Code Style
+
+All code must follow the relevant Google style guide for the language being written. Load the `google-style` skill for full conventions (formatting, naming, documentation, best practices).
+
+- **TypeScript/JavaScript** → Google TypeScript Style Guide
+- **HTML/CSS** → Google HTML/CSS Style Guide
+
 ## Testing
 
 - `npm test` — runs all tests except integration tests (~5s)
