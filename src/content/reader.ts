@@ -38,9 +38,13 @@ export async function walkFiles(
   extensions: Set<string>,
   excludeDirs: Set<string>,
   excludeFiles?: Set<string>,
+  logger?: Logger,
+  dirCount?: { value: number },
 ): Promise<string[]> {
   const results: string[] = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
+
+  let dCount = dirCount ?? { value: 0 };
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
@@ -48,7 +52,11 @@ export async function walkFiles(
     if (entry.isDirectory()) {
       if (excludeDirs.has(entry.name)) continue;
       if (entry.name.startsWith(".")) continue;
-      results.push(...(await walkFiles(fullPath, extensions, excludeDirs, excludeFiles)));
+      dCount.value++;
+      if (dCount.value % 100 === 0) {
+        logger?.info(`  Traversed ${dCount.value} directories... (${fullPath})`);
+      }
+      results.push(...(await walkFiles(fullPath, extensions, excludeDirs, excludeFiles, logger, dCount)));
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name).toLowerCase();
       const basename = entry.name.toLowerCase();
@@ -134,12 +142,16 @@ export async function scanWorkspaceFiles(
         return true;
       });
   } else {
+    logger?.info("  Walking directory tree...");
+    const walkStarted = Date.now();
     files = await walkFiles(
       cwd,
       extensions,
       new Set(config.indexing.excludeDirs),
       new Set(config.indexing.excludeFiles?.map((f) => f.toLowerCase()) ?? []),
+      logger,
     );
+    logger?.info(`  Found ${files.length} matching files in ${((Date.now() - walkStarted) / 1000).toFixed(1)}s`);
   }
 
   const totalFiles = files.length;
@@ -208,6 +220,9 @@ export async function scanWorkspaceFiles(
     }
 
     completed++;
+    if (completed % 500 === 0) {
+      logger?.info(`  Scanned ${completed}/${totalFiles} files...`);
+    }
     logger?.debug(`  ${filePath}`);
 
     return {
@@ -230,5 +245,6 @@ export async function scanWorkspaceFiles(
   });
 
   const workspaceFiles = await Promise.all(tasks);
+  logger?.info(`  Scan complete: ${workspaceFiles.length} files processed`);
   return workspaceFiles;
 }
