@@ -1,6 +1,6 @@
-/** Shared CLI option interfaces used by all command modules. */
-
-/** Standard CLI options shared by most commands (index, query, clear, etc.). */
+/** 
+ * Shared CLI option interfaces used by all command modules. 
+ */
 export interface CliOptions {
   /** Optional path to an `opencode-rag.json` config file. */
   config?: string;
@@ -18,7 +18,9 @@ export interface CliOptions {
   explain?: boolean;
 }
 
-/** Options for the `init` command. */
+/**
+ * Standard CLI options shared by most commands (index, query, clear, etc.).
+ */
 export interface InitOptions {
   /** Overwrite existing files during initialization. */
   force?: boolean;

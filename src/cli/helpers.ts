@@ -1,7 +1,6 @@
 /**
  * Package and file-system utility helpers used by CLI command modules.
  */
-
 import path from "node:path";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
