@@ -28,6 +28,7 @@ import {
   registerEvalAnalyzeCommand,
   registerEvalCompareCommand,
   registerDescribeImageCommand,
+  registerDocCommand,
 } from "./commands/index.js";
 
 /**
@@ -51,6 +52,7 @@ registerListCommand(program);
 registerShowCommand(program);
 registerDumpCommand(program);
 registerDescribeImageCommand(program);
+registerDocCommand(program);
 registerUiCommand(program);
 registerMcpCommand(program);
 registerUpdateCommand(program);

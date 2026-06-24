@@ -182,6 +182,8 @@ async function main(): Promise<void> {
   console.log("Done.");
 }
 
+
+ /** TODO: generated */
 main().catch((err) => {
   console.error("Error:", err);
   process.exit(1);

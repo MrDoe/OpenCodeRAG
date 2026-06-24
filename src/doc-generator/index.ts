@@ -1,0 +1,10 @@
+export type { DocSymbol, DocSymbolKind, DocFileResult, DocFileInput, DocProgressSnapshot, DocOptions } from "./types.js";
+export type { ScannedFile } from "./scanner.js";
+export type { EditResult } from "./editor.js";
+export type { BatchProgress } from "./batch.js";
+export { scanWorkspaceForDocs, filterByFilePaths } from "./scanner.js";
+export { parseFileForSymbols } from "./parser.js";
+export { DocGenerator } from "./generator.js";
+export { applyDocComments, formatDocFileResult } from "./editor.js";
+export { runDocMode, runDocModeForFiles } from "./batch.js";
+export { buildGoogleSystemPrompt, buildUserMessageForSymbols } from "./prompts/google.js";

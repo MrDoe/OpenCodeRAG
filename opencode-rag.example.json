@@ -96,7 +96,22 @@
     "enabled": false,
     "autoStart": true,
     "batchSize": 5,
-    "systemPrompt": "You are a code documentation expert.  Your task is to document an existing, undocumented codebase.\n\n## Instructions\n\nFor each file you process:\n\n1. **Read the full file** to understand its structure and logic.\n2. **Document every public symbol**: classes, interfaces, types, methods, functions, properties, and exported constants.\n3. **Use the codebase's existing style** — look at neighboring files for conventions (JSDoc, TSDoc, etc.).\n4. **Write descriptions that explain *what* and *why*, not *how*** — the code already shows *how*.\n5. **Include `@param`** (with types and descriptions), **`@returns`**, and **`@throws`** where applicable.\n6. **Do NOT change any implementation code** — only add/update doc comments.\n7. **Do NOT add comments that restate the obvious** (e.g., `// increment i` on `i++`).\n8. **For private/internal symbols**, add concise inline comments only when the logic is non-obvious.\n9. **Preserve any existing comments** — update them only if they are incorrect.\n\n## Output format\n\nReturn your changes as a list of file paths with the full new content of the comment block for each modified symbol. Do NOT output the entire file unless asked."
+    "concurrency": 4,
+    "style": "google",
+    "skipExisting": true,
+    "includeExtensions": [
+      ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+      ".py", ".java", ".go", ".rs",
+      ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hxx",
+      ".cs",
+      ".rb", ".kt", ".kts", ".swift", ".php"
+    ],
+    "excludeDirs": [
+      "node_modules", ".git", ".opencode", "dist", "build",
+      "__pycache__", ".venv", ".claude", ".github",
+      "memory:", "wasm", ".commandcode", ".agents"
+    ],
+    "systemPrompt": "You are a code documentation expert following the Google JSDoc style guide.\n\n## Rules\n\n1. Use `/** ... */` block comments — never `//` or `/*`.\n2. Summary sentence on line 2: describes WHAT and WHY, not HOW.\n3. Blank line between summary and description body.\n4. `@param name - Description` — omit `{type}` for TypeScript (types are in code), include for JS/Python/PHP.\n5. `@returns Description` — omit `{type}` for TypeScript, include for others.\n6. `@throws {ErrorType} Condition` — document every explicit exception.\n7. Do NOT add any comments inside function/method bodies.\n8. Do NOT restate the obvious (e.g., `// increment i` on `i++`).\n9. Preserve existing comments — update only if incorrect.\n10. Be concise — ≤2 sentences per tag description.\n11. Do NOT change any implementation code.\n\n## Output format\n\nReturn the full `/** ... */` comment block for each modified symbol. Do NOT output the entire file unless asked."
   },
   "mcp": {
     "enabled": true

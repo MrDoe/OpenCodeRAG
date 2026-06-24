@@ -1,11 +1,16 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-/** Tracks which files have been documented during a documentation mode session. */
+export interface DocFileEntry {
+  symbolsDocumented: string[];
+  symbolsUndocumented: string[];
+  errors: string[];
+  lastAttempt: number;
+}
+
 export interface DocProgress {
-  /** List of file paths that have been documented. */
   documented: string[];
-  /** Unix timestamp of the last progress update. */
+  fileDetails: Record<string, DocFileEntry>;
   lastUpdated: number;
 }
 
@@ -15,19 +20,17 @@ function progressPath(storePath: string): string {
   return join(storePath, PROGRESS_FILE);
 }
 
-/** Load documentation progress from the store directory. Returns empty progress if none exists. */
 export function loadDocProgress(storePath: string): DocProgress {
   const filePath = progressPath(storePath);
   try {
-    if (!existsSync(filePath)) return { documented: [], lastUpdated: 0 };
+    if (!existsSync(filePath)) return { documented: [], fileDetails: {}, lastUpdated: 0 };
     const raw = readFileSync(filePath, "utf-8");
     return JSON.parse(raw) as DocProgress;
   } catch {
-    return { documented: [], lastUpdated: 0 };
+    return { documented: [], fileDetails: {}, lastUpdated: 0 };
   }
 }
 
-/** Persist documentation progress to disk. Silently ignores write errors. */
 export function saveDocProgress(storePath: string, progress: DocProgress): void {
   const filePath = progressPath(storePath);
   try {
@@ -39,7 +42,6 @@ export function saveDocProgress(storePath: string, progress: DocProgress): void 
   }
 }
 
-/** Record a file as documented in the progress tracker. No-op if already recorded. */
 export function markFileDocumented(storePath: string, filePath: string): void {
   const progress = loadDocProgress(storePath);
   if (!progress.documented.includes(filePath)) {
@@ -47,4 +49,29 @@ export function markFileDocumented(storePath: string, filePath: string): void {
     progress.lastUpdated = Date.now();
     saveDocProgress(storePath, progress);
   }
+}
+
+export function updateFileDocDetails(
+  storePath: string,
+  filePath: string,
+  details: Partial<DocFileEntry>,
+): void {
+  const progress = loadDocProgress(storePath);
+  if (!progress.fileDetails[filePath]) {
+    progress.fileDetails[filePath] = {
+      symbolsDocumented: [],
+      symbolsUndocumented: [],
+      errors: [],
+      lastAttempt: 0,
+    };
+  }
+  const entry = progress.fileDetails[filePath];
+  if (entry) {
+    if (details.symbolsDocumented) entry.symbolsDocumented = details.symbolsDocumented;
+    if (details.symbolsUndocumented) entry.symbolsUndocumented = details.symbolsUndocumented;
+    if (details.errors) entry.errors = details.errors;
+    entry.lastAttempt = Date.now();
+  }
+  progress.lastUpdated = Date.now();
+  saveDocProgress(storePath, progress);
 }

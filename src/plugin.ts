@@ -815,11 +815,31 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       // Inject documentation mode system prompt if enabled
       const docMode = getEffectiveCfg().documentationMode;
       if (docMode?.enabled) {
+        const styleRules = docMode.style === "google" ? [
+          "## Google JSDoc Style Rules (MANDATORY)",
+          "",
+          "- Use `/** ... */` block comments — never `//` or `/*`.",
+          "- First line is a standalone summary sentence ending with a period.",
+          "- Describe WHAT the symbol does and WHY, not HOW.",
+          "- Blank line between summary and body (if body is needed).",
+          "- For TypeScript: Omit `{type}` in @param/@returns — types are in code.",
+          "- For JavaScript/Python/PHP: include `{type}` in @param and @returns.",
+          "- `@param name - Description` — one line per param, dash before description.",
+          "- `@returns Description` — describe the return value.",
+          "- `@throws {ErrorType} Condition` — only when the code explicitly throws.",
+          "- Do NOT add any comments inside function/method bodies.",
+          "- Do NOT restate the obvious.",
+          "- Be concise — ≤2 sentences per tag description.",
+          "- Do NOT change any implementation code.",
+        ] : [];
+
         if (docMode.autoStart) {
           const directivePrompt = [
             "## PRIMARY OBJECTIVE: Document this codebase",
             "",
             "Your primary task is to add/update JSDoc/TSDoc comments on every public symbol in this codebase.",
+            "",
+            ...(styleRules.length > 0 ? styleRules : []),
             "",
             "### Workflow",
             "",
@@ -829,13 +849,12 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             "   b. Call `read` to read the full file content",
             "   c. Add or update doc comments on EVERY public symbol: classes, interfaces, types, methods, functions, properties, and exported constants",
             "   d. Call `mark_documented(filePath)` to record completion",
-            "2. Use the codebase's existing comment style (JSDoc, TSDoc, etc.)",
+            "2. Follow the Google JSDoc style rules above (strict, parseable format)",
             "3. Write descriptions that explain WHAT and WHY, not HOW",
-            "4. Include @param (with types and descriptions), @returns, and @throws where applicable",
+            "4. Include @param, @returns, and @throws where applicable",
             "5. Do NOT change any implementation code — only add/update doc comments",
             "6. Do NOT add comments that restate the obvious",
-            "7. For private/internal symbols, add concise inline comments only when logic is non-obvious",
-            "8. Preserve any existing comments — update them only if incorrect",
+            "7. Preserve any existing comments — update them only if incorrect",
             "",
             "After finishing a batch, report which files were documented and wait for the next batch.",
           ].join("\n");

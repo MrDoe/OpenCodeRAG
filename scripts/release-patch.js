@@ -5,16 +5,22 @@ import { join } from 'node:path';
 
 const dry = process.env.DRY_RUN === '1' || process.argv.includes('--dry');
 
+
+ /** TODO: generated */
 function run(cmd) {
   console.log('> ' + cmd);
   if (!dry) execSync(cmd, { stdio: 'inherit' });
   else console.log('(dry run) skipped');
 }
 
+
+ /** TODO: generated */
 function getLatestTag() {
   return execSync('git describe --tags --abbrev=0').toString().trim();
 }
 
+
+ /** TODO: generated */
 function getChangelog(prevTag) {
   try {
     const log = execSync(`git log --oneline ${prevTag}..HEAD`).toString().trim();

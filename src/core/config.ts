@@ -129,8 +129,29 @@ export interface DocumentationModeConfig {
   autoStart: boolean;
   /** Number of files to process per batch. */
   batchSize: number;
+  /** Number of files to process in parallel. */
+  concurrency: number;
+  /** Documentation comment style. */
+  style: "google" | "jsdoc";
   /** System prompt for the documentation agent. */
   systemPrompt: string;
+  /** Optional provider override for doc generation (defaults to description provider). */
+  provider?: {
+    /** Provider name: "ollama", "openai", "anthropic", or "google". */
+    provider: string;
+    /** Model name for documentation generation. */
+    model: string;
+    /** Base URL of the LLM API. */
+    baseUrl?: string;
+    /** API key for authenticated providers. */
+    apiKey?: string;
+  };
+  /** File extensions to include for documentation. */
+  includeExtensions: string[];
+  /** Directory name patterns to exclude. */
+  excludeDirs: string[];
+  /** Whether to skip symbols that already have doc comments. */
+  skipExisting: boolean;
 }
 
 /** Configuration for the terminal UI (TUI) keybindings. */
@@ -432,21 +453,66 @@ export const DEFAULT_CONFIG: RagConfig = {
     enabled: false,
     autoStart: true,
     batchSize: 5,
+    concurrency: 4,
+    style: "google",
+    skipExisting: true,
+    includeExtensions: [
+      ".ts",
+      ".tsx",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs",
+      ".py",
+      ".java",
+      ".go",
+      ".rs",
+      ".c",
+      ".h",
+      ".cpp",
+      ".cc",
+      ".cxx",
+      ".hpp",
+      ".hxx",
+      ".cs",
+      ".rb",
+      ".kt",
+      ".kts",
+      ".swift",
+      ".php",
+    ],
+    excludeDirs: [
+      "node_modules",
+      ".git",
+      ".opencode",
+      "dist",
+      "build",
+      "__pycache__",
+      ".venv",
+      ".claude",
+      ".github",
+      "memory:",
+      "wasm",
+      ".commandcode",
+      ".agents",
+    ],
     systemPrompt:
-      "You are a code documentation expert. Your task is to document any existing, undocumented codebase.\n\n" +
-      "## Instructions\n\n" +
-      "For each file in this codebase:\n\n" +
-      "1. **Read the full file** to understand its structure and logic.\n" +
-      "2. **Document every public symbol**: classes, interfaces, types, methods, functions, properties, and exported constants.\n" +
-      "3. **Use the codebase's existing style** — look at neighboring files for conventions (JSDoc, TSDoc, etc.).\n" +
-      "4. **Write descriptions that explain *what* and *why*, not *how*** — the code already shows *how*.\n" +
-      "5. **Include `@param`** (with types and descriptions), **`@returns`**, and **`@throws`** where applicable.\n" +
-      "6. **Do NOT change any implementation code** — only add/update doc comments.\n" +
-      "7. **Do NOT add comments that restate the obvious** (e.g., `// increment i` on `i++`).\n" +
-      "8. **For private/internal symbols**, add concise inline comments only when the logic is non-obvious.\n" +
-      "9. **Preserve any existing comments** — update them only if they are incorrect.\n\n" +
+      "You are a code documentation expert following the Google JSDoc style guide.\n\n" +
+      "## Rules\n\n" +
+      "1. Use `/** ... */` block comments — never `//` or `/*`.\n" +
+      "2. Summary sentence on line 2: describes WHAT and WHY, not HOW.\n" +
+      "3. Blank line between summary and description body.\n" +
+      "4. `@param name - Description` — omit `{type}` for TypeScript (types are in code), include for JS/Python/PHP.\n" +
+      "5. `@returns Description` — omit `{type}` for TypeScript, include for others.\n" +
+      "6. `@throws {ErrorType} Condition` — document every explicit exception.\n" +
+      "7. Do NOT add any comments inside function/method bodies.\n" +
+      "8. Do NOT restate the obvious (e.g., `// increment i` on `i++`).\n" +
+      "9. Preserve existing comments — update only if incorrect.\n" +
+      "10. Be concise — ≤2 sentences per tag description.\n" +
+      "11. Do NOT change any implementation code.\n\n" +
       "## Output format\n\n" +
-      "Return your changes as a list of file paths with the full new content of the comment block for each modified symbol. Do NOT output the entire file unless asked.",
+      "Return the full `/** ... */` comment block for each modified symbol. " +
+      "Do NOT output the entire file unless asked.",
   },
   mcp: {
     enabled: true,
