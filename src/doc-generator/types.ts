@@ -28,6 +28,7 @@ export interface DocFileResult {
   documented: number;
   skipped: number;
   errors: string[];
+  docBlocks: string[];
   status: "ok" | "skipped" | "failed";
 }
 

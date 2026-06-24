@@ -311,8 +311,9 @@ export async function parseFileForSymbols(
 
     const name = extractName(node.type, node.text);
 
-    const docComment = extractLeadingComment(content, node.startIndex);
-    const hasExistingDoc = docComment !== null;
+    // Use tree-sitter AST-level sibling traversal for reliable doc comment detection
+    // (handles block comments, line comments, Python docstrings, HTML/XML comments, etc.)
+    const hasExistingDoc = node.leadingDoc !== undefined;
 
     if (hasExistingDoc && skipExisting) continue;
 
@@ -327,40 +328,4 @@ export async function parseFileForSymbols(
   }
 
   return symbols;
-}
-
-function extractLeadingComment(content: string, symbolStart: number): string | null {
-  const before = content.slice(0, Math.max(0, symbolStart)).trimEnd();
-  const lines = before.split("\n");
-
-  const commentLines: string[] = [];
-  let foundComment = false;
-
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-
-    if (!line) continue;
-
-    const trimmed = line.trim();
-
-    if (trimmed.endsWith("*/") || trimmed.startsWith("/**") || trimmed.startsWith("/*")) {
-      commentLines.unshift(line);
-      foundComment = true;
-      break;
-    }
-
-    if (trimmed.startsWith("*") || trimmed.startsWith("///") || trimmed.startsWith("//!")) {
-      commentLines.unshift(line);
-      foundComment = true;
-    } else if (trimmed.startsWith("//") || trimmed.startsWith("#")) {
-      commentLines.unshift(line);
-      foundComment = true;
-    } else if (foundComment) {
-      break;
-    } else if (trimmed.length > 0) {
-      break;
-    }
-  }
-
-  return foundComment ? commentLines.join("\n") : null;
 }

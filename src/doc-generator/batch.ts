@@ -61,9 +61,9 @@ async function processFile(
     };
   }
 
-  const nonEmptyDocBlocks = result.symbols
-    .slice(0, result.documented)
-    .map(() => "/** TODO: generated */");
+  const nonEmptyDocBlocks = result.docBlocks.length > 0
+    ? result.docBlocks
+    : result.symbols.slice(0, result.documented).map(() => "/** TODO: generated */");
 
   onProgress?.(file.filePath, "applying");
 

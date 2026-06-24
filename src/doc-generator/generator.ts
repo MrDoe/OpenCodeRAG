@@ -63,6 +63,7 @@ export class DocGenerator {
         documented: 0,
         skipped: 0,
         errors: [],
+        docBlocks: [],
         status: "skipped",
       };
     }
@@ -73,6 +74,7 @@ export class DocGenerator {
       documented: 0,
       skipped: 0,
       errors: [],
+      docBlocks: [],
       status: "ok",
     };
 
@@ -83,6 +85,7 @@ export class DocGenerator {
       try {
         const docComments = await this.generateBatch(input, batch);
         results.documented += docComments.length;
+        results.docBlocks.push(...docComments);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         results.errors.push(`Batch ${i / batchSize + 1}: ${message}`);
