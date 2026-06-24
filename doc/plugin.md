@@ -28,9 +28,10 @@ For autonomous agent workflows, the plugin also registers smaller, focused tools
 | Tool | Purpose | Args |
 |------|---------|------|
 | `get_file_skeleton` | Structural file overview via tree-sitter AST | `filePath` (req) |
-| `get_file_skeleton` | Structural file overview via tree-sitter AST | `filePath` (req) |
 | `find_usages` | Find all references to a symbol | `symbolName` (req), `pathHint?`, `topK?` |
 | `describe_image` | Retrieve stored description of an indexed image | `filePath` (req) |
+| `doc` | Start or continue autonomous documentation | `reset?` (optional) |
+| `mark_documented` | Mark a file as documented after processing | `filePath` (req) |
 
 #### `search_semantic`
 Conceptual code search — answers questions like *"How does authentication work?"* or *"Where is the chunking logic?"*. Uses vector + hybrid keyword search and returns the most relevant code snippets with file paths, line numbers, and relevance scores.
@@ -120,38 +121,38 @@ The skill teaches the workflow: skeleton → find_usages → search → read →
 
 The `experimental.chat.system.transform` hook prepends a tool list to the system prompt on every message, ensuring agents always know the tools are available — even before the index is built.
 
-### 5. Documentation Mode — Auto-Kickoff
+### 5. `/doc` Slash Command
 
-When `documentationMode.enabled` is `true`, the plugin can automatically start documenting the codebase without prompting.
+When `documentationMode.enabled` is `true`, the plugin registers a `doc` tool and a `command.execute.before` hook. Typing `/doc` in the prompt (or the agent calling the `doc` tool) kicks off autonomous documentation of the codebase.
 
 **Configuration:**
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `enabled` | `false` | Enable documentation mode |
-| `autoStart` | `true` | Automatically kick off documentation on session start |
 | `batchSize` | `5` | Files to process per batch |
 
 **How it works:**
 
-1. **System prompt injection** — When `autoStart` is enabled, the `experimental.chat.system.transform` hook injects a directive system prompt instructing the LLM to document all public symbols by reading files, generating JSDoc/TSDoc comments, and applying edits.
+1. **`/doc` command** — The user types `/doc` in the prompt, or the agent calls the `doc` tool. The plugin loads the index manifest and progress tracker, then returns a batch of files to document with instructions.
 
-2. **First-message kickoff** — On the first user message in a session, the `chat.message` hook queries the manifest for indexed files, loads the doc progress tracker, and injects a kickoff message listing the next batch of files to document. The LLM then autonomously:
+2. **Autonomous workflow** — The LLM processes each file in the batch:
    - Calls `get_file_skeleton` to understand file structure
    - Calls `read` to get full file contents
-   - Adds/updates doc comments
+   - Adds/updates JSDoc/TSDoc comments following Google JSDoc style
    - Calls `mark_documented(filePath)` to record progress
 
-3. **Progress tracking** — Documented files are recorded in `.opencode/rag_db/doc-mode-progress.json`. On subsequent sessions or batch completions, the LLM resumes where it left off, skipping already-documented files.
+3. **Progress tracking** — Documented files are recorded in `.opencode/rag_db/doc-mode-progress.json`. The LLM can call `doc` again for the next batch, or the user can type `/doc` again.
 
 4. **`mark_documented` tool** — A dedicated tool that the LLM calls after documenting each file. It persists the file path to the progress tracker.
+
+5. **`doc` tool** — The `doc` tool accepts an optional `reset` argument. Calling `doc(reset: true)` resets all documentation progress, allowing a fresh run.
 
 **Config example:**
 ```json
 {
   "documentationMode": {
     "enabled": true,
-    "autoStart": true,
     "batchSize": 5
   }
 }
@@ -191,10 +192,11 @@ See [Evaluation documentation](evaluation.md) for CLI commands, analysis interpr
             │                             │
     createRagHooks()                chokidar watcher
             │                             │
-    ┌───────┼───────────┐         debounced scheduler
-    │       │           │                 │
-  Tool   chat.message  read          periodic timer
-  hook    hook        override
+    ┌───────┼───────┬───────┐     debounced scheduler
+    │       │       │       │             │
+  Tool   command  chat.   read      periodic timer
+  hook  .execute  message override
+        .before   hook
 ```
 
 ## Plugin Export Pattern

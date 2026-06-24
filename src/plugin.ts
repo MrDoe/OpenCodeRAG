@@ -1,4 +1,5 @@
 import type { Plugin, PluginInput, Hooks, ToolDefinition } from "@opencode-ai/plugin";
+import type { Part } from "@opencode-ai/sdk";
 import { tool } from "@opencode-ai/plugin/tool";
 import type { EmbeddingProvider, DescriptionProvider, KeywordIndex, VectorStore, SearchResult } from "./core/interfaces.js";
 import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, type RagConfig } from "./core/config.js";
@@ -489,8 +490,8 @@ function extractUserMessageText(
  * Wires together the vector store, embedder, keyword index, and description
  * provider into OpenCode's hook system. Handles:
  * - Automatic context injection on chat messages
- * - Documentation mode auto-kickoff
- * - Tool registration (semantic search, file skeleton, find usages, describe image)
+ * - /doc slash command for autonomous documentation
+ * - Tool registration (semantic search, file skeleton, find usages, describe image, doc)
  * - Session-level caching and evaluation logging
  *
  * @param options - Configuration and dependencies for building the hooks.
@@ -521,11 +522,6 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   // Session-level caches for lazy retrieval
   const sessionLastMessage = new Map<string, string>();
   const sessionRetrievalCache = new Map<string, { messageText: string; rawResults: SearchResult[] }>();
-
-  // Session-level doc mode kickoff tracking
-  const sessionDocKickoff = new Map<string, boolean>();
-
-
 
   // Evaluation session logger — captures OpenCode events for analysis
   const sessionLogger: SessionLogger = createSessionLogger(options.storePath);
@@ -735,6 +731,104 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     });
   }
 
+  // Register the doc tool for /doc slash command — returns next batch of files to document
+  try {
+    const docMode = getEffectiveCfg().documentationMode;
+    if (docMode?.enabled) {
+      const docTool = tool({
+        description:
+          "Get the next batch of files to document. Call this to start or continue documenting source files with JSDoc/TSDoc comments. Returns a batch of files to process with documentation instructions.",
+        args: {
+          reset: tool.schema.boolean().optional().default(false),
+        },
+        async execute(args: { reset?: boolean }) {
+          if (args.reset) {
+            const { saveDocProgress } = await import("./core/doc-progress.js");
+            saveDocProgress(options.storePath, { documented: [], fileDetails: {}, lastUpdated: 0 });
+            appendDebugLog(options.logFilePath, {
+              scope: "doc",
+              message: "Documentation progress reset",
+            });
+            return {
+              title: "Doc Reset",
+              output: "Documentation progress has been reset. Call `/doc` again to start fresh.",
+              metadata: { tool: "doc", reset: true },
+            };
+          }
+
+          try {
+            const manifest = await loadManifest(options.storePath);
+            const allFiles = Object.keys(manifest.manifest.files);
+            if (allFiles.length === 0) {
+              return {
+                title: "Doc",
+                output: "No indexed files found. Run indexing first, then try again.",
+                metadata: { tool: "doc", files: 0 },
+              };
+            }
+
+            const progress = loadDocProgress(options.storePath);
+            const remaining = allFiles.filter((f) => !progress.documented.includes(f));
+
+            if (remaining.length === 0) {
+              return {
+                title: "Doc Complete",
+                output: `**All ${allFiles.length} indexed files have been documented.** No remaining files.`,
+                metadata: { tool: "doc", total: allFiles.length, documented: allFiles.length, remaining: 0 },
+              };
+            }
+
+            const batchSize = docMode?.batchSize ?? 5;
+            const batch = remaining.slice(0, batchSize);
+            const kickoffMsg = [
+              "## Documentation",
+              "",
+              "Document these files using Google JSDoc style:",
+              ...batch.map((f) => `- \`${f}\``),
+              "",
+              `Progress: ${progress.documented.length} / ${allFiles.length} files documented.`,
+              `Remaining: ${remaining.length} files.`,
+              "",
+              "For each file: call `get_file_skeleton` → `read` → add doc comments → call `mark_documented`",
+              "",
+              "After finishing this batch, call `doc` again to get the next batch.",
+            ].join("\n");
+
+            return {
+              title: `Doc Batch (${batch.length} files)`,
+              output: kickoffMsg,
+              metadata: {
+                tool: "doc",
+                batch: batch,
+                total: allFiles.length,
+                documented: progress.documented.length,
+                remaining: remaining.length,
+              },
+            };
+          } catch (err) {
+            appendDebugLog(options.logFilePath, {
+              scope: "doc",
+              message: "Failed to generate doc batch",
+              error: err,
+            });
+            return {
+              title: "Doc Error",
+              output: "Failed to load documentation progress. Ensure the workspace is indexed.",
+              metadata: { tool: "doc", error: true },
+            };
+          }
+        },
+      });
+      tools["doc"] = docTool;
+    }
+  } catch (err) {
+    appendDebugLog(options.logFilePath, {
+      scope: "plugin",
+      message: "Failed to register doc tool",
+      error: err,
+    });
+  }
+
   if (readOverride) {
     const readTool = createRagReadTool({
       worktree: options.worktree,
@@ -764,6 +858,69 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       sessionLogger.onEvent(event as Parameters<typeof sessionLogger.onEvent>[0]);
     },
     tool: tools,
+    async "command.execute.before"(input, output) {
+      if (input.command === "doc") {
+        const docMode = getEffectiveCfg().documentationMode;
+        if (!docMode?.enabled) {
+          output.parts = [{
+            type: "text",
+            text: "Documentation mode is not enabled. Set `documentationMode.enabled` to `true` in opencode-rag.json.",
+          } as Part];
+          return;
+        }
+
+        try {
+          const manifest = await loadManifest(options.storePath);
+          const allFiles = Object.keys(manifest.manifest.files);
+          if (allFiles.length === 0) {
+            output.parts = [{
+              type: "text",
+              text: "No indexed files found. Run indexing first, then use `/doc`.",
+            } as Part];
+            return;
+          }
+
+          const progress = loadDocProgress(options.storePath);
+          const remaining = allFiles.filter((f) => !progress.documented.includes(f));
+
+          if (remaining.length === 0) {
+            output.parts = [{
+              type: "text",
+              text: `**All ${allFiles.length} indexed files have been documented.** No remaining files.`,
+            } as Part];
+            return;
+          }
+
+          const batchSize = docMode.batchSize ?? 5;
+          const batch = remaining.slice(0, batchSize);
+          const kickoffMsg = [
+            "## Documentation",
+            "",
+            "Document these files using Google JSDoc style:",
+            ...batch.map((f) => `- \`${f}\``),
+            "",
+            `Progress: ${progress.documented.length} / ${allFiles.length} files documented.`,
+            `Remaining: ${remaining.length} files.`,
+            "",
+            "For each file: call `get_file_skeleton` → `read` → add doc comments → call `mark_documented`",
+            "",
+            "After finishing this batch, call `/doc` again to get the next batch.",
+          ].join("\n");
+
+          output.parts = [{ type: "text", text: kickoffMsg } as Part];
+        } catch (err) {
+          appendDebugLog(options.logFilePath, {
+            scope: "command.execute.before",
+            message: "Failed to handle /doc command",
+            error: err,
+          });
+          output.parts = [{
+            type: "text",
+            text: "Failed to start documentation. Ensure the workspace is indexed.",
+          } as Part];
+        }
+      }
+    },
     async "experimental.chat.system.transform"(_input, output) {
       appendDebugLog(options.logFilePath, {
         scope: "experimental.chat.system.transform",
@@ -812,55 +969,30 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         );
       }
 
-      // Inject documentation mode system prompt if enabled
+      // Inject Google JSDoc style rules as reference when documentation mode is enabled
       const docMode = getEffectiveCfg().documentationMode;
       if (docMode?.enabled) {
         const styleRules = docMode.style === "google" ? [
-          "## Google JSDoc Style Rules (MANDATORY)",
+          "## Google JSDoc Style Rules",
           "",
           "- Use `/** ... */` block comments — never `//` or `/*`.",
-          "- First line is a standalone summary sentence ending with a period.",
-          "- Describe WHAT the symbol does and WHY, not HOW.",
-          "- Blank line between summary and body (if body is needed).",
+          "- Summary sentence describes WHAT and WHY, not HOW.",
+          "- Blank line between summary and description body.",
           "- For TypeScript: Omit `{type}` in @param/@returns — types are in code.",
           "- For JavaScript/Python/PHP: include `{type}` in @param and @returns.",
           "- `@param name - Description` — one line per param, dash before description.",
           "- `@returns Description` — describe the return value.",
           "- `@throws {ErrorType} Condition` — only when the code explicitly throws.",
-          "- Do NOT add any comments inside function/method bodies.",
+          "- Do NOT add comments inside function/method bodies.",
           "- Do NOT restate the obvious.",
           "- Be concise — ≤2 sentences per tag description.",
           "- Do NOT change any implementation code.",
-        ] : [];
+          "",
+          "Use the `/doc` slash command to start documenting files.",
+        ].join("\n") : "";
 
-        if (docMode.autoStart) {
-          const directivePrompt = [
-            "## PRIMARY OBJECTIVE: Document this codebase",
-            "",
-            "Your primary task is to add/update JSDoc/TSDoc comments on every public symbol in this codebase.",
-            "",
-            ...(styleRules.length > 0 ? styleRules : []),
-            "",
-            "### Workflow",
-            "",
-            "When you receive a documentation kickoff message listing files to process:",
-            "1. For each file in the batch:",
-            "   a. Call `get_file_skeleton(filePath)` to see the structure",
-            "   b. Call `read` to read the full file content",
-            "   c. Add or update doc comments on EVERY public symbol: classes, interfaces, types, methods, functions, properties, and exported constants",
-            "   d. Call `mark_documented(filePath)` to record completion",
-            "2. Follow the Google JSDoc style rules above (strict, parseable format)",
-            "3. Write descriptions that explain WHAT and WHY, not HOW",
-            "4. Include @param, @returns, and @throws where applicable",
-            "5. Do NOT change any implementation code — only add/update doc comments",
-            "6. Do NOT add comments that restate the obvious",
-            "7. Preserve any existing comments — update them only if incorrect",
-            "",
-            "After finishing a batch, report which files were documented and wait for the next batch.",
-          ].join("\n");
-          output.system.unshift(directivePrompt);
-        } else {
-          output.system.unshift(docMode.systemPrompt);
+        if (styleRules) {
+          output.system.unshift(styleRules);
         }
       }
     },
@@ -870,54 +1002,6 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         if (text.length === 0) return;
 
         sessionLastMessage.set(input.sessionID, text);
-
-        // Documentation mode auto-kickoff on first message
-        const docModeCfg = getEffectiveCfg().documentationMode;
-        if (docModeCfg?.enabled && docModeCfg.autoStart && !sessionDocKickoff.get(input.sessionID)) {
-          sessionDocKickoff.set(input.sessionID, true);
-          try {
-            const manifest = await loadManifest(options.storePath);
-            const allFiles = Object.keys(manifest.manifest.files);
-            if (allFiles.length > 0) {
-              const progress = loadDocProgress(options.storePath);
-              const remaining = allFiles.filter((f) => !progress.documented.includes(f));
-
-              if (remaining.length === 0) {
-                const doneMsg = "\n\n**Documentation Mode: Complete** — All indexed files have been documented.";
-                const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
-                if (Array.isArray(parts) && parts.length > 0) {
-                  const first = parts[0] as Record<string, unknown>;
-                  if (typeof first.text === "string") {
-                    parts[0] = { ...first, text: `${first.text}${doneMsg}` } as typeof parts[0];
-                  }
-                }
-              } else {
-                const batch = remaining.slice(0, docModeCfg.batchSize);
-                const kickoffMsg = [
-                  "",
-                  "## Documentation Mode: Auto-Kickoff",
-                  "",
-                  "Begin documenting the codebase. Process these files in order:",
-                  ...batch.map((f) => `- \`${f}\``),
-                  "",
-                  `Progress: ${progress.documented.length} / ${allFiles.length} files documented.`,
-                  `Remaining: ${remaining.length} files.`,
-                  "",
-                  "For each file: call `get_file_skeleton` → `read` → add doc comments → call `mark_documented`",
-                ].join("\n");
-                const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
-                if (Array.isArray(parts) && parts.length > 0) {
-                  const first = parts[0] as Record<string, unknown>;
-                  if (typeof first.text === "string") {
-                    parts[0] = { ...first, text: `${first.text}${kickoffMsg}` } as typeof parts[0];
-                  }
-                }
-              }
-            }
-          } catch {
-            // silently ignore doc mode kickoff failures
-          }
-        }
 
         const pendingInjection = consumePendingRagInjection(options.storePath);
 

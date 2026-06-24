@@ -440,9 +440,6 @@ function buildSettingCategories(
   const descCfg = (cfg.description ?? {}) as Record<string, unknown>;
   const descRo = (ro.description ?? {}) as Record<string, unknown>;
 
-  const docModeCfg = (cfg.documentationMode ?? {}) as Record<string, unknown>;
-  const docModeRo = (ro.documentationMode ?? {}) as Record<string, unknown>;
-
   const embeddingCfg = (cfg.embedding ?? {}) as Record<string, unknown>;
   const embeddingRo = (ro.embedding ?? {}) as Record<string, unknown>;
 
@@ -574,31 +571,6 @@ function buildSettingCategories(
           type: "string",
           currentValue: displayModel(descRo.provider, descRo.model, descCfg.provider, descCfg.model, "ollama", "qwen2.5:3b"),
           options: modelOptions,
-        },
-      ],
-    },
-    {
-      id: "documentation",
-      label: "Documentation Mode",
-      description: "Configure automatic code documentation via JSDoc/TSDoc comment injection",
-      entries: [
-        {
-          path: ["documentationMode", "enabled"],
-          label: "Documentation mode",
-          type: "boolean",
-          currentValue: (docModeRo.enabled as boolean) ?? (docModeCfg.enabled as boolean) ?? false,
-        },
-        {
-          path: ["documentationMode", "autoStart"],
-          label: "Auto-start on session",
-          type: "boolean",
-          currentValue: (docModeRo.autoStart as boolean) ?? (docModeCfg.autoStart as boolean) ?? true,
-        },
-        {
-          path: ["documentationMode", "batchSize"],
-          label: "Files per batch",
-          type: "number",
-          currentValue: (docModeRo.batchSize as number) ?? (docModeCfg.batchSize as number) ?? 5,
         },
       ],
     },

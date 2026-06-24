@@ -94,7 +94,6 @@
   },
   "documentationMode": {
     "enabled": false,
-    "autoStart": true,
     "batchSize": 5,
     "concurrency": 4,
     "style": "google",

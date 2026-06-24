@@ -7,10 +7,6 @@ describe("DEFAULT_CONFIG.documentationMode", () => {
     assert.equal(DEFAULT_CONFIG.documentationMode?.enabled, false);
   });
 
-  it("has autoStart enabled by default", () => {
-    assert.equal(DEFAULT_CONFIG.documentationMode?.autoStart, true);
-  });
-
   it("has batchSize of 5", () => {
     assert.equal(DEFAULT_CONFIG.documentationMode?.batchSize, 5);
   });

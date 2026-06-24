@@ -125,8 +125,6 @@ export interface UiConfig {
 export interface DocumentationModeConfig {
   /** Whether documentation mode is available. */
   enabled: boolean;
-  /** Whether to start documentation mode automatically on launch. */
-  autoStart: boolean;
   /** Number of files to process per batch. */
   batchSize: number;
   /** Number of files to process in parallel. */
@@ -451,7 +449,6 @@ export const DEFAULT_CONFIG: RagConfig = {
   },
   documentationMode: {
     enabled: false,
-    autoStart: true,
     batchSize: 5,
     concurrency: 4,
     style: "google",
