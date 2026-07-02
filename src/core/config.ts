@@ -397,7 +397,7 @@ export const DEFAULT_CONFIG: RagConfig = {
   },
   retrieval: {
     topK: 20,
-    minScore: 0.5,
+    minScore: 0.35,
     hybridSearch: {
       enabled: true,
       keywordWeight: 0.4,

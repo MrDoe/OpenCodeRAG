@@ -12,6 +12,18 @@ const TABLE_NAME = "chunks";
 const QUERY_COLUMNS = ["id", "content", "description", "filePath", "startLine", "endLine", "language"];
 
 /**
+ * L2-normalize a vector to unit length. Cosine models require unit vectors
+ * for the dot product to equal cosine similarity.
+ */
+export function l2Normalize(vec: number[]): number[] {
+  let norm = 0;
+  for (const v of vec) norm += v * v;
+  norm = Math.sqrt(norm);
+  if (norm === 0) return vec;
+  return vec.map((v) => v / norm);
+}
+
+/**
  * Check whether an error is a LanceDB corruption error (table not found / broken).
  * @param err - The error to inspect.
  * @returns True if the error matches a known corruption pattern.
@@ -214,7 +226,7 @@ export class LanceDbStore implements VectorStore {
         id: c.id,
         content: c.content,
         description: c.description ?? "",
-        embedding: c.embedding!,
+        embedding: l2Normalize(c.embedding!),
         filePath: normalizeFilePath(c.metadata.filePath),
         startLine: c.metadata.startLine,
         endLine: c.metadata.endLine,
@@ -281,7 +293,7 @@ export class LanceDbStore implements VectorStore {
 
   /**
    * Perform ANN (approximate nearest neighbor) search using LanceDB's native vector index.
-   * Returns results scored as 1 / (1 + L2 distance). Falls back to repair on corruption.
+   * Returns results scored as cosine similarity (0-1). Falls back to repair on corruption.
    * @param embedding - The query embedding vector.
    * @param topK - Maximum number of results to return.
    * @returns An array of search results sorted by descending score.
@@ -302,7 +314,7 @@ export class LanceDbStore implements VectorStore {
 
   private rowToSearchResult(row: Record<string, unknown>): SearchResult {
     return {
-      score: 1 / (1 + ((row._distance as number) ?? 0)),
+      score: Math.min(1, Math.max(0, 1 - ((row._distance as number) ?? 0) / 2)),
       chunk: {
         id: row.id as string,
         content: row.content as string,
@@ -396,6 +408,13 @@ export class LanceDbStore implements VectorStore {
     }));
   }
 
+  /**
+   * Perform ANN search internally, returning results scored as cosine similarity (0-1).
+   * This method is called by `search()` and handles the actual query logic.
+   * @param embedding - The query embedding vector.
+   * @param topK - The number of top results to return.
+   * @returns An array of search results with scores.
+   */
   private async searchInternal(embedding: number[], topK: number): Promise<SearchResult[]> {
     const db = await this.getDb();
     const tableNames = await db.tableNames();
@@ -405,10 +424,12 @@ export class LanceDbStore implements VectorStore {
     const count = await table.countRows();
     if (count === 0) return [];
 
-    const results = await table.search(embedding).limit(topK).toArray();
+    const results = await table.vectorSearch(l2Normalize(embedding))
+      .distanceType("cosine")
+      .limit(topK).toArray() as Record<string, unknown>[];
     return results
-      .map((row) => this.rowToSearchResult(row))
-      .filter((r) => r.chunk.id !== "__seed__");
+      .map((row: Record<string, unknown>) => this.rowToSearchResult(row))
+      .filter((r: SearchResult) => r.chunk.id !== "__seed__");
   }
 
   /**

@@ -32,9 +32,9 @@ export interface ManifestEntry {
 }
 
 /** Current schema version for manifest files. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 /** Oldest schema version still accepted as valid (supports forward migration). */
-export const MIN_SUPPORTED_SCHEMA_VERSION = 1;
+export const MIN_SUPPORTED_SCHEMA_VERSION = 3;
 
 /** Persistent manifest tracking indexing state across sessions. */
 export interface FileManifest {

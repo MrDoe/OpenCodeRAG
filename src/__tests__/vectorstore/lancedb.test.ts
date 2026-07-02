@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, unlinkSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { LanceDbStore } from "../../vectorstore/lancedb.js";
+import { LanceDbStore, l2Normalize } from "../../vectorstore/lancedb.js";
 import { normalizeFilePath } from "../../core/manifest.js";
 
 describe("LanceDbStore (memory)", () => {
@@ -382,6 +382,26 @@ describe("LanceDbStore (memory)", () => {
     await store.clear();
     const paths = await store.getFilePaths();
     assert.deepEqual(paths, []);
+  });
+});
+
+describe("l2Normalize", () => {
+  it("normalizes vectors to unit length", () => {
+    const v = [3, 4];
+    const result = l2Normalize(v);
+    assert.deepStrictEqual(result, [0.6, 0.8]);
+  });
+
+  it("makes same-direction vectors identical regardless of magnitude", () => {
+    const a = l2Normalize([3, 4]);
+    const b = l2Normalize([6, 8]);
+    assert.deepStrictEqual(a, b);
+  });
+
+  it("returns original vector when norm is zero", () => {
+    const v = [0, 0, 0];
+    const result = l2Normalize(v);
+    assert.deepStrictEqual(result, [0, 0, 0]);
   });
 });
 
