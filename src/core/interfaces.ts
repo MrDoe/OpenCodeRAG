@@ -106,7 +106,7 @@ export interface KeywordIndex {
   /** Remove all entries for a given file path from the index. */
   removeByFilePath(filePath: string): void;
   /** Search the index for the top-K matching chunks. */
-  search(query: string, topK: number): SearchResult[];
+  search(query: string, topK: number, filter?: MetadataFilter): SearchResult[];
   /** Get the terms from a query that matched a specific chunk. */
   getMatchedTerms(query: string, chunkId: string): string[];
   /** Clear all indexed data. */

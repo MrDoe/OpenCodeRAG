@@ -1,7 +1,7 @@
 /**
  * @fileoverview Performs hybrid vector-keyword retrieval with configurable scoring and explanation.
  */
-import type { EmbeddingProvider, KeywordIndex, VectorStore, SearchResult } from "../core/interfaces.js";
+import type { EmbeddingProvider, KeywordIndex, VectorStore, SearchResult, MetadataFilter } from "../core/interfaces.js";
 
 /** Multiplier applied to topK when fetching raw results from vector/keyword stores.
  *  We request extra results up-front, then after hybrid fusion + minScore filtering,
@@ -19,6 +19,7 @@ export interface RetrieveOptions {
   hybridEnabled?: boolean;
   queryPrefix?: string;
   explain?: boolean;
+  filter?: MetadataFilter;
 }
 
 /**
@@ -55,11 +56,11 @@ export async function retrieve(
       return [];
     }
 
-    const vectorResults = await store.search(embedding as number[], topK * FETCH_OVERFETCH_FACTOR);
+    const vectorResults = await store.searchWithFilter(embedding as number[], topK * FETCH_OVERFETCH_FACTOR, options.filter);
 
     let keywordResults: SearchResult[] = [];
     if (options.keywordIndex && options.hybridEnabled !== false) {
-      keywordResults = options.keywordIndex.search(query, topK * FETCH_OVERFETCH_FACTOR);
+      keywordResults = options.keywordIndex.search(query, topK * FETCH_OVERFETCH_FACTOR, options.filter);
     }
 
     const vRank = new Map<string, number>(vectorResults.map((r, i) => [r.chunk.id, i]));

@@ -25,6 +25,9 @@ function makeStore(results: SearchResult[]): VectorStore {
     async search(_embedding: number[], _topK: number): Promise<SearchResult[]> {
       return results;
     },
+    async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+      return this.search(embedding, topK);
+    },
     async count(): Promise<number> {
       return results.length;
     },
@@ -87,6 +90,9 @@ describe("retrieve", () => {
         receivedTopK = topK;
         return [];
       },
+      async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+        return this.search(embedding, topK);
+      },
       async count(): Promise<number> {
         return 0;
       },
@@ -109,6 +115,9 @@ describe("retrieve", () => {
       async search(_embedding: number[], topK: number): Promise<SearchResult[]> {
         receivedTopK = topK;
         return [];
+      },
+      async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+        return this.search(embedding, topK);
       },
       async count(): Promise<number> {
         return 0;

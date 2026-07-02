@@ -4,7 +4,7 @@
 import * as lancedb from "@lancedb/lancedb";
 import type { Connection, Table, Version } from "@lancedb/lancedb";
 import fs from "node:fs/promises";
-import type { VectorStore, Chunk, SearchResult } from "../core/interfaces.js";
+import type { VectorStore, Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
 
 const TABLE_NAME = "chunks";
@@ -299,13 +299,17 @@ export class LanceDbStore implements VectorStore {
    * @returns An array of search results sorted by descending score.
    */
   async search(embedding: number[], topK: number): Promise<SearchResult[]> {
+    return this.searchWithFilter(embedding, topK);
+  }
+
+  async searchWithFilter(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]> {
     try {
-      return await this.searchInternal(embedding, topK);
+      return await this.searchInternal(embedding, topK, filter);
     } catch (err) {
       if (isCorruptionError(err)) {
         const repaired = await this.tryRepair();
         if (repaired) {
-          return this.searchInternal(embedding, topK);
+          return this.searchInternal(embedding, topK, filter);
         }
       }
       return [];
@@ -415,7 +419,7 @@ export class LanceDbStore implements VectorStore {
    * @param topK - The number of top results to return.
    * @returns An array of search results with scores.
    */
-  private async searchInternal(embedding: number[], topK: number): Promise<SearchResult[]> {
+  private async searchInternal(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]> {
     const db = await this.getDb();
     const tableNames = await db.tableNames();
     if (!tableNames.includes(TABLE_NAME)) return [];
@@ -424,9 +428,11 @@ export class LanceDbStore implements VectorStore {
     const count = await table.countRows();
     if (count === 0) return [];
 
-    const results = await table.vectorSearch(l2Normalize(embedding))
-      .distanceType("cosine")
-      .limit(topK).toArray() as Record<string, unknown>[];
+    let query = table.vectorSearch(l2Normalize(embedding)).distanceType("cosine");
+    const whereClause = buildWhereClause(filter);
+    if (whereClause) query = query.where(whereClause);
+    const results = await query.limit(topK).toArray() as Record<string, unknown>[];
+
     return results
       .map((row: Record<string, unknown>) => this.rowToSearchResult(row))
       .filter((r: SearchResult) => r.chunk.id !== "__seed__");
@@ -572,8 +578,6 @@ export class LanceDbStore implements VectorStore {
       try {
         table = await db.openTable(TABLE_NAME);
       } catch {
-        // Table is corrupt and can't even be opened — leave it be so the user
-        // can run `opencode-rag index --force` to rebuild with full control.
         console.error(
           "[lancedb] Corrupt table detected. Run 'opencode-rag index --force' to rebuild."
         );
@@ -584,8 +588,6 @@ export class LanceDbStore implements VectorStore {
       try {
         versions = await table.listVersions();
       } catch {
-        // Can't list versions (corrupt version manifest). Don't nuke data —
-        // let the user decide how to proceed.
         console.warn(
           "[lancedb] Could not list table versions for repair. " +
           "Run 'opencode-rag index --force' to rebuild if search results are incorrect."
@@ -593,7 +595,6 @@ export class LanceDbStore implements VectorStore {
         return false;
       }
 
-      // No previous version to roll back to — not a corruption we can fix.
       if (versions.length <= 1) {
         return false;
       }
@@ -613,7 +614,6 @@ export class LanceDbStore implements VectorStore {
         }
       }
 
-      // Tried all versions, none worked — report failure but don't destroy data.
       console.error(
         "[lancedb] All version-restore attempts failed. " +
         "Run 'opencode-rag index --force' to rebuild the index."
@@ -623,4 +623,29 @@ export class LanceDbStore implements VectorStore {
       return false;
     }
   }
+}
+
+/**
+ * Build a LanceDB SQL WHERE clause from a MetadataFilter.
+ * Handles path glob patterns and language filters with proper escaping.
+ */
+function buildWhereClause(filter?: MetadataFilter): string | undefined {
+  if (!filter) return undefined;
+  const parts: string[] = [];
+  if (filter.languages?.length) {
+    const langs = filter.languages.map((l) => `'${l.replace(/'/g, "''")}'`).join(",");
+    parts.push(`language IN (${langs})`);
+  }
+  if (filter.pathPatterns?.length) {
+    const likes = filter.pathPatterns.map((p) => {
+      const escaped = p.replace(/'/g, "''");
+      const like = escaped
+        .replace(/\*\*/g, "%")
+        .replace(/\*/g, "%")
+        .replace(/\?/g, "_");
+      return `filePath LIKE '${like}'`;
+    });
+    parts.push(`(${likes.join(" OR ")})`);
+  }
+  return parts.length ? parts.join(" AND ") : undefined;
 }

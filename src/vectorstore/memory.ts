@@ -1,7 +1,7 @@
 /**
  * @fileoverview Ephemeral in-memory vector store using cosine similarity search.
  */
-import type { VectorStore, Chunk, SearchResult } from "../core/interfaces.js";
+import type { VectorStore, Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
 
 /** Ephemeral in-memory vector store using cosine similarity search. */
 export class InMemoryVectorStore implements VectorStore {
@@ -12,11 +12,16 @@ export class InMemoryVectorStore implements VectorStore {
   }
 
   async search(embedding: number[], topK: number): Promise<SearchResult[]> {
+    return this.searchWithFilter(embedding, topK);
+  }
+
+  async searchWithFilter(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]> {
     const withEmbeddings = this.chunks.filter(
       (c): c is Chunk & { embedding: number[] } =>
         c.embedding !== undefined && c.embedding.length === embedding.length
     );
     const scored = withEmbeddings
+      .filter((c) => matchesFilter(c, filter))
       .map((chunk) => {
         const sim = cosineSimilarity(embedding, chunk.embedding);
         return { chunk, score: sim };
@@ -59,6 +64,25 @@ export class InMemoryVectorStore implements VectorStore {
  * @param b - Second vector.
  * @returns The cosine similarity (0 if either vector has zero magnitude).
  */
+function globMatch(pattern: string, filePath: string): boolean {
+  const GLOBSTAR = "\x00GS\x00";
+  let re = pattern.replace(/\*\*/g, GLOBSTAR);
+  re = re.replace(/([.+^${}()|[\]\\])/g, "\\$1");
+  re = re.replace(new RegExp(GLOBSTAR, "g"), ".*");
+  re = re.replace(/\*/g, "[^/]*");
+  re = re.replace(/\?/g, ".");
+  return new RegExp("^" + re + "$").test(filePath);
+}
+
+function matchesFilter(chunk: Chunk, filter?: MetadataFilter): boolean {
+  if (!filter) return true;
+  if (filter.languages?.length && !filter.languages.includes(chunk.metadata.language)) return false;
+  if (filter.pathPatterns?.length) {
+    return filter.pathPatterns.some((p) => globMatch(p, chunk.metadata.filePath));
+  }
+  return true;
+}
+
 function cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0;
   let normA = 0;

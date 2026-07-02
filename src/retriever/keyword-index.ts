@@ -1,7 +1,7 @@
 /**
  * @fileoverview In-memory inverted keyword index with stemming, tokenization, and optional serialization.
  */
-import type { Chunk, SearchResult } from "../core/interfaces.js";
+import type { Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
 
 const INDEX_VERSION = 2;
 
@@ -153,7 +153,7 @@ export class KeywordIndex {
     }
   }
 
-  search(query: string, topK: number): SearchResult[] {
+  search(query: string, topK: number, filter?: MetadataFilter): SearchResult[] {
     if (this.chunkMap.size === 0) return [];
 
     const queryTokens = tokenize(query);
@@ -177,6 +177,7 @@ export class KeywordIndex {
 
     const sorted = [...scores.entries()]
       .sort((a, b) => b[1] - a[1])
+      .filter(([id]) => matchesFilter(this.chunkMap.get(id)!, filter))
       .slice(0, topK);
 
     return sorted.map(([chunkId, score]) => {
@@ -286,4 +287,23 @@ export class KeywordIndex {
     await mkdir(path.dirname(targetPath), { recursive: true });
     await writeFile(targetPath, JSON.stringify({ version: INDEX_VERSION, tokens: [], chunkMap: {} }), "utf-8");
   }
+}
+
+function globMatch(pattern: string, filePath: string): boolean {
+  const GLOBSTAR = "\x00GS\x00";
+  let re = pattern.replace(/\*\*/g, GLOBSTAR);
+  re = re.replace(/([.+^${}()|[\]\\])/g, "\\$1");
+  re = re.replace(new RegExp(GLOBSTAR, "g"), ".*");
+  re = re.replace(/\*/g, "[^/]*");
+  re = re.replace(/\?/g, ".");
+  return new RegExp("^" + re + "$").test(filePath);
+}
+
+function matchesFilter(chunk: Chunk, filter?: MetadataFilter): boolean {
+  if (!filter) return true;
+  if (filter.languages?.length && !filter.languages.includes(chunk.metadata.language)) return false;
+  if (filter.pathPatterns?.length) {
+    return filter.pathPatterns.some((p) => globMatch(p, chunk.metadata.filePath));
+  }
+  return true;
 }

@@ -59,6 +59,9 @@ function makeEmptyStore(): VectorStore {
   return {
     addChunks: async () => {},
     search: async () => [],
+    async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+      return this.search(embedding, topK);
+    },
     count: async () => 0,
     clear: async () => {},
     deleteByFilePath: async () => {},
@@ -71,6 +74,9 @@ function makeStore(count: number, searchResults: SearchResult[]): VectorStore {
   return {
     addChunks: async () => {},
     search: async () => searchResults,
+    async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+      return this.search(embedding, topK);
+    },
     count: async () => count,
     clear: async () => {},
     deleteByFilePath: async () => {},

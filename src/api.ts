@@ -99,6 +99,10 @@ export async function search(
       hybridEnabled: ctx.config.retrieval.hybridSearch?.enabled,
       queryPrefix: ctx.config.embedding.queryPrefix,
       explain: options.explain,
+      filter: {
+        pathPatterns: options.pathHints,
+        languages: options.languageHints,
+      },
     } satisfies RetrieveOptions);
 
     const optCfg = ctx.config.retrieval.contextOptimization ?? DEFAULT_CONTEXT_OPTIMIZATION;

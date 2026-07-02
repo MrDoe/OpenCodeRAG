@@ -26,6 +26,9 @@ function makeStore(options: {
   return {
     addChunks: async () => {},
     search: async () => searchResults,
+    async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+      return this.search(embedding, topK);
+    },
     count: async () => count,
     clear: async () => {},
     deleteByFilePath: async () => {},
@@ -262,6 +265,9 @@ describe("createRagReadTool", () => {
     const failingStore: VectorStore = {
       addChunks: async () => {},
       search: async () => { throw new Error("DB connection failed"); },
+      async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+        return this.search(embedding, topK);
+      },
       count: async () => { throw new Error("DB connection failed"); },
       clear: async () => {},
       deleteByFilePath: async () => {},
@@ -476,6 +482,9 @@ describe("createRagReadTool", () => {
     const store: VectorStore = {
       addChunks: async () => {},
       search: async () => [],
+      async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+        return this.search(embedding, topK);
+      },
       count: async () => 5,
       clear: async () => {},
       deleteByFilePath: async () => {},
@@ -527,6 +536,9 @@ describe("createRagReadTool", () => {
     const searchStore: VectorStore = {
       addChunks: async () => {},
       search: async () => [makeResult("c1", mainFile, 1, 10, "typescript", "fresh result", 0.95)],
+      async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+        return this.search(embedding, topK);
+      },
       count: async () => 5,
       clear: async () => {},
       deleteByFilePath: async () => {},
