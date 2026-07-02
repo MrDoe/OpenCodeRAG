@@ -3,6 +3,7 @@
  * scanWorkspace, and related types.
  */
 
+import path from "node:path";
 import { resolveRagContext } from "./core/bootstrap.js";
 import { retrieve } from "./retriever/retriever.js";
 import type { RetrieveOptions } from "./retriever/retriever.js";
@@ -90,7 +91,11 @@ export async function search(
   });
 
   try {
+    const cwd = options.cwd ?? process.cwd();
     const topK = options.topK ?? ctx.config.retrieval.topK;
+    const resolvedPathHints = options.pathHints?.map((hint) =>
+      path.isAbsolute(hint) ? hint : path.join(cwd, hint)
+    );
     const rawResults = await retrieve(query, ctx.embedder, ctx.store, {
       topK,
       minScore: options.minScore ?? ctx.config.retrieval.minScore,
@@ -100,7 +105,7 @@ export async function search(
       queryPrefix: ctx.config.embedding.queryPrefix,
       explain: options.explain,
       filter: {
-        pathPatterns: options.pathHints,
+        pathPatterns: resolvedPathHints,
         languages: options.languageHints,
       },
     } satisfies RetrieveOptions);
