@@ -117,7 +117,7 @@ Controls how queries are matched against the index.
 {
   "retrieval": {
     "topK": 10,
-    "minScore": 0.5,
+    "minScore": 0.35,
     "hybridSearch": {
       "enabled": true,
       "keywordWeight": 0.4
@@ -136,7 +136,7 @@ Controls how queries are matched against the index.
 | Option | Default | Description |
 |---|---|---|
 | `topK` | `10` | Default number of chunks fetched per query |
-| `minScore` | `0.5` | Minimum relevance score (0–1) |
+| `minScore` | `0.35` | Minimum relevance score (0–1) |
 | `hybridSearch.enabled` | `true` | Enable combined TF×IDF + vector search |
 | `hybridSearch.keywordWeight` | `0.4` | Weight for keyword score in fusion: `(1-kw)*vScore + kw*kScore` |
 | `contextOptimization.enabled` | `true` | Enable post-retrieval optimization pipeline |
