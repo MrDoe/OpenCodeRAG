@@ -3,7 +3,7 @@
 ## Project Setup
 
 ```bash
-git clone https://github.com/your-org/OpenCodeRAG.git
+git clone https://github.com/MrDoe/OpenCodeRAG.git
 cd OpenCodeRAG
 npm install --legacy-peer-deps
 opencode-rag init --force

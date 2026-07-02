@@ -68,7 +68,7 @@
     "model": "minicpm-v4.6:latest",
     "baseUrl": "http://127.0.0.1:11434/api",
     "timeoutMs": 60000,
-    "prompt": "Describe this image 10-20 comma-separated keywords.",
+    "prompt": "Describe this image in 1-2 sentences: what it shows, its purpose, and key visual elements.",
     "think": true,
     "numCtx": 4096,
     "resizeMaxDimension": 1024
@@ -81,7 +81,7 @@
     "think": false,
     "numCtx": 4096,
     "timeoutMs": 60000,
-    "systemPrompt": "Describe this code in 10-20 comma-separated keywords, focus on functionality and purpose.",
+    "systemPrompt": "Describe this code in 2-3 sentences: purpose, key concepts, inputs/outputs, and dependencies. No code repetition.",
     "batchConcurrency": 3,
     "retryMax": 3,
     "retryBaseDelayMs": 1000
