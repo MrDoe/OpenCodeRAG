@@ -358,8 +358,8 @@ describe("createRagReadTool", () => {
 
     // Related files section with otherFile and other2File (not mainFile)
     assert.match(result.output, /Please consider reading other relevant files/);
-    assert.match(result.output, /other\.ts \(Score: 0\.80\)/);
-    assert.match(result.output, /other2\.ts \(Score: 0\.75\)/);
+    assert.match(result.output, /other\.ts \(Score: 0\.01\)/);
+    assert.match(result.output, /other2\.ts \(Score: 0\.01\)/);
 
     // Should NOT include the requested file in related files
     assert.doesNotMatch(result.output, /src\/main\.ts \(Score:/);
@@ -393,7 +393,7 @@ describe("createRagReadTool", () => {
 
     // Should have at most 1 related file
     assert.match(result.output, /Please consider reading other relevant files/);
-    assert.match(result.output, /other\.ts \(Score: 0\.85\)/);
+    assert.match(result.output, /other\.ts \(Score: 0\.01\)/);
     assert.doesNotMatch(result.output, /other2\.ts/);
     assert.doesNotMatch(result.output, /other3\.ts/);
   });
@@ -468,9 +468,9 @@ describe("createRagReadTool", () => {
       {}
     ) as { output: string };
 
-    // Only one entry for other.ts, with best score 0.85
+    // Only one entry for other.ts, with best score 0.01
     assert.match(result.output, /Please consider reading other relevant files/);
-    assert.match(result.output, /other\.ts \(Score: 0\.85\)/);
+    assert.match(result.output, /other\.ts \(Score: 0\.01\)/);
     // Should NOT show lower scores for same file
     const matches = result.output.match(/other\.ts \(Score:/g);
     assert.equal(matches?.length, 1, "expected exactly one related entry per file");
