@@ -33,7 +33,11 @@ export interface ManifestEntry {
 
 /** Current schema version for manifest files. */
 export const SCHEMA_VERSION = 3;
-/** Oldest schema version still accepted as valid (supports forward migration). */
+/**
+ * Oldest schema version still accepted as valid.
+ * Bumping this intentionally marks older manifests corrupt and forces a
+ * rebuild, so only raise it when a migration is not practical.
+ */
 export const MIN_SUPPORTED_SCHEMA_VERSION = 3;
 
 /** Persistent manifest tracking indexing state across sessions. */
