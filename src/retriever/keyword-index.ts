@@ -176,8 +176,8 @@ export class KeywordIndex {
     }
 
     const sorted = [...scores.entries()]
-      .sort((a, b) => b[1] - a[1])
       .filter(([id]) => matchesFilter(this.chunkMap.get(id)!, filter))
+      .sort((a, b) => b[1] - a[1])
       .slice(0, topK);
 
     return sorted.map(([chunkId, score]) => {
