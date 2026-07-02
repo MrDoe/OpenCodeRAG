@@ -6,7 +6,7 @@
 git clone https://github.com/your-org/OpenCodeRAG.git
 cd OpenCodeRAG
 npm install --legacy-peer-deps
-opencode-rag setup --force
+opencode-rag init --force
 ```
 
 > LanceDB and other dependencies have peer dependency conflicts — `--legacy-peer-deps` is required. Run `opencode-rag setup --force` after building to sync the development copy into the runtime.
