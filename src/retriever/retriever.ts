@@ -65,6 +65,24 @@ export async function retrieve(
       keywordResults = options.keywordIndex.search(query, topK * FETCH_OVERFETCH_FACTOR, options.filter);
     }
 
+    if (keywordResults.length === 0) {
+      const filtered = vectorResults.filter((r) => r.score >= minScore).slice(0, topK);
+      if (options.explain) {
+        const kw = options.keywordWeight ?? 0.4;
+        for (const r of filtered) {
+          r.explanation = {
+            scoreBreakdown: {
+              vectorScore: r.score,
+              keywordScore: 0,
+              rawVectorScore: r.score,
+              rawKeywordScore: 0,
+              keywordWeight: kw,
+            },
+          };
+        }
+      }
+      return filtered;
+    }
     const vRank = new Map<string, number>(vectorResults.map((r, i) => [r.chunk.id, i]));
     const kRank = new Map<string, number>(keywordResults.map((r, i) => [r.chunk.id, i]));
 
