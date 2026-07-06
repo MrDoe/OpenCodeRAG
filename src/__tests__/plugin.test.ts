@@ -62,6 +62,9 @@ const testWorktree = process.cwd();
 const populatedStore: VectorStore = {
   addChunks: async () => {},
   search: async () => [],
+      async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+    return this.search(embedding, topK);
+  },
   count: async () => 5,
   clear: async () => {},
   deleteByFilePath: async () => {},
@@ -449,6 +452,9 @@ describe("ragPlugin", () => {
     const storeWithResults: VectorStore = {
       addChunks: async () => {},
       search: async () => [],
+  async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+        return this.search(embedding, topK);
+      },
       count: async () => 5,
       clear: async () => {},
       deleteByFilePath: async () => {},

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, unlinkSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { LanceDbStore } from "../../vectorstore/lancedb.js";
+import { LanceDbStore, l2Normalize } from "../../vectorstore/lancedb.js";
 import { normalizeFilePath } from "../../core/manifest.js";
 
 describe("LanceDbStore (memory)", () => {
@@ -14,7 +14,7 @@ describe("LanceDbStore (memory)", () => {
   });
 
   after(async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
   });
 
   it("starts with zero count", async () => {
@@ -74,7 +74,7 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("clears all chunks", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
     const count = await store.count();
     assert.equal(count, 0);
   });
@@ -100,7 +100,7 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("filters out chunks without embeddings in addChunks", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
 
     const chunks = [
       {
@@ -133,7 +133,7 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("deletes all chunks for a specific file path", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
 
     await store.addChunks([
       {
@@ -182,7 +182,7 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("stores and retrieves description field", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
 
     const chunks = [
       {
@@ -229,7 +229,7 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("lists files with chunk counts", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
 
     await store.addChunks([
       {
@@ -265,13 +265,13 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("returns empty array for listFiles on empty store", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
     const files = await store.listFiles();
     assert.deepEqual(files, []);
   });
 
   it("retrieves chunks by file path sorted by startLine", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
 
     await store.addChunks([
       {
@@ -303,13 +303,13 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("returns empty array for getChunksByFilePath with no match", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
     const chunks = await store.getChunksByFilePath("nonexistent.ts");
     assert.deepEqual(chunks, []);
   });
 
   it("retrieves chunks with pagination via getChunks", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
 
     await store.addChunks([
       {
@@ -343,13 +343,13 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("returns empty array for getChunks beyond range", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
     const chunks = await store.getChunks(100, 10);
     assert.deepEqual(chunks, []);
   });
 
   it("getFilePaths returns all unique file paths", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
 
     await store.addChunks([
       {
@@ -379,9 +379,29 @@ describe("LanceDbStore (memory)", () => {
   });
 
   it("getFilePaths returns empty array on empty store", async () => {
-    await store.clear();
+    await store.clear({ noBackup: true });
     const paths = await store.getFilePaths();
     assert.deepEqual(paths, []);
+  });
+});
+
+describe("l2Normalize", () => {
+  it("normalizes vectors to unit length", () => {
+    const v = [3, 4];
+    const result = l2Normalize(v);
+    assert.deepStrictEqual(result, [0.6, 0.8]);
+  });
+
+  it("makes same-direction vectors identical regardless of magnitude", () => {
+    const a = l2Normalize([3, 4]);
+    const b = l2Normalize([6, 8]);
+    assert.deepStrictEqual(a, b);
+  });
+
+  it("returns original vector when norm is zero", () => {
+    const v = [0, 0, 0];
+    const result = l2Normalize(v);
+    assert.deepStrictEqual(result, [0, 0, 0]);
   });
 });
 

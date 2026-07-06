@@ -36,7 +36,8 @@ export async function embedChunks({
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]!;
     if (chunk.embedding && chunk.embedding.length > 0) continue;
-    textsToEmbed.push(chunk.content);
+    const text = "Description: " + "\n" + (chunk.description || "") + "\n" + "Content:" + "\n" + chunk.content;
+    textsToEmbed.push(text);
     chunkIndices.push(i);
   }
 

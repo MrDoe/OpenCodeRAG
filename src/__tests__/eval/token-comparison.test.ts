@@ -27,7 +27,7 @@ import {
   projectTokenSavings,
 } from "../../eval/token-analysis.js";
 import { handleEvalAnalysis, handleEvalTokenCompare, handleEvalProjectSavings } from "../../web/api.js";
-import type { VectorStore } from "../../core/interfaces.js";
+import type { VectorStore, SearchResult } from "../../core/interfaces.js";
 import type { SessionEvent } from "../../eval/types.js";
 
 function makeTmpDir(): string {
@@ -49,6 +49,9 @@ function makeConfig(overrides: Partial<RagConfig> = {}): RagConfig {
 const dummyStore: VectorStore = {
   addChunks: async () => {},
   search: async () => [],
+  async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+    return this.search(embedding, topK);
+  },
   count: async () => 10,
   clear: async () => {},
   deleteByFilePath: async () => {},

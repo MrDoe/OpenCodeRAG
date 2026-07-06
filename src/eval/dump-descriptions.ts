@@ -38,14 +38,17 @@ async function main() {
   const count = await table.countRows();
   console.log(`  Total rows: ${count}`);
 
-  const rows = await table.query().select(["id", "description"]).limit(count).toArray() as Record<string, unknown>[];
+  const rows = await table.query().select(["id", "description", "filePath", "startLine", "endLine"]).limit(count).toArray() as Record<string, unknown>[];
 
   const descriptions: Record<string, string> = {};
   let hasDesc = 0;
   for (const row of rows) {
-    const id = row.id as string;
+    const filePath = (row.filePath as string).replace(/\\/g, "/");
+    const startLine = row.startLine as number;
+    const endLine = row.endLine as number;
     const desc = row.description as string ?? "";
-    descriptions[id] = desc;
+    const key = `${filePath}:${startLine}:${endLine}`;
+    descriptions[key] = desc;
     if (desc) hasDesc++;
   }
 

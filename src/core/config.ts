@@ -397,7 +397,7 @@ export const DEFAULT_CONFIG: RagConfig = {
   },
   retrieval: {
     topK: 20,
-    minScore: 0.5,
+    minScore: 0.35,
     hybridSearch: {
       enabled: true,
       keywordWeight: 0.4,
@@ -427,7 +427,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     model: "minicpm-v4.6:latest",
     baseUrl: "http://127.0.0.1:11434/api",
     timeoutMs: 60000,
-    prompt: "Describe this image 10-20 comma-separated keywords.",
+    prompt: "Describe this image in 1-2 sentences: what it shows, its purpose, and key visual elements.",
     think: false,
     numCtx: 2048,
     resizeMaxDimension: 1024,
@@ -441,7 +441,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     numCtx: 4096,
     timeoutMs: 60000,
     systemPrompt:
-      "Describe this code in 10-20 comma-separated keywords.",
+      "Describe this code in 2-3 sentences: purpose, key concepts, inputs/outputs, and dependencies. No code repetition.",
     batchConcurrency: 1,
     retryMax: 3,
     retryBaseDelayMs: 1000,

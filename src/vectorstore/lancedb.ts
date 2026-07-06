@@ -4,12 +4,25 @@
 import * as lancedb from "@lancedb/lancedb";
 import type { Connection, Table, Version } from "@lancedb/lancedb";
 import fs from "node:fs/promises";
-import type { VectorStore, Chunk, SearchResult } from "../core/interfaces.js";
+import path from "node:path";
+import type { VectorStore, Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
 
 const TABLE_NAME = "chunks";
 
 const QUERY_COLUMNS = ["id", "content", "description", "filePath", "startLine", "endLine", "language"];
+
+/**
+ * L2-normalize a vector to unit length. Cosine models require unit vectors
+ * for the dot product to equal cosine similarity.
+ */
+export function l2Normalize(vec: number[]): number[] {
+  let norm = 0;
+  for (const v of vec) norm += v * v;
+  norm = Math.sqrt(norm);
+  if (norm === 0) return vec;
+  return vec.map((v) => v / norm);
+}
 
 /**
  * Check whether an error is a LanceDB corruption error (table not found / broken).
@@ -214,7 +227,7 @@ export class LanceDbStore implements VectorStore {
         id: c.id,
         content: c.content,
         description: c.description ?? "",
-        embedding: c.embedding!,
+        embedding: l2Normalize(c.embedding!),
         filePath: normalizeFilePath(c.metadata.filePath),
         startLine: c.metadata.startLine,
         endLine: c.metadata.endLine,
@@ -281,19 +294,23 @@ export class LanceDbStore implements VectorStore {
 
   /**
    * Perform ANN (approximate nearest neighbor) search using LanceDB's native vector index.
-   * Returns results scored as 1 / (1 + L2 distance). Falls back to repair on corruption.
+   * Returns results scored as cosine similarity (0-1). Falls back to repair on corruption.
    * @param embedding - The query embedding vector.
    * @param topK - Maximum number of results to return.
    * @returns An array of search results sorted by descending score.
    */
   async search(embedding: number[], topK: number): Promise<SearchResult[]> {
+    return this.searchWithFilter(embedding, topK);
+  }
+
+  async searchWithFilter(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]> {
     try {
-      return await this.searchInternal(embedding, topK);
+      return await this.searchInternal(embedding, topK, filter);
     } catch (err) {
       if (isCorruptionError(err)) {
         const repaired = await this.tryRepair();
         if (repaired) {
-          return this.searchInternal(embedding, topK);
+          return this.searchInternal(embedding, topK, filter);
         }
       }
       return [];
@@ -302,7 +319,7 @@ export class LanceDbStore implements VectorStore {
 
   private rowToSearchResult(row: Record<string, unknown>): SearchResult {
     return {
-      score: 1 / (1 + ((row._distance as number) ?? 0)),
+      score: Math.min(1, Math.max(0, 1 - ((row._distance as number) ?? 0) / 2)),
       chunk: {
         id: row.id as string,
         content: row.content as string,
@@ -396,7 +413,14 @@ export class LanceDbStore implements VectorStore {
     }));
   }
 
-  private async searchInternal(embedding: number[], topK: number): Promise<SearchResult[]> {
+  /**
+   * Perform ANN search internally, returning results scored as cosine similarity (0-1).
+   * This method is called by `search()` and handles the actual query logic.
+   * @param embedding - The query embedding vector.
+   * @param topK - The number of top results to return.
+   * @returns An array of search results with scores.
+   */
+  private async searchInternal(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]> {
     const db = await this.getDb();
     const tableNames = await db.tableNames();
     if (!tableNames.includes(TABLE_NAME)) return [];
@@ -405,10 +429,14 @@ export class LanceDbStore implements VectorStore {
     const count = await table.countRows();
     if (count === 0) return [];
 
-    const results = await table.search(embedding).limit(topK).toArray();
+    let query = table.vectorSearch(l2Normalize(embedding)).distanceType("cosine");
+    const whereClause = buildWhereClause(filter);
+    if (whereClause) query = query.where(whereClause);
+    const results = await query.limit(topK).toArray() as Record<string, unknown>[];
+
     return results
-      .map((row) => this.rowToSearchResult(row))
-      .filter((r) => r.chunk.id !== "__seed__");
+      .map((row: Record<string, unknown>) => this.rowToSearchResult(row))
+      .filter((r: SearchResult) => r.chunk.id !== "__seed__");
   }
 
   /**
@@ -476,10 +504,33 @@ export class LanceDbStore implements VectorStore {
   }
 
   /**
+   * Back up the chunks.lance directory before a destructive operation.
+   * Creates a timestamped copy at chunks.lance.backup-<ISO timestamp>.
+   * Skips if chunks.lance doesn't exist or noBackup is set.
+   * @returns The backup path, or null if nothing was backed up.
+   */
+  private async backupBeforeClear(noBackup?: boolean): Promise<string | null> {
+    if (noBackup) return null;
+    const lancePath = path.join(this.dbPath, "chunks.lance");
+    try {
+      await fs.access(lancePath);
+    } catch {
+      return null;
+    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = `${lancePath}.backup-${timestamp}`;
+    await fs.cp(lancePath, backupPath, { recursive: true });
+    return backupPath;
+  }
+
+  /**
    * Remove all chunks by dropping the underlying LanceDB table.
    * Falls back to deleting the database directory if dropTable fails.
+   * @param options - Optional. Set `{ noBackup: true }` to skip backup (test use only).
    */
-  async clear(): Promise<void> {
+  async clear(options?: { noBackup?: boolean }): Promise<void> {
+    const backup = await this.backupBeforeClear(options?.noBackup);
+    if (backup) console.warn(`[lancedb] Backed up chunks.lance to ${backup}`);
     await this.table?.close();
     this.table = null;
     try {
@@ -502,8 +553,25 @@ export class LanceDbStore implements VectorStore {
   /**
    * Completely remove the entire LanceDB database directory from disk.
    * All data is permanently lost.
+   * @param options - Optional. Set `{ noBackup: true }` to skip backup (test use only).
    */
-  async dropDatabase(): Promise<void> {
+  async dropDatabase(options?: { noBackup?: boolean }): Promise<void> {
+    if (!options?.noBackup) {
+      // Back up the entire store directory since dropDatabase deletes it.
+      try {
+        await fs.access(this.dbPath);
+      } catch {
+        // nothing to back up
+      }
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const backupPath = `${this.dbPath}.backup-${timestamp}`;
+        await fs.cp(this.dbPath, backupPath, { recursive: true });
+        console.warn(`[lancedb] Backed up database to ${backupPath}`);
+      } catch {
+        // backup failed, continue anyway
+      }
+    }
     this.table = null;
     this.db = null;
     try {
@@ -551,8 +619,6 @@ export class LanceDbStore implements VectorStore {
       try {
         table = await db.openTable(TABLE_NAME);
       } catch {
-        // Table is corrupt and can't even be opened — leave it be so the user
-        // can run `opencode-rag index --force` to rebuild with full control.
         console.error(
           "[lancedb] Corrupt table detected. Run 'opencode-rag index --force' to rebuild."
         );
@@ -563,8 +629,6 @@ export class LanceDbStore implements VectorStore {
       try {
         versions = await table.listVersions();
       } catch {
-        // Can't list versions (corrupt version manifest). Don't nuke data —
-        // let the user decide how to proceed.
         console.warn(
           "[lancedb] Could not list table versions for repair. " +
           "Run 'opencode-rag index --force' to rebuild if search results are incorrect."
@@ -572,7 +636,6 @@ export class LanceDbStore implements VectorStore {
         return false;
       }
 
-      // No previous version to roll back to — not a corruption we can fix.
       if (versions.length <= 1) {
         return false;
       }
@@ -592,7 +655,6 @@ export class LanceDbStore implements VectorStore {
         }
       }
 
-      // Tried all versions, none worked — report failure but don't destroy data.
       console.error(
         "[lancedb] All version-restore attempts failed. " +
         "Run 'opencode-rag index --force' to rebuild the index."
@@ -602,4 +664,29 @@ export class LanceDbStore implements VectorStore {
       return false;
     }
   }
+}
+
+/**
+ * Build a LanceDB SQL WHERE clause from a MetadataFilter.
+ * Handles path glob patterns and language filters with proper escaping.
+ */
+function buildWhereClause(filter?: MetadataFilter): string | undefined {
+  if (!filter) return undefined;
+  const parts: string[] = [];
+  if (filter.languages?.length) {
+    const langs = filter.languages.map((l) => `'${l.replace(/'/g, "''")}'`).join(",");
+    parts.push(`language IN (${langs})`);
+  }
+  if (filter.pathPatterns?.length) {
+    const likes = filter.pathPatterns.map((p) => {
+      const escaped = p.replace(/'/g, "''");
+      const like = escaped
+        .replace(/\*\*/g, "%")
+        .replace(/\*/g, "%")
+        .replace(/\?/g, "_");
+      return `filePath LIKE '${like}'`;
+    });
+    parts.push(`(${likes.join(" OR ")})`);
+  }
+  return parts.length ? parts.join(" AND ") : undefined;
 }

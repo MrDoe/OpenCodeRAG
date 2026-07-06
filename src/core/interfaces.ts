@@ -47,6 +47,10 @@ export interface SearchExplanation {
     rawKeywordScore: number;
     /** Weight applied to keyword score during fusion (0-1). */
     keywordWeight: number;
+    /** Rank (0-indexed) in the vector store results. */
+    vectorRank?: number;
+    /** Rank (0-indexed) in the keyword index results. */
+    keywordRank?: number;
   };
   /** Query terms that matched in the keyword index, if hybrid search was used. */
   matchedTerms?: string[];
@@ -102,7 +106,7 @@ export interface KeywordIndex {
   /** Remove all entries for a given file path from the index. */
   removeByFilePath(filePath: string): void;
   /** Search the index for the top-K matching chunks. */
-  search(query: string, topK: number): SearchResult[];
+  search(query: string, topK: number, filter?: MetadataFilter): SearchResult[];
   /** Get the terms from a query that matched a specific chunk. */
   getMatchedTerms(query: string, chunkId: string): string[];
   /** Clear all indexed data. */
@@ -119,6 +123,8 @@ export interface VectorStore {
   addChunks(chunks: Chunk[]): Promise<void>;
   /** Search for the top-K nearest neighbor chunks by embedding similarity. */
   search(embedding: number[], topK: number): Promise<SearchResult[]>;
+  /** Search with optional metadata filtering. */
+  searchWithFilter(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]>;
   /** Return the total number of stored chunks. */
   count(): Promise<number>;
   /** Remove all stored data. */
@@ -129,6 +135,14 @@ export interface VectorStore {
   getFilePaths(): Promise<string[]>;
   /** Release any held resources and close the store. */
   close(): Promise<void>;
+}
+
+/** Filter criteria for narrowing search results by file path patterns or language. */
+export interface MetadataFilter {
+  /** Glob-style path patterns (e.g. "src/**", "lib/auth/*"). */
+  pathPatterns?: string[];
+  /** Language identifiers (e.g. ["typescript", "tsx"]). */
+  languages?: string[];
 }
 
 /** Callback interface for reporting indexing progress to the UI or CLI. */

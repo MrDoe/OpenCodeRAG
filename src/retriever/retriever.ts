@@ -1,12 +1,15 @@
 /**
  * @fileoverview Performs hybrid vector-keyword retrieval with configurable scoring and explanation.
  */
-import type { EmbeddingProvider, KeywordIndex, VectorStore, SearchResult, SearchExplanation } from "../core/interfaces.js";
+import type { EmbeddingProvider, KeywordIndex, VectorStore, SearchResult, MetadataFilter } from "../core/interfaces.js";
 
 /** Multiplier applied to topK when fetching raw results from vector/keyword stores.
  *  We request extra results up-front, then after hybrid fusion + minScore filtering,
  *  we slice back to the requested topK. */
 const FETCH_OVERFETCH_FACTOR = 3;
+const RRF_K = 60;
+/** Multiply raw RRF scores by (K+1) to normalize to ~[0,1]. */
+const RRF_NORMALIZE = RRF_K + 1;
 
 /** Options controlling the retrieval behavior. */
 export interface RetrieveOptions {
@@ -18,6 +21,7 @@ export interface RetrieveOptions {
   hybridEnabled?: boolean;
   queryPrefix?: string;
   explain?: boolean;
+  filter?: MetadataFilter;
 }
 
 /**
@@ -54,11 +58,11 @@ export async function retrieve(
       return [];
     }
 
-    const vectorResults = await store.search(embedding as number[], topK * FETCH_OVERFETCH_FACTOR);
+    const vectorResults = await store.searchWithFilter(embedding as number[], topK * FETCH_OVERFETCH_FACTOR, options.filter);
 
     let keywordResults: SearchResult[] = [];
     if (options.keywordIndex && options.hybridEnabled !== false) {
-      keywordResults = options.keywordIndex.search(query, topK * FETCH_OVERFETCH_FACTOR);
+      keywordResults = options.keywordIndex.search(query, topK * FETCH_OVERFETCH_FACTOR, options.filter);
     }
 
     if (keywordResults.length === 0) {
@@ -79,84 +83,41 @@ export async function retrieve(
       }
       return filtered;
     }
+    const vRank = new Map<string, number>(vectorResults.map((r, i) => [r.chunk.id, i]));
+    const kRank = new Map<string, number>(keywordResults.map((r, i) => [r.chunk.id, i]));
 
-    const kwTopScore = keywordResults.length > 0 ? keywordResults[0]!.score : 1;
-    const vTopScore = vectorResults.length > 0 ? vectorResults[0]!.score : 1;
-
-    const combined = new Map<string, {
-      chunk: SearchResult["chunk"];
-      vScore: number;
-      kScore: number;
-      rawVScore: number;
-      rawKScore: number;
-    }>();
-
-    for (const r of vectorResults) {
-      combined.set(r.chunk.id, {
-        chunk: r.chunk,
-        vScore: r.score,
-        kScore: 0,
-        rawVScore: r.score,
-        rawKScore: 0,
-      });
-    }
-
-    for (const r of keywordResults) {
-      const existing = combined.get(r.chunk.id);
-      const normalizedK = kwTopScore > 0 ? r.score / kwTopScore : 0;
-      if (existing) {
-        existing.kScore = normalizedK;
-        existing.rawKScore = r.score;
-      } else {
-        combined.set(r.chunk.id, {
-          chunk: r.chunk,
-          vScore: 0,
-          kScore: normalizedK,
-          rawVScore: 0,
-          rawKScore: r.score,
-        });
-      }
-    }
+    const chunkById = new Map<string, SearchResult>();
+    for (const r of vectorResults) chunkById.set(r.chunk.id, r);
+    for (const r of keywordResults) if (!chunkById.has(r.chunk.id)) chunkById.set(r.chunk.id, r);
 
     const kw = options.keywordWeight ?? 0.4;
-    const combinedResults: SearchResult[] = [...combined.values()]
-      .map((entry) => {
-        const hasVector = entry.vScore > 0;
-        const hasKeyword = entry.kScore > 0;
-        const normV = vTopScore > 0 ? entry.vScore / vTopScore : 0;
-        const score = hasVector && hasKeyword
-          ? (1 - kw) * normV + kw * entry.kScore
-          : hasVector
-            ? (1 - kw) * normV
-            : entry.kScore * 0.9;
-        const result: SearchResult = {
-          chunk: entry.chunk,
-          score,
+    const allIds = new Set<string>([...vRank.keys(), ...kRank.keys()]);
+    const combinedResults: SearchResult[] = [...allIds].map((id) => {
+      const vR = vRank.get(id);
+      const kR = kRank.get(id);
+      const vContrib = vR !== undefined ? ((1 - kw) * RRF_NORMALIZE) / (RRF_K + vR + 1) : 0;
+      const kContrib = kR !== undefined ? (kw * RRF_NORMALIZE) / (RRF_K + kR + 1) : 0;
+      const score = vContrib + kContrib;
+      const result: SearchResult = { chunk: chunkById.get(id)!.chunk, score };
+      if (options.explain) {
+        result.explanation = {
+          scoreBreakdown: {
+            vectorScore: vContrib,
+            keywordScore: kContrib,
+            rawVectorScore: vR !== undefined ? vectorResults[vR]!.score : 0,
+            rawKeywordScore: kR !== undefined ? keywordResults[kR]!.score : 0,
+            keywordWeight: kw,
+            vectorRank: vR,
+            keywordRank: kR,
+          },
         };
-
-        if (options.explain) {
-          const explanation: SearchExplanation = {
-            scoreBreakdown: {
-              vectorScore: normV,
-              keywordScore: entry.kScore,
-              rawVectorScore: entry.rawVScore,
-              rawKeywordScore: entry.rawKScore,
-              keywordWeight: kw,
-            },
-          };
-
-          if (options.keywordIndex && entry.rawKScore > 0) {
-            const terms = options.keywordIndex.getMatchedTerms(query, entry.chunk.id);
-            if (terms.length > 0) {
-              explanation.matchedTerms = terms;
-            }
-          }
-
-          result.explanation = explanation;
+        if (options.keywordIndex && kR !== undefined) {
+          const terms = options.keywordIndex.getMatchedTerms(query, id);
+          if (terms.length > 0) result.explanation.matchedTerms = terms;
         }
-
-        return result;
-      })
+      }
+      return result;
+    })
       .filter((r) => r.score >= minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);

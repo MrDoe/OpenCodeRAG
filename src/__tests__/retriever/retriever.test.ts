@@ -25,6 +25,9 @@ function makeStore(results: SearchResult[]): VectorStore {
     async search(_embedding: number[], _topK: number): Promise<SearchResult[]> {
       return results;
     },
+    async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+      return this.search(embedding, topK);
+    },
     async count(): Promise<number> {
       return results.length;
     },
@@ -56,7 +59,9 @@ describe("retrieve", () => {
 
     const results = await retrieve("test query", embedder, store);
     assert.equal(results.length, 1);
-    assert.equal(results[0]!.score, 0.95);
+    // Normalized RRF for single vector result at rank 0: (1-0.4)*(60+1)/(60+0+1) = 0.6
+    const expectedScore = (1 - 0.4);
+    assert.ok(Math.abs(results[0]!.score - expectedScore) < 1e-10);
     assert.equal(results[0]!.chunk.id, "chunk-1");
   });
 
@@ -85,6 +90,9 @@ describe("retrieve", () => {
         receivedTopK = topK;
         return [];
       },
+      async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+        return this.search(embedding, topK);
+      },
       async count(): Promise<number> {
         return 0;
       },
@@ -108,6 +116,9 @@ describe("retrieve", () => {
         receivedTopK = topK;
         return [];
       },
+      async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
+        return this.search(embedding, topK);
+      },
       async count(): Promise<number> {
         return 0;
       },
@@ -130,10 +141,12 @@ describe("retrieve", () => {
       { score: 0.7, chunk: { id: "c", content: "mid", metadata: { filePath: "c.ts", startLine: 1, endLine: 2, language: "ts" } } },
     ]);
 
-    const results = await retrieve("query", embedder, store, { minScore: 0.6 });
+    const results = await retrieve("query", embedder, store, { minScore: 0.59 });
     assert.equal(results.length, 2);
-    assert.equal(results[0]!.score, 0.9);
-    assert.equal(results[1]!.score, 0.7);
+    // Normalized RRF: rank 0 → 0.6*61/61 = 0.6, rank 1 → 0.6*61/62
+    const expectedScores = [(1 - 0.4), (1 - 0.4) * 61 / (60 + 1 + 1)];
+    assert.ok(Math.abs(results[0]!.score - expectedScores[0]!) < 1e-10);
+    assert.ok(Math.abs(results[1]!.score - expectedScores[1]!) < 1e-10);
   });
 
   it("returns all results when minScore is 0", async () => {
@@ -184,9 +197,10 @@ describe("retrieve", () => {
       ]);
       const results = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0.4, minScore: 0 });
       assert.equal(results.length, 2);
-      // Keyword-only chunk (b) ranks highest because its exact keyword match gives kScore 1.0
-      // vs vector-only (a) at vScore 0.8 (fix: single-source results are no longer artificially capped)
-      assert.equal(results[0]!.chunk.id, "b");
+      // With RRF and kw=0.4, vector-only (a) at rank 0 contributes (1-0.4)/(60+1) = 0.6/61
+      // vs keyword-only (b) at rank 0 contributes 0.4/(60+1) = 0.4/61
+      // vector-only ranks higher since vWeight > kWeight for equal ranks
+      assert.equal(results[0]!.chunk.id, "a");
     });
 
     it("respects keywordWeight parameter", async () => {
@@ -209,7 +223,7 @@ describe("retrieve", () => {
         { score: 0.1, chunk: { id: "a", content: "low relevance", metadata: { filePath: "a.ts", startLine: 1, endLine: 2, language: "ts" } } },
       ]);
       const ki = makeKeywordIndex([]);
-      const results = await retrieve("test", embedder, store, { keywordIndex: ki, minScore: 0.5 });
+      const results = await retrieve("test", embedder, store, { keywordIndex: ki, minScore: 0.7 });
       assert.equal(results.length, 0);
     });
 
@@ -248,12 +262,13 @@ describe("retrieve", () => {
         minScore: 0,
       });
       assert.equal(results.length, 2);
-      // Chunk "a" is hybrid: (1-0.4)*normV + 0.4*kScore
-      // vTopScore = 0.8, normV(a) = 0.8/0.8 = 1.0, score = 0.6*1.0 + 0.4*kScore
-      // Chunk "b" is vector-only: (1-0.4)*normV(b) = 0.6*(0.4/0.8) = 0.3
+      // With RRF, chunk "a" (hybrid, rank 0 in both) gets score = (1-0.4)/(60+1) + 0.4/(60+1)
+      // Chunk "b" (vector-only, rank 1) gets score = (1-0.4)/(60+2)
       const chunkA = results.find((r) => r.chunk.id === "a");
+      const chunkB = results.find((r) => r.chunk.id === "b");
       assert.notEqual(chunkA, undefined);
-      assert.ok(chunkA!.score > 0.3, "hybrid result should rank above vector-only");
+      assert.notEqual(chunkB, undefined);
+      assert.ok(chunkA!.score > chunkB!.score, "hybrid result should rank above vector-only");
     });
   });
 
@@ -293,12 +308,16 @@ describe("retrieve", () => {
       assert.equal(results.length, 1);
       const exp = results[0]!.explanation;
       assert.notEqual(exp, undefined);
-      assert.equal(exp!.scoreBreakdown.vectorScore, 0.8);
       assert.equal(exp!.scoreBreakdown.rawVectorScore, 0.8);
       assert.equal(exp!.scoreBreakdown.keywordScore, 0);
       assert.equal(exp!.scoreBreakdown.rawKeywordScore, 0);
       assert.equal(exp!.scoreBreakdown.keywordWeight, 0.4);
       assert.equal(exp!.matchedTerms, undefined);
+      assert.equal(exp!.scoreBreakdown.vectorRank, 0);
+      assert.equal(exp!.scoreBreakdown.keywordRank, undefined);
+      // Normalized RRF: (1-0.4)*(60+1)/(60+0+1) = 0.6
+      const expectedVScore = (1 - 0.4);
+      assert.ok(Math.abs(exp!.scoreBreakdown.vectorScore - expectedVScore) < 1e-10);
     });
 
     it("populates explanation with keyword scores when keywordIndex provided", async () => {
@@ -315,14 +334,16 @@ describe("retrieve", () => {
       assert.notEqual(chunkA, undefined);
       const exp = chunkA!.explanation;
       assert.notEqual(exp, undefined);
-      // vectorScore is now normalized by vTopScore (0.8/0.8 = 1.0)
-      assert.equal(exp!.scoreBreakdown.vectorScore, 1.0);
       assert.equal(exp!.scoreBreakdown.rawVectorScore, 0.8);
       assert.equal(exp!.scoreBreakdown.keywordWeight, 0.4);
       assert.ok(typeof exp!.scoreBreakdown.keywordScore === "number");
       assert.ok(typeof exp!.scoreBreakdown.rawKeywordScore === "number");
+      // RRF: chunk "a" is vector-only at rank 0, no keyword match
+      assert.equal(exp!.scoreBreakdown.vectorRank, 0);
+      assert.equal(exp!.scoreBreakdown.keywordRank, undefined);
+      const expectedVScore = (1 - 0.4);
+      assert.ok(Math.abs(exp!.scoreBreakdown.vectorScore - expectedVScore) < 1e-10);
     });
-
     it("includes matchedTerms when keywordIndex matches the chunk", async () => {
       const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
       const store = makeStore([
@@ -380,7 +401,8 @@ describe("retrieve", () => {
       const results = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0.4, explain: true, minScore: 0 });
       const r = results[0]!;
       const exp = r.explanation!;
-      const expectedCombined = (1 - 0.4) * exp.scoreBreakdown.vectorScore + 0.4 * exp.scoreBreakdown.keywordScore;
+      // With RRF, the combined score is the sum of RRF contributions
+      const expectedCombined = exp.scoreBreakdown.vectorScore + exp.scoreBreakdown.keywordScore;
       assert.ok(Math.abs(r.score - expectedCombined) < 1e-10, `expected ${expectedCombined}, got ${r.score}`);
     });
   });

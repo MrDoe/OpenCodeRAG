@@ -100,9 +100,7 @@
     "web-tree-sitter": "^0.26.9",
     "word-extractor": "^1.0.4"
   },
-  "optionalDependencies": {
-    "canvas": "^3.2.3"
-  },
+
   "devDependencies": {
     "@opencode-ai/plugin": "1.15.5",
     "@opentui/core": "^0.4.0",
@@ -125,7 +123,6 @@
     "web-tree-sitter": "$web-tree-sitter"
   },
   "allowScripts": {
-    "canvas": true,
     "esbuild": true,
     "msgpackr-extract": true,
     "tree-sitter-cli": true
