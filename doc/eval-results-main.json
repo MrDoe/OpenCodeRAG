@@ -1,7 +1,7 @@
 {
   "branch": "main",
   "commit": "734fc60",
-  "timestamp": "2026-07-06T08:51:02.551Z",
+  "timestamp": "2026-07-06T09:23:05.989Z",
   "config": {
     "embeddingProvider": "ollama",
     "embeddingModel": "qwen3-embedding:0.6b",
@@ -16,103 +16,135 @@
       "query": "How does the retrieval pipeline work end-to-end?",
       "queryIndex": 0,
       "resultCount": 20,
-      "latencyMs": 152.2,
+      "latencyMs": 264.3,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.577182422078366,
+          "score": 0.8956337497907705,
           "filePath": "src/plugin.ts",
-          "startLine": 343,
-          "endLine": 367,
+          "startLine": 499,
+          "endLine": 598,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.577182422078366,
-            "keywordScore": 0,
-            "rawVectorScore": 0.577182422078366,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8260562496512841,
+            "keywordScore": 1,
+            "rawVectorScore": 0.4761329004705189,
+            "rawKeywordScore": 20.210864139000947,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "retrieval",
+              "work",
+              "to"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.56318317222156,
+          "score": 0.7981830269482006,
           "filePath": "src/plugin.ts",
-          "startLine": 321,
-          "endLine": 336,
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.56318317222156,
-            "keywordScore": 0,
-            "rawVectorScore": 0.56318317222156,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.87909555596053,
+            "keywordScore": 0.6768142334297068,
+            "rawVectorScore": 0.5067043763992178,
+            "rawKeywordScore": 13.679000519189877,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "to"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.5405678599185256,
-          "filePath": "src/opencode/read-fallback.ts",
-          "startLine": 10,
-          "endLine": 17,
+          "score": 0.7163290193532116,
+          "filePath": "src/plugin.ts",
+          "startLine": 599,
+          "endLine": 698,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5405678599185256,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5405678599185256,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9130437646666167,
+            "keywordScore": 0.4212569013831039,
+            "rawVectorScore": 0.526271880529634,
+            "rawKeywordScore": 8.513966001470433,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "retrieval",
+              "end",
+              "to"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5348612372239245,
-          "filePath": "src/plugin.ts",
-          "startLine": 301,
-          "endLine": 315,
+          "score": 0.7112593248675941,
+          "filePath": "src/core/bootstrap.ts",
+          "startLine": 36,
+          "endLine": 53,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5348612372239245,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5348612372239245,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.7902881387417713,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 15.97240620277387,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "pipeline",
+              "pipelin",
+              "to"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5266452642025707,
-          "filePath": "src/plugin.ts",
-          "startLine": 71,
-          "endLine": 80,
+          "score": 0.7020455880709523,
+          "filePath": "src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5266452642025707,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5266452642025707,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8892380458628514,
+            "keywordScore": 0.4212569013831039,
+            "rawVectorScore": 0.512550434869478,
+            "rawKeywordScore": 8.513966001470433,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "retrieval",
+              "end",
+              "to"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 9,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 16,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -126,103 +158,137 @@
       "query": "How does the plugin interact with chat messages?",
       "queryIndex": 1,
       "resultCount": 20,
-      "latencyMs": 148.9,
+      "latencyMs": 166.9,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5365629334612002,
-          "filePath": "src/plugin.ts",
-          "startLine": 460,
-          "endLine": 484,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5365629334612002,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5365629334612002,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.5271891880002136,
-          "filePath": "src/describer/anthropic.ts",
-          "startLine": 10,
-          "endLine": 13,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5271891880002136,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5271891880002136,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5258237833833236,
+          "score": 0.9879911756014136,
           "filePath": "src/plugin.ts",
           "startLine": 799,
           "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5258237833833236,
-            "keywordScore": 0,
+            "vectorScore": 0.9799852926690226,
+            "keywordScore": 1,
             "rawVectorScore": 0.5258237833833236,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 22.625276878585613,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "plugin",
+              "with",
+              "chat",
+              "message"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9017268168757648,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9293384795590002,
+            "keywordScore": 0.8603093228509116,
+            "rawVectorScore": 0.4986485807705488,
+            "rawKeywordScore": 19.464736630730375,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "plugin",
+              "with",
+              "message"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.757291060415313,
+          "filePath": "src/plugin.ts",
+          "startLine": 699,
+          "endLine": 798,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.967850329451431,
+            "keywordScore": 0.4414521568611359,
+            "rawVectorScore": 0.5193126119218489,
+            "rawKeywordScore": 9.987977277632007,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "plugin",
+              "chat",
+              "message"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.523499772935638,
+          "score": 0.756571764267638,
           "filePath": "src/describer/describer.ts",
-          "startLine": 15,
-          "endLine": 18,
+          "startLine": 92,
+          "endLine": 139,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.523499772935638,
-            "keywordScore": 0,
-            "rawVectorScore": 0.523499772935638,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9344966108141333,
+            "keywordScore": 0.4896844944478949,
+            "rawVectorScore": 0.5014162428079809,
+            "rawKeywordScore": 11.079247270033841,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "with",
+              "chat",
+              "messages",
+              "message"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.519862346858401,
-          "filePath": "src/types/opencode-plugin.d.ts",
-          "startLine": 25,
-          "endLine": 53,
+          "score": 0.7359841953861253,
+          "filePath": "src/describer/anthropic.ts",
+          "startLine": 39,
+          "endLine": 45,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.519862346858401,
-            "keywordScore": 0,
-            "rawVectorScore": 0.519862346858401,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9690299054549323,
+            "keywordScore": 0.38641563028291465,
+            "rawVectorScore": 0.519945528682528,
+            "rawKeywordScore": 8.742760625364115,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chat",
+              "messages",
+              "message"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 4,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 17,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 17,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -236,103 +302,143 @@
       "query": "How does the keyword index combine with vector search?",
       "queryIndex": 2,
       "resultCount": 20,
-      "latencyMs": 143.4,
+      "latencyMs": 134.2,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5593279003513683,
+          "score": 0.8969078502224921,
           "filePath": "src/plugin.ts",
-          "startLine": 321,
-          "endLine": 336,
+          "startLine": 499,
+          "endLine": 598,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5593279003513683,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5593279003513683,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8281797503708201,
+            "keywordScore": 1,
+            "rawVectorScore": 0.4632240408884311,
+            "rawKeywordScore": 21.265616832688416,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "keyword",
+              "index",
+              "with",
+              "search"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.5535023376982596,
+          "score": 0.8525967939232262,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8335882844540844,
+            "keywordScore": 0.881109558126939,
+            "rawVectorScore": 0.46624918490120215,
+            "rawKeywordScore": 18.737338250746888,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "index",
+              "with",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.812657136040964,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9210947434982968,
+            "keywordScore": 0.6500007248549649,
+            "rawVectorScore": 0.5151939889055844,
+            "rawKeywordScore": 13.82266635573541,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "keyword",
+              "index",
+              "with",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.8098024887487592,
           "filePath": "src/mcp/handlers.ts",
           "startLine": 184,
           "endLine": 236,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5535023376982596,
-            "keywordScore": 0,
+            "vectorScore": 0.989584709345897,
+            "keywordScore": 0.5401291578530522,
             "rawVectorScore": 0.5535023376982596,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5480133473519115,
-          "filePath": "src/web/api.ts",
-          "startLine": 245,
-          "endLine": 275,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5480133473519115,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5480133473519115,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.5468181376103564,
-          "filePath": "src/plugin.ts",
-          "startLine": 343,
-          "endLine": 367,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5468181376103564,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5468181376103564,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 11.486179711065684,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "keyword",
+              "index",
+              "vector",
+              "search"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5446637871744806,
-          "filePath": "src/plugin.ts",
-          "startLine": 1044,
-          "endLine": 1061,
+          "score": 0.7831734892429871,
+          "filePath": "src/eval/run-token-test.ts",
+          "startLine": 69,
+          "endLine": 168,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5446637871744806,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5446637871744806,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8719553321683353,
+            "keywordScore": 0.6500007248549649,
+            "rawVectorScore": 0.48770894514189483,
+            "rawKeywordScore": 13.82266635573541,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "keyword",
+              "index",
+              "with",
+              "vector",
+              "search"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 8,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 18,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 13,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -346,103 +452,132 @@
       "query": "Where is the embedder factory defined?",
       "queryIndex": 3,
       "resultCount": 20,
-      "latencyMs": 131.3,
+      "latencyMs": 139.7,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5817631242382381,
+          "score": 0.9,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 528,
+          "endLine": 627,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 21.01466627637615,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the",
+              "defined",
+              "defin"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.7321056306800141,
           "filePath": "src/embedder/factory.ts",
           "startLine": 23,
           "endLine": 46,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5817631242382381,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5817631242382381,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 1,
+            "keywordScore": 0.3302640767000352,
+            "rawVectorScore": 0.5827979045668126,
+            "rawKeywordScore": 6.940389354926737,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "embedder",
+              "embedd"
+            ]
           }
         },
         {
-          "rank": 1,
-          "score": 0.5447795419845345,
+          "rank": 2,
+          "score": 0.7288616410586475,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7869939895384463,
+            "keywordScore": 0.6416631183389491,
+            "rawVectorScore": 0.45865844800968253,
+            "rawKeywordScore": 13.484336293751872,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the",
+              "embedder",
+              "embedd"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.7207378964262317,
+          "filePath": "src/indexer/worker.ts",
+          "startLine": 388,
+          "endLine": 436,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.816020669124496,
+            "keywordScore": 0.577813737378835,
+            "rawVectorScore": 0.47557513604896456,
+            "rawKeywordScore": 12.14256286092187,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "embedder",
+              "embedd",
+              "factory"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.6572471776986416,
           "filePath": "src/core/bootstrap.ts",
           "startLine": 56,
           "endLine": 66,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5447795419845345,
-            "keywordScore": 0,
+            "vectorScore": 0.9347657871032725,
+            "keywordScore": 0.24096926359169515,
             "rawVectorScore": 0.5447795419845345,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5069139060553813,
-          "filePath": "src/embedder/factory.ts",
-          "startLine": 62,
-          "endLine": 101,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5069139060553813,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5069139060553813,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.5038618802536617,
-          "filePath": "src/embedder/health.ts",
-          "startLine": 45,
-          "endLine": 61,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5038618802536617,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5038618802536617,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.5012114570379301,
-          "filePath": "src/embedder/health.ts",
-          "startLine": 397,
-          "endLine": 404,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5012114570379301,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5012114570379301,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 5.0638886572435915,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 5,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 6,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -456,103 +591,129 @@
       "query": "Where is the LanceDB store implementation?",
       "queryIndex": 4,
       "resultCount": 20,
-      "latencyMs": 144.1,
+      "latencyMs": 130.9,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.572806989541465,
-          "filePath": "src/web/api.ts",
-          "startLine": 165,
-          "endLine": 186,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.572806989541465,
-            "keywordScore": 0,
-            "rawVectorScore": 0.572806989541465,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 15.852658307445505,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the",
+              "store",
+              "implementation"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.5645650973168209,
-          "filePath": "src/web/api.ts",
-          "startLine": 189,
-          "endLine": 192,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5645650973168209,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5645650973168209,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5554483210112929,
+          "score": 0.8738839055211776,
           "filePath": "src/vectorstore/factory.ts",
           "startLine": 22,
           "endLine": 38,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5554483210112929,
-            "keywordScore": 0,
+            "vectorScore": 0.9708881221900386,
+            "keywordScore": 0.7283775805178859,
             "rawVectorScore": 0.5554483210112929,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 11.546720902753922,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "lancedb",
+              "lance",
+              "store"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.7707563352787664,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 0.8563959280875182,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 13.576152023859098,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "lancedb",
+              "lance",
+              "store"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5309788478689071,
+          "score": 0.7499034097938679,
           "filePath": "src/web/api.ts",
-          "startLine": 230,
-          "endLine": 242,
+          "startLine": 165,
+          "endLine": 186,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5309788478689071,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5309788478689071,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 1,
+            "keywordScore": 0.37475852448467,
+            "rawVectorScore": 0.5721033230464954,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "lance",
+              "store"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.522365564132601,
+          "score": 0.7414482052936453,
           "filePath": "src/web/api.ts",
-          "startLine": 199,
-          "endLine": 227,
+          "startLine": 189,
+          "endLine": 192,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.522365564132601,
-            "keywordScore": 0,
-            "rawVectorScore": 0.522365564132601,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.985907992499629,
+            "keywordScore": 0.37475852448467,
+            "rawVectorScore": 0.564041238727137,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "lance",
+              "store"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 3,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 10,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 8,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -566,103 +727,153 @@
       "query": "Find all usages of the retrieve function",
       "queryIndex": 5,
       "resultCount": 20,
-      "latencyMs": 194.3,
+      "latencyMs": 136.1,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5550896469652798,
+          "score": 1,
           "filePath": "src/mcp/handlers.ts",
           "startLine": 366,
           "endLine": 465,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5550896469652798,
-            "keywordScore": 0,
+            "vectorScore": 1,
+            "keywordScore": 1,
             "rawVectorScore": 0.5550896469652798,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 23.679610717842714,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "the",
+              "retrieve",
+              "retriev",
+              "function"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.5464938200120028,
-          "filePath": "src/opencode/tools.ts",
-          "startLine": 293,
-          "endLine": 299,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5464938200120028,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5464938200120028,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5430671078518944,
+          "score": 0.9401111688239592,
           "filePath": "src/opencode/tools.ts",
           "startLine": 428,
           "endLine": 527,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5430671078518944,
-            "keywordScore": 0,
+            "vectorScore": 0.9783412658133445,
+            "keywordScore": 0.8827660233398813,
             "rawVectorScore": 0.5430671078518944,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 20.903555787626445,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "the",
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.9147751111453262,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8579585185755436,
+            "keywordScore": 1,
+            "rawVectorScore": 0.476243891186953,
+            "rawKeywordScore": 23.679610717842714,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "the",
+              "retrieve",
+              "retriev",
+              "function"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5337774623648306,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 290,
-          "endLine": 299,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 699,
+          "endLine": 798,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5337774623648306,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5337774623648306,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 23.679610717842714,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "the",
+              "retrieve",
+              "retriev",
+              "function"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5324106228403723,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 280,
-          "endLine": 287,
+          "score": 0.8655844861745017,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 293,
+          "endLine": 299,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5324106228403723,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5324106228403723,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9845145248154579,
+            "keywordScore": 0.6871894282130675,
+            "rawVectorScore": 0.5464938200120028,
+            "rawKeywordScore": 16.27237814950236,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "retrieve",
+              "retriev"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 6,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 11,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 12,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -676,103 +887,149 @@
       "query": "Find all usages of SearchResult type",
       "queryIndex": 6,
       "resultCount": 20,
-      "latencyMs": 135,
+      "latencyMs": 162,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5757054205071269,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 290,
-          "endLine": 299,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5757054205071269,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5757054205071269,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.5683594438123775,
+          "score": 0.9923440255035864,
           "filePath": "src/mcp/handlers.ts",
           "startLine": 366,
           "endLine": 465,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5683594438123775,
-            "keywordScore": 0,
+            "vectorScore": 0.9872400425059772,
+            "keywordScore": 1,
             "rawVectorScore": 0.5683594438123775,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 23.238308700996786,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "searchresult",
+              "search",
+              "result",
+              "type"
+            ]
           }
         },
         {
-          "rank": 2,
-          "score": 0.566144591136295,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 176,
-          "endLine": 181,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.566144591136295,
-            "keywordScore": 0,
-            "rawVectorScore": 0.566144591136295,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.5623030607232565,
+          "rank": 1,
+          "score": 0.8831435713479681,
           "filePath": "src/opencode/tools.ts",
           "startLine": 528,
           "endLine": 627,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5623030607232565,
-            "keywordScore": 0,
+            "vectorScore": 0.976720108398381,
+            "keywordScore": 0.7427787657723488,
             "rawVectorScore": 0.5623030607232565,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 17.260922255563226,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "search",
+              "result",
+              "type"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.8811614245995276,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9342051230266923,
+            "keywordScore": 0.8015958769587807,
+            "rawVectorScore": 0.5378269531919941,
+            "rawKeywordScore": 18.62773244221438,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "searchresult",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.8733757083360099,
+          "filePath": "src/plugin.ts",
+          "startLine": 412,
+          "endLine": 448,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9212289292541626,
+            "keywordScore": 0.8015958769587807,
+            "rawVectorScore": 0.5303564880995979,
+            "rawKeywordScore": 18.62773244221438,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "searchresult",
+              "search",
+              "result"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5618906907763801,
+          "score": 0.8511362634456433,
           "filePath": "src/mcp/handlers.ts",
           "startLine": 280,
           "endLine": 287,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5618906907763801,
-            "keywordScore": 0,
+            "vectorScore": 0.9760038220265883,
+            "keywordScore": 0.663834925574226,
             "rawVectorScore": 0.5618906907763801,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 15.426400926997088,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "search",
+              "result"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 5,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 10,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 13,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -786,99 +1043,136 @@
       "query": "How does the chunker factory register new languages?",
       "queryIndex": 7,
       "resultCount": 20,
-      "latencyMs": 134,
+      "latencyMs": 139,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.6071041818181423,
+          "score": 0.9,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 17.589941781034785,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "chunker",
+              "chunk",
+              "factory",
+              "register",
+              "regist"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.899216117776033,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 0.9991290197511479,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 17.574621289165044,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "chunk",
+              "new",
+              "language"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.8826921876157048,
           "filePath": "src/chunker/factory.ts",
           "startLine": 97,
           "endLine": 115,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6071041818181423,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6071041818181423,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.569802700076729,
-          "filePath": "src/chunker/base.ts",
-          "startLine": 57,
-          "endLine": 64,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.569802700076729,
-            "keywordScore": 0,
-            "rawVectorScore": 0.569802700076729,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5602417787656173,
-          "filePath": "src/chunker/grammar.ts",
-          "startLine": 87,
-          "endLine": 97,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5602417787656173,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5602417787656173,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 1,
+            "keywordScore": 0.7067304690392618,
+            "rawVectorScore": 0.6069949286166946,
+            "rawKeywordScore": 12.431347805284023,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "register",
+              "regist",
+              "language"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5455432515897193,
-          "filePath": "src/chunker/grammar.ts",
-          "startLine": 110,
-          "endLine": 123,
+          "score": 0.8736169390632975,
+          "filePath": "src/chunker/loader.ts",
+          "startLine": 19,
+          "endLine": 43,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5455432515897193,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5455432515897193,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8854996031080753,
+            "keywordScore": 0.8557929429961306,
+            "rawVectorScore": 0.5374937683786976,
+            "rawKeywordScore": 15.053348043922359,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "does",
+              "chunker",
+              "chunk",
+              "register",
+              "regist"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5426944664638417,
-          "filePath": "src/chunker/factory.ts",
-          "startLine": 134,
-          "endLine": 136,
+          "score": 0.7914916429212517,
+          "filePath": "src/chunker/loader.ts",
+          "startLine": 56,
+          "endLine": 70,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5426944664638417,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5426944664638417,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8633489396363144,
+            "keywordScore": 0.6837056978486575,
+            "rawVectorScore": 0.5240484279858436,
+            "rawKeywordScore": 12.026343420519646,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "register",
+              "regist",
+              "new"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 4,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 5,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
@@ -896,104 +1190,145 @@
       "query": "What is the default minScore configuration?",
       "queryIndex": 8,
       "resultCount": 20,
-      "latencyMs": 134.4,
+      "latencyMs": 136.3,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.48892181029471843,
-          "filePath": "src/chunker/fallback.ts",
-          "startLine": 15,
-          "endLine": 17,
+          "score": 0.9136535889903628,
+          "filePath": "src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.48892181029471843,
-            "keywordScore": 0,
-            "rawVectorScore": 0.48892181029471843,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9363405588683713,
+            "keywordScore": 0.8796231341733498,
+            "rawVectorScore": 0.4578616343962562,
+            "rawKeywordScore": 18.85150560456846,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "default",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.48419510216855544,
-          "filePath": "src/retriever/context-optimizer.ts",
-          "startLine": 49,
-          "endLine": 51,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 899,
+          "endLine": 998,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.48419510216855544,
-            "keywordScore": 0,
-            "rawVectorScore": 0.48419510216855544,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 21.431343574523744,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "what",
+              "is",
+              "the",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.48220511569439745,
-          "filePath": "src/describer/anthropic.ts",
-          "startLine": 34,
-          "endLine": 36,
+          "score": 0.8873812656718175,
+          "filePath": "src/tui.ts",
+          "startLine": 427,
+          "endLine": 526,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.48220511569439745,
-            "keywordScore": 0,
-            "rawVectorScore": 0.48220511569439745,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9509258235828283,
+            "keywordScore": 0.7920644288053013,
+            "rawVectorScore": 0.46499369022467635,
+            "rawKeywordScore": 16.975004906885314,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "default",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.47732997731936505,
-          "filePath": "src/embedder/cohere.ts",
-          "startLine": 26,
-          "endLine": 32,
+          "score": 0.8696312452084856,
+          "filePath": "src/eval/run-token-test.ts",
+          "startLine": 169,
+          "endLine": 268,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.47732997731936505,
-            "keywordScore": 0,
-            "rawVectorScore": 0.47732997731936505,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9356512789634122,
+            "keywordScore": 0.7706011945760958,
+            "rawVectorScore": 0.45752458307358096,
+            "rawKeywordScore": 16.515018959898732,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.476834340498025,
+          "score": 0.8578263439935989,
           "filePath": "src/plugin.ts",
-          "startLine": 412,
-          "endLine": 448,
+          "startLine": 343,
+          "endLine": 367,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.476834340498025,
-            "keywordScore": 0,
-            "rawVectorScore": 0.476834340498025,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.964797311000138,
+            "keywordScore": 0.6973698934837903,
+            "rawVectorScore": 0.4717767157384621,
+            "rawKeywordScore": 14.945573785780137,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "default",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 5,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 10,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 13,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.35,
@@ -1006,99 +1341,137 @@
       "query": "How does the session logger capture token usage?",
       "queryIndex": 9,
       "resultCount": 20,
-      "latencyMs": 134.4,
+      "latencyMs": 133.6,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.64997790367023,
+          "score": 0.9193270485472197,
+          "filePath": "src/eval/index.ts",
+          "startLine": 1,
+          "endLine": 39,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.8655450809120329,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5625851772232827,
+            "rawKeywordScore": 27.43241842421657,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "session",
+              "logger",
+              "logg",
+              "capture",
+              "captur",
+              "token",
+              "usage"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.811158026235588,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7225275148229949,
+            "keywordScore": 0.9441037933544774,
+            "rawVectorScore": 0.46962691942871126,
+            "rawKeywordScore": 25.89905029519012,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "session",
+              "logger",
+              "logg",
+              "capture"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.7233527982947474,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7099312621395539,
+            "keywordScore": 0.7434851025275377,
+            "rawVectorScore": 0.46143963351542777,
+            "rawKeywordScore": 20.395594424706974,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "session",
+              "token",
+              "usage"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.7176031981226716,
           "filePath": "src/eval/session-logger.ts",
           "startLine": 26,
           "endLine": 40,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.64997790367023,
-            "keywordScore": 0,
+            "vectorScore": 1,
+            "keywordScore": 0.2940079953066791,
             "rawVectorScore": 0.64997790367023,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 8.065350347317922,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "token",
+              "usage"
+            ]
           }
         },
         {
-          "rank": 1,
-          "score": 0.6242235350041389,
-          "filePath": "src/eval/session-logger.ts",
-          "startLine": 12,
-          "endLine": 24,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.6242235350041389,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6242235350041389,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.6052995517731005,
+          "rank": 4,
+          "score": 0.7126207541919147,
           "filePath": "src/eval/session-logger.ts",
           "startLine": 43,
           "endLine": 52,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6052995517731005,
-            "keywordScore": 0,
+            "vectorScore": 0.9312617372916151,
+            "keywordScore": 0.38465927954236423,
             "rawVectorScore": 0.6052995517731005,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.5971586335739852,
-          "filePath": "src/eval/token-analysis.ts",
-          "startLine": 83,
-          "endLine": 182,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5971586335739852,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5971586335739852,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.5731101818065053,
-          "filePath": "src/web/api.ts",
-          "startLine": 385,
-          "endLine": 407,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5731101818065053,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5731101818065053,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 10.552134307163826,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 9,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
@@ -1116,103 +1489,130 @@
       "query": "How does L2 normalization affect vector search scores?",
       "queryIndex": 10,
       "resultCount": 20,
-      "latencyMs": 177,
+      "latencyMs": 138.8,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5337170795728613,
-          "filePath": "src/retriever/context-optimizer.ts",
-          "startLine": 49,
-          "endLine": 51,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5337170795728613,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5337170795728613,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 19.941482298471815,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "search",
+              "scores",
+              "score"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.5165566800276302,
+          "score": 0.7369210744157491,
           "filePath": "src/plugin.ts",
           "startLine": 343,
           "endLine": 367,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5165566800276302,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5165566800276302,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9673211194458253,
+            "keywordScore": 0.3913210068706347,
+            "rawVectorScore": 0.5162758028797768,
+            "rawKeywordScore": 7.8035209315309295,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "vector",
+              "search",
+              "score"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.5082491036230451,
+          "score": 0.7353811362488262,
+          "filePath": "src/plugin.ts",
+          "startLine": 412,
+          "endLine": 448,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9033365735211804,
+            "keywordScore": 0.48344798034029485,
+            "rawVectorScore": 0.4821261578910797,
+            "rawKeywordScore": 9.64066934218794,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "search",
+              "scores",
+              "score"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.7328741980994883,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 176,
+          "endLine": 181,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8991583432722839,
+            "keywordScore": 0.48344798034029485,
+            "rawVectorScore": 0.4798961650448557,
+            "rawKeywordScore": 9.64066934218794,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "search",
+              "scores",
+              "score"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.7278975304101996,
           "filePath": "src/plugin.ts",
           "startLine": 321,
           "endLine": 336,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5082491036230451,
-            "keywordScore": 0,
+            "vectorScore": 0.9522818794365763,
+            "keywordScore": 0.3913210068706347,
             "rawVectorScore": 0.5082491036230451,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.5026611907652707,
-          "filePath": "src/embedder/ollama.ts",
-          "startLine": 51,
-          "endLine": 97,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5026611907652707,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5026611907652707,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.4984218379927961,
-          "filePath": "src/eval/token-analysis.ts",
-          "startLine": 223,
-          "endLine": 307,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.4984218379927961,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4984218379927961,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 7.8035209315309295,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "vector",
+              "search",
+              "score"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 12,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 4,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -1226,103 +1626,144 @@
       "query": "What is the MetadataFilter interface used for?",
       "queryIndex": 11,
       "resultCount": 20,
-      "latencyMs": 148.8,
+      "latencyMs": 140.3,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5021709176592174,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 308,
-          "endLine": 313,
+          "score": 0.9208141147149961,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 32,
+          "endLine": 72,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5021709176592174,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5021709176592174,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9091473474904641,
+            "keywordScore": 0.9383142655517939,
+            "rawVectorScore": 0.4565473577767298,
+            "rawKeywordScore": 14.370315088187917,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "filter",
+              "filt",
+              "interface",
+              "interfac",
+              "for"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.4993056773273916,
-          "filePath": "src/plugin.ts",
-          "startLine": 71,
-          "endLine": 80,
+          "score": 0.9,
+          "filePath": "src/indexer/worker.ts",
+          "startLine": 50,
+          "endLine": 77,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4993056773273916,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4993056773273916,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 15.31503422228924,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "metadata",
+              "interface",
+              "interfac",
+              "used",
+              "for"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.49328544161900684,
-          "filePath": "src/indexer/metadata.ts",
-          "startLine": 88,
-          "endLine": 105,
+          "score": 0.8655344811267579,
+          "filePath": "src/cli/types.ts",
+          "startLine": 37,
+          "endLine": 46,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.49328544161900684,
-            "keywordScore": 0,
-            "rawVectorScore": 0.49328544161900684,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9182238837228094,
+            "keywordScore": 0.7865003772326806,
+            "rawVectorScore": 0.46110533030569373,
+            "rawKeywordScore": 12.0452801931619,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "metadata",
+              "interface",
+              "interfac",
+              "used"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.49118305993298894,
-          "filePath": "src/opencode/tools.ts",
-          "startLine": 293,
-          "endLine": 299,
+          "score": 0.8536246224900575,
+          "filePath": "src/content/reader.ts",
+          "startLine": 137,
+          "endLine": 236,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.49118305993298894,
-            "keywordScore": 0,
-            "rawVectorScore": 0.49118305993298894,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.9484718027667306,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 14.52587811824885,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "filter",
+              "filt",
+              "used",
+              "for"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.4899592501199694,
-          "filePath": "src/opencode/create-read-tool.ts",
-          "startLine": 261,
-          "endLine": 264,
+          "score": 0.8536246224900575,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 153,
+          "endLine": 252,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4899592501199694,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4899592501199694,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.9484718027667306,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 14.52587811824885,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "filter",
+              "filt",
+              "used",
+              "for"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 6,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 15,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 1,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -1336,99 +1777,143 @@
       "query": "How does the background indexer handle file changes?",
       "queryIndex": 12,
       "resultCount": 20,
-      "latencyMs": 140.5,
+      "latencyMs": 144.1,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.6013927958823782,
+          "score": 0.9952011548495419,
           "filePath": "src/watcher.ts",
           "startLine": 78,
           "endLine": 177,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6013927958823782,
-            "keywordScore": 0,
+            "vectorScore": 1,
+            "keywordScore": 0.9880028871238546,
             "rawVectorScore": 0.6013927958823782,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 21.127461055894198,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "background",
+              "indexer",
+              "index",
+              "handle",
+              "handl",
+              "file",
+              "change"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.584471994512437,
-          "filePath": "src/watcher.ts",
-          "startLine": 21,
-          "endLine": 24,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.584471994512437,
-            "keywordScore": 0,
-            "rawVectorScore": 0.584471994512437,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.582944980528561,
+          "score": 0.9797577349570907,
           "filePath": "src/watcher.ts",
           "startLine": 27,
           "endLine": 46,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.582944980528561,
-            "keywordScore": 0,
+            "vectorScore": 0.9693248481190234,
+            "keywordScore": 0.9954070652141916,
             "rawVectorScore": 0.582944980528561,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 21.285792055016966,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "background",
+              "indexer",
+              "index",
+              "file",
+              "changes",
+              "change"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.8734008584836849,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7890014308061415,
+            "keywordScore": 1,
+            "rawVectorScore": 0.47449977642770214,
+            "rawKeywordScore": 21.384007406494238,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "index",
+              "handle",
+              "handl",
+              "file"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5652756993373081,
-          "filePath": "src/indexer/worker.ts",
-          "startLine": 120,
-          "endLine": 125,
+          "score": 0.8511008378413143,
+          "filePath": "src/cli/commands/index-command.ts",
+          "startLine": 63,
+          "endLine": 162,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5652756993373081,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5652756993373081,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8216089349856966,
+            "keywordScore": 0.8953386921247408,
+            "rawVectorScore": 0.4941096945329912,
+            "rawKeywordScore": 19.145929223716323,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "index",
+              "handle",
+              "handl",
+              "file",
+              "changes",
+              "change"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5495112894178465,
-          "filePath": "src/watcher.ts",
-          "startLine": 178,
-          "endLine": 189,
+          "score": 0.8250077815006346,
+          "filePath": "src/cli/commands/index-command.ts",
+          "startLine": 163,
+          "endLine": 224,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5495112894178465,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5495112894178465,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.841389943410231,
+            "keywordScore": 0.8004345386362398,
+            "rawVectorScore": 0.5060058504947947,
+            "rawKeywordScore": 17.11649810261115,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "index",
+              "handle",
+              "handl",
+              "file",
+              "changes",
+              "change"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 4,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 7,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 12,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
@@ -1446,103 +1931,130 @@
       "query": "Where is the config validation logic?",
       "queryIndex": 13,
       "resultCount": 20,
-      "latencyMs": 139.5,
+      "latencyMs": 129.8,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5111564857236017,
-          "filePath": "src/eval/run-token-test.ts",
-          "startLine": 40,
-          "endLine": 48,
+          "score": 0.9,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 153,
+          "endLine": 252,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5111564857236017,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5111564857236017,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 10.094923945121604,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the",
+              "config"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.5110111323272439,
-          "filePath": "src/tui.ts",
-          "startLine": 265,
-          "endLine": 271,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5110111323272439,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5110111323272439,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 10.094923945121604,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the",
+              "config"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.5049805119823045,
-          "filePath": "src/cli/format.ts",
-          "startLine": 130,
-          "endLine": 134,
-          "language": "typescript",
+          "score": 0.8916278244014808,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
           "explanation": {
-            "vectorScore": 0.5049805119823045,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5049805119823045,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.990697582668312,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 10.001016749652432,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "config",
+              "validation"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.4990456770386439,
+          "score": 0.868075422485252,
           "filePath": "src/plugin.ts",
-          "startLine": 193,
-          "endLine": 215,
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4990456770386439,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4990456770386439,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8907077694596774,
+            "keywordScore": 0.8341269020236137,
+            "rawVectorScore": 0.4551615858442635,
+            "rawKeywordScore": 8.42044763650828,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.4907326233397001,
-          "filePath": "src/tui.ts",
-          "startLine": 361,
-          "endLine": 376,
+          "score": 0.7730420600418354,
+          "filePath": "src/retriever/context-optimizer.ts",
+          "startLine": 8,
+          "endLine": 19,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4907326233397001,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4907326233397001,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9198744474336046,
+            "keywordScore": 0.5527934789541816,
+            "rawVectorScore": 0.4700660829819441,
+            "rawKeywordScore": 5.580408127401643,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "config"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 4,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 7,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 11,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 3,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -1556,99 +2068,131 @@
       "query": "How are PDF documents chunked and indexed?",
       "queryIndex": 14,
       "resultCount": 20,
-      "latencyMs": 142.3,
+      "latencyMs": 136.5,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5988040562536635,
-          "filePath": "src/chunker/docx.ts",
-          "startLine": 39,
-          "endLine": 108,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5988040562536635,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5988040562536635,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 17.66244152140157,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "are",
+              "chunk",
+              "and",
+              "indexed",
+              "index"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.5804692817652682,
-          "filePath": "src/chunker/doc.ts",
-          "startLine": 40,
-          "endLine": 109,
+          "score": 0.7843291716784947,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 553,
+          "endLine": 652,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5804692817652682,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5804692817652682,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.8714768574205496,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 15.39240903144527,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "are",
+              "document",
+              "chunk",
+              "and",
+              "indexed",
+              "index"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.5560128785732158,
-          "filePath": "src/indexer/worker.ts",
-          "startLine": 120,
-          "endLine": 125,
+          "score": 0.7216075910562562,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 32,
+          "endLine": 72,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5560128785732158,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5560128785732158,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8554726212998006,
+            "keywordScore": 0.5208100456909396,
+            "rawVectorScore": 0.5109743711444423,
+            "rawKeywordScore": 9.198776975774699,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "are",
+              "chunk",
+              "and",
+              "index"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5501933735756055,
-          "filePath": "src/chunker/excel.ts",
-          "startLine": 49,
-          "endLine": 108,
+          "score": 0.7072774945811671,
+          "filePath": "src/indexer/worker.ts",
+          "startLine": 20,
+          "endLine": 47,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5501933735756055,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5501933735756055,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.862685186169146,
+            "keywordScore": 0.47416595719919863,
+            "rawVectorScore": 0.5152824409840739,
+            "rawKeywordScore": 8.374928490470245,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chunk",
+              "and",
+              "indexed",
+              "index"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5483333602969859,
+          "score": 0.7019387005874678,
           "filePath": "src/content/pdf.ts",
           "startLine": 15,
           "endLine": 23,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5483333602969859,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5483333602969859,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9167982919224046,
+            "keywordScore": 0.37964931358506243,
+            "rawVectorScore": 0.5476042353869528,
+            "rawKeywordScore": 6.705533799836411,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "pdf",
+              "chunk"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 14,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
@@ -1666,98 +2210,127 @@
       "query": "What embedding providers are supported?",
       "queryIndex": 15,
       "resultCount": 20,
-      "latencyMs": 182.4,
+      "latencyMs": 145.4,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.660832259007303,
+          "score": 0.8821156352374349,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 0.9801284835971499,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 14.678568695664758,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider",
+              "supported",
+              "support"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.8494656445483753,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 334,
+          "endLine": 415,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7491094075806255,
+            "keywordScore": 1,
+            "rawVectorScore": 0.4950356620551272,
+            "rawKeywordScore": 14.976167860965777,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "what",
+              "provider",
+              "supported",
+              "support"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.8181165631497871,
+          "filePath": "src/core/provider-defaults.ts",
+          "startLine": 7,
+          "endLine": 16,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8984290096625315,
+            "keywordScore": 0.6976478933806705,
+            "rawVectorScore": 0.5937108720129848,
+            "rawKeywordScore": 10.448091959118075,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider",
+              "support"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.7744272444332222,
           "filePath": "src/embedder/ollama.ts",
           "startLine": 51,
           "endLine": 97,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.660832259007303,
-            "keywordScore": 0,
+            "vectorScore": 1,
+            "keywordScore": 0.43606811108305554,
             "rawVectorScore": 0.660832259007303,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 6.530629230394111,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider"
+            ]
           }
         },
         {
-          "rank": 1,
-          "score": 0.6448630403411468,
-          "filePath": "src/embedder/openai.ts",
-          "startLine": 60,
-          "endLine": 89,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.6448630403411468,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6448630403411468,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.644602639497984,
+          "rank": 4,
+          "score": 0.7601420876853133,
           "filePath": "src/embedder/health.ts",
           "startLine": 45,
           "endLine": 61,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.644602639497984,
-            "keywordScore": 0,
-            "rawVectorScore": 0.644602639497984,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.6434828647517459,
-          "filePath": "src/embedder/factory.ts",
-          "startLine": 23,
-          "endLine": 46,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.6434828647517459,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6434828647517459,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.6091671191094286,
-          "filePath": "src/core/bootstrap.ts",
-          "startLine": 56,
-          "endLine": 66,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.6091671191094286,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6091671191094286,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9761914054201519,
+            "keywordScore": 0.43606811108305554,
+            "rawVectorScore": 0.645098771667313,
+            "rawKeywordScore": 6.530629230394111,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 6,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 1,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -1776,103 +2349,134 @@
       "query": "How does the CLI parse and dispatch commands?",
       "queryIndex": 16,
       "resultCount": 20,
-      "latencyMs": 129.9,
+      "latencyMs": 143.2,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5516739028063521,
+          "score": 0.9377600500556723,
+          "filePath": "src/cli.ts",
+          "startLine": 1,
+          "endLine": 10,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.8962667500927872,
+            "keywordScore": 1,
+            "rawVectorScore": 0.49600431494842623,
+            "rawKeywordScore": 15.680509514134853,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "cli",
+              "and",
+              "commands",
+              "command"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9247393361701033,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8808975790823529,
+            "keywordScore": 0.9905019718017289,
+            "rawVectorScore": 0.48749883916505427,
+            "rawKeywordScore": 15.531575592606343,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "command"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.8672958043536596,
           "filePath": "src/cli/commands/query.ts",
           "startLine": 25,
           "endLine": 101,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5516739028063521,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5516739028063521,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.5364078675636673,
-          "filePath": "src/cli/commands/eval.ts",
-          "startLine": 71,
-          "endLine": 134,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5364078675636673,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5364078675636673,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5220385521923081,
-          "filePath": "src/cli/format.ts",
-          "startLine": 110,
-          "endLine": 122,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5220385521923081,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5220385521923081,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 1,
+            "keywordScore": 0.668239510884149,
+            "rawVectorScore": 0.553411487034498,
+            "rawKeywordScore": 10.478336008139719,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "cli",
+              "parse",
+              "command"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5189242529738165,
-          "filePath": "src/cli/commands/index.ts",
-          "startLine": 1,
-          "endLine": 18,
-          "language": "text",
+          "score": 0.8359388466861839,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
+          "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5189242529738165,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5189242529738165,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.9288209407624265,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 14.564385598552914,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "and"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5168549634058027,
-          "filePath": "src/cli/commands/show.ts",
+          "score": 0.8198970163364123,
+          "filePath": "src/cli/commands/ui.ts",
           "startLine": 22,
-          "endLine": 59,
+          "endLine": 82,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5168549634058027,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5168549634058027,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9210020199712545,
+            "keywordScore": 0.668239510884149,
+            "rawVectorScore": 0.5096930974340684,
+            "rawKeywordScore": 10.478336008139719,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "cli",
+              "parse",
+              "command"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 3,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 10,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 11,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -1886,81 +2490,117 @@
       "query": "How does the session logger persist events?",
       "queryIndex": 17,
       "resultCount": 20,
-      "latencyMs": 134.7,
+      "latencyMs": 135.5,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.6629804422299629,
+          "score": 0.8216979937289588,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7028299895482647,
+            "keywordScore": 1,
+            "rawVectorScore": 0.4659625372831887,
+            "rawKeywordScore": 27.793040387067073,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "session",
+              "logger",
+              "logg",
+              "events",
+              "event"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.76332557963888,
           "filePath": "src/eval/session-logger.ts",
           "startLine": 43,
           "endLine": 52,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6629804422299629,
-            "keywordScore": 0,
+            "vectorScore": 1,
+            "keywordScore": 0.4083139490972,
             "rawVectorScore": 0.6629804422299629,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 11.348286077861328,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "event"
+            ]
           }
         },
         {
-          "rank": 1,
-          "score": 0.6525293734589068,
+          "rank": 2,
+          "score": 0.7538673198423436,
           "filePath": "src/eval/session-logger.ts",
           "startLine": 58,
           "endLine": 157,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6525293734589068,
-            "keywordScore": 0,
+            "vectorScore": 0.9842362336724392,
+            "keywordScore": 0.4083139490972,
             "rawVectorScore": 0.6525293734589068,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 11.348286077861328,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "event"
+            ]
           }
         },
         {
-          "rank": 2,
-          "score": 0.6231078176573119,
+          "rank": 3,
+          "score": 0.7161146968452294,
           "filePath": "src/eval/session-logger.ts",
           "startLine": 158,
           "endLine": 183,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6231078176573119,
-            "keywordScore": 0,
+            "vectorScore": 0.9398585206547908,
+            "keywordScore": 0.38049896113088744,
             "rawVectorScore": 0.6231078176573119,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.6197640686054513,
-          "filePath": "src/eval/session-logger.ts",
-          "startLine": 26,
-          "endLine": 40,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.6197640686054513,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6197640686054513,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 10.575222993947818,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "session",
+              "logg",
+              "event"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.6046078910458497,
-          "filePath": "src/eval/storage.ts",
-          "startLine": 26,
-          "endLine": 35,
-          "language": "typescript",
+          "score": 0.7095122353562696,
+          "filePath": "src/eval/index.ts",
+          "startLine": 1,
+          "endLine": 39,
+          "language": "text",
           "explanation": {
-            "vectorScore": 0.6046078910458497,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6046078910458497,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.7629374754061313,
+            "keywordScore": 0.629374375281477,
+            "rawVectorScore": 0.5058126248385684,
+            "rawKeywordScore": 17.4922274307832,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "session",
+              "logger",
+              "logg",
+              "events",
+              "event"
+            ]
           }
         }
       ],
@@ -1972,12 +2612,12 @@
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 3,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 2,
+          "passedCount": 9,
           "wouldInject": true
         },
         {
@@ -1996,104 +2636,136 @@
       "query": "What is the manifest schema version used for?",
       "queryIndex": 18,
       "resultCount": 20,
-      "latencyMs": 143.9,
+      "latencyMs": 145.5,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.49013616945095406,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 308,
-          "endLine": 313,
+          "score": 0.9616757894419025,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 253,
+          "endLine": 352,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.49013616945095406,
-            "keywordScore": 0,
-            "rawVectorScore": 0.49013616945095406,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9361263157365042,
+            "keywordScore": 1,
+            "rawVectorScore": 0.45882936651732453,
+            "rawKeywordScore": 16.93249521189373,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "manifest",
+              "schema",
+              "used",
+              "for"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.4898090834781935,
-          "filePath": "src/core/version-check.ts",
-          "startLine": 1,
-          "endLine": 7,
+          "score": 0.8616391191109055,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4898090834781935,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4898090834781935,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9660387181958,
+            "keywordScore": 0.7050397204835637,
+            "rawVectorScore": 0.4734905168777991,
+            "rawKeywordScore": 11.938081691282836,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "manifest",
+              "version",
+              "for"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.4880516873740033,
-          "filePath": "src/describer/anthropic.ts",
-          "startLine": 15,
-          "endLine": 17,
+          "score": 0.8587577792559679,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 153,
+          "endLine": 252,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4880516873740033,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4880516873740033,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9423419395618554,
+            "keywordScore": 0.7333815387971365,
+            "rawVectorScore": 0.46187586856983026,
+            "rawKeywordScore": 12.41797939417377,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "manifest",
+              "used",
+              "for"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.48674629277419823,
+          "score": 0.7573188565557513,
+          "filePath": "src/indexer/stats.ts",
+          "startLine": 41,
+          "endLine": 58,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9823707270163011,
+            "keywordScore": 0.4197410508649265,
+            "rawVectorScore": 0.4814954251205187,
+            "rawKeywordScore": 7.107263334005611,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "manifest"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.7490145852737878,
           "filePath": "src/indexer/pipeline.ts",
           "startLine": 749,
           "endLine": 819,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.48674629277419823,
-            "keywordScore": 0,
-            "rawVectorScore": 0.48674629277419823,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.48530710226822393,
-          "filePath": "src/eval/types.ts",
-          "startLine": 68,
-          "endLine": 93,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.48530710226822393,
-            "keywordScore": 0,
-            "rawVectorScore": 0.48530710226822393,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9935778842918477,
+            "keywordScore": 0.38216963674669807,
+            "rawVectorScore": 0.4869884582579895,
+            "rawKeywordScore": 6.471085544344631,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "manifest",
+              "for"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 3,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 4,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 12,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.35,
@@ -2106,99 +2778,148 @@
       "query": "How does the OpenCode plugin register tools?",
       "queryIndex": 19,
       "resultCount": 20,
-      "latencyMs": 149.9,
+      "latencyMs": 149.7,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.6223978580618758,
+          "score": 0.9315253674592592,
           "filePath": "src/plugin.ts",
-          "startLine": 1213,
-          "endLine": 1312,
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6223978580618758,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6223978580618758,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8858756124320986,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5519098459948908,
+            "rawKeywordScore": 29.273717830672997,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin",
+              "tools"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.6152836440517907,
-          "filePath": "src/plugin.ts",
-          "startLine": 699,
-          "endLine": 798,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.6152836440517907,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6152836440517907,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5947045075873209,
-          "filePath": "src/plugin-entry.ts",
-          "startLine": 1,
-          "endLine": 19,
-          "language": "text",
-          "explanation": {
-            "vectorScore": 0.5947045075873209,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5947045075873209,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.5859969796238651,
-          "filePath": "src/cli/commands/setup.ts",
-          "startLine": 28,
-          "endLine": 40,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5859969796238651,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5859969796238651,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.5650384113063616,
+          "score": 0.8868060625477494,
           "filePath": "src/plugin.ts",
           "startLine": 499,
           "endLine": 598,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5650384113063616,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5650384113063616,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9050454687693825,
+            "keywordScore": 0.8594469532152997,
+            "rawVectorScore": 0.563852868593524,
+            "rawKeywordScore": 25.1592075988563,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.868628490216624,
+          "filePath": "src/plugin.ts",
+          "startLine": 699,
+          "endLine": 798,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.985991616828733,
+            "keywordScore": 0.6925838002984605,
+            "rawVectorScore": 0.6142831722189555,
+            "rawKeywordScore": 20.274502744032308,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "open",
+              "code",
+              "plugin",
+              "register",
+              "regist",
+              "tools"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.8179070551290666,
+          "filePath": "src/plugin-entry.ts",
+          "startLine": 1,
+          "endLine": 19,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.9545657206483765,
+            "keywordScore": 0.6129190568501015,
+            "rawVectorScore": 0.5947045075873209,
+            "rawKeywordScore": 17.942419523272093,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin",
+              "register"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.8040397881739327,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.8594768671854647,
+            "keywordScore": 0.7208841696566349,
+            "rawVectorScore": 0.535463149394306,
+            "rawKeywordScore": 21.10295977112733,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin",
+              "register",
+              "regist"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 3,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 9,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 17,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
@@ -2216,104 +2937,135 @@
       "query": "Where is the globMatch function defined?",
       "queryIndex": 20,
       "resultCount": 20,
-      "latencyMs": 184.8,
+      "latencyMs": 148.4,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.49101113217391773,
+          "score": 0.9631813138976587,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 528,
+          "endLine": 627,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9386355231627646,
+            "keywordScore": 1,
+            "rawVectorScore": 0.4615648809578505,
+            "rawKeywordScore": 24.972142610413826,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the",
+              "match",
+              "function",
+              "defined",
+              "defin"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.7894046746053669,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8966758384097504,
+            "keywordScore": 0.6284979288987916,
+            "rawVectorScore": 0.44093161445543244,
+            "rawKeywordScore": 15.694939910810355,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the",
+              "glob",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.675513523369374,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9159310699268094,
+            "keywordScore": 0.31488720353322086,
+            "rawVectorScore": 0.45040018710548546,
+            "rawKeywordScore": 7.863408152825995,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "match",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.6633902568278196,
           "filePath": "src/chunker/ssl.ts",
           "startLine": 145,
           "endLine": 165,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.49101113217391773,
-            "keywordScore": 0,
-            "rawVectorScore": 0.49101113217391773,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.4832034179843825,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 290,
-          "endLine": 299,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.4832034179843825,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4832034179843825,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.46767902060794087,
-          "filePath": "src/opencode/tools.ts",
-          "startLine": 628,
-          "endLine": 642,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.46767902060794087,
-            "keywordScore": 0,
-            "rawVectorScore": 0.46767902060794087,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.4670850304863925,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 159,
-          "endLine": 161,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.4670850304863925,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4670850304863925,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 1,
+            "keywordScore": 0.158475642069549,
+            "rawVectorScore": 0.49174026506326096,
+            "rawKeywordScore": 3.9574763340376746,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "match",
+              "function"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.4647097165265677,
-          "filePath": "src/core/provider-defaults.ts",
-          "startLine": 100,
-          "endLine": 105,
+          "score": 0.6595251766089206,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4647097165265677,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4647097165265677,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9393796655043976,
+            "keywordScore": 0.23974344326570535,
+            "rawVectorScore": 0.46193080571016987,
+            "rawKeywordScore": 5.98690745514285,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "match",
+              "function"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 5,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.35,
@@ -2326,103 +3078,126 @@
       "query": "How does the proxy-aware HTTP client work?",
       "queryIndex": 21,
       "resultCount": 20,
-      "latencyMs": 144.2,
+      "latencyMs": 127.6,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5466284128362742,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 15.882014317530581,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "work"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.7526051764821801,
           "filePath": "src/embedder/http.ts",
           "startLine": 152,
           "endLine": 164,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5466284128362742,
-            "keywordScore": 0,
+            "vectorScore": 1,
+            "keywordScore": 0.3815129412054501,
             "rawVectorScore": 0.5466284128362742,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 6.059193994548162,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "proxy",
+              "http"
+            ]
           }
         },
         {
-          "rank": 1,
-          "score": 0.5432101659452181,
+          "rank": 2,
+          "score": 0.7483978662031655,
           "filePath": "src/embedder/http.ts",
           "startLine": 484,
           "endLine": 501,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5432101659452181,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5432101659452181,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.5396499104476383,
-          "filePath": "src/embedder/http.ts",
-          "startLine": 143,
-          "endLine": 149,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5396499104476383,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5396499104476383,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9929878162016423,
+            "keywordScore": 0.3815129412054501,
+            "rawVectorScore": 0.5427953539360617,
+            "rawKeywordScore": 6.059193994548162,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "proxy",
+              "http"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5330086376024127,
+          "score": 0.7382376299344761,
           "filePath": "src/embedder/http.ts",
           "startLine": 504,
           "endLine": 557,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5330086376024127,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5330086376024127,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9760540890871601,
+            "keywordScore": 0.3815129412054501,
+            "rawVectorScore": 0.5335388975600697,
+            "rawKeywordScore": 6.059193994548162,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "proxy",
+              "http"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5283696555894284,
-          "filePath": "src/embedder/cohere.ts",
-          "startLine": 26,
-          "endLine": 32,
+          "score": 0.6987287284712385,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5283696555894284,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5283696555894284,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.7763652538569316,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 12.330244077389052,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 12,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 10,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -2436,104 +3211,128 @@
       "query": "What is the FETCH_OVERFETCH_FACTOR constant?",
       "queryIndex": 22,
       "resultCount": 20,
-      "latencyMs": 149.7,
+      "latencyMs": 142.4,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.4972989931018104,
-          "filePath": "src/core/runtime-overrides.ts",
-          "startLine": 12,
-          "endLine": 54,
+          "score": 0.9548578830224456,
+          "filePath": "src/eval/token-analysis.ts",
+          "startLine": 183,
+          "endLine": 218,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4972989931018104,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4972989931018104,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9247631383707425,
+            "keywordScore": 1,
+            "rawVectorScore": 0.45988377756944043,
+            "rawKeywordScore": 9.611335504612896,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "what",
+              "h_"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.4911339418628084,
-          "filePath": "src/eval/token-analysis.ts",
-          "startLine": 397,
-          "endLine": 420,
+          "score": 0.8689262399273051,
+          "filePath": "src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4911339418628084,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4911339418628084,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9055598636963311,
+            "keywordScore": 0.813975804273766,
+            "rawVectorScore": 0.45033400840959814,
+            "rawKeywordScore": 7.823394547512285,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "fetch"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.49003999308105267,
-          "filePath": "src/chunker/fallback.ts",
-          "startLine": 15,
-          "endLine": 17,
+          "score": 0.8261110837574276,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 334,
+          "endLine": 415,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.49003999308105267,
-            "keywordScore": 0,
-            "rawVectorScore": 0.49003999308105267,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.9179012041749195,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 8.822256433413335,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "what",
+              "is",
+              "the"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.4799834020632183,
-          "filePath": "src/eval/token-analysis.ts",
-          "startLine": 223,
-          "endLine": 307,
+          "score": 0.8261110837574276,
+          "filePath": "src/plugin.ts",
+          "startLine": 899,
+          "endLine": 998,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.4799834020632183,
-            "keywordScore": 0,
-            "rawVectorScore": 0.4799834020632183,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.9179012041749195,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 8.822256433413335,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "what",
+              "is",
+              "the"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.47937757208172055,
-          "filePath": "src/web/api.ts",
-          "startLine": 416,
-          "endLine": 440,
+          "score": 0.7325782238463895,
+          "filePath": "src/opencode/create-read-tool.ts",
+          "startLine": 42,
+          "endLine": 141,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.47937757208172055,
-            "keywordScore": 0,
-            "rawVectorScore": 0.47937757208172055,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 0.813975804273766,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 7.823394547512285,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "is",
+              "the",
+              "fetch"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 4,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 8,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 20,
+          "wouldInject": true
         },
         {
           "threshold": 0.35,
@@ -2546,103 +3345,132 @@
       "query": "How does the TUI settings menu work?",
       "queryIndex": 23,
       "resultCount": 20,
-      "latencyMs": 155.6,
+      "latencyMs": 129.1,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.5701993660084598,
-          "filePath": "src/tui.ts",
-          "startLine": 283,
-          "endLine": 294,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5701993660084598,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5701993660084598,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.5677701442097971,
+          "score": 0.9538024928698103,
           "filePath": "src/tui.ts",
           "startLine": 608,
           "endLine": 707,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5677701442097971,
-            "keywordScore": 0,
+            "vectorScore": 0.9958570267799823,
+            "keywordScore": 0.8907206920045524,
             "rawVectorScore": 0.5677701442097971,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 17.559910313957428,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "tui",
+              "settings",
+              "setting",
+              "menu"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 499,
+          "endLine": 598,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 19.714272354489864,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "tui",
+              "work"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.5563343170390304,
-          "filePath": "src/tui.ts",
-          "startLine": 297,
-          "endLine": 306,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.5563343170390304,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5563343170390304,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.531354382301278,
-          "filePath": "src/tui.ts",
-          "startLine": 527,
-          "endLine": 602,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.531354382301278,
-            "keywordScore": 0,
-            "rawVectorScore": 0.531354382301278,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.5163395814327083,
+          "score": 0.8157691019940978,
           "filePath": "src/tui.ts",
           "startLine": 427,
           "endLine": 526,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5163395814327083,
-            "keywordScore": 0,
+            "vectorScore": 0.9056488891117088,
+            "keywordScore": 0.6809494213176813,
             "rawVectorScore": 0.5163395814327083,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 13.424422351489037,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "the",
+              "tui",
+              "setting",
+              "work"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.782953135652271,
+          "filePath": "src/tui.ts",
+          "startLine": 708,
+          "endLine": 807,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8407014528560303,
+            "keywordScore": 0.6963306598466321,
+            "rawVectorScore": 0.47931095758679737,
+            "rawKeywordScore": 13.727652276998144,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "settings",
+              "setting",
+              "menu"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.7763895283468751,
+          "filePath": "src/tui.ts",
+          "startLine": 196,
+          "endLine": 260,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8760877826210342,
+            "keywordScore": 0.6268421469356366,
+            "rawVectorScore": 0.49948584315113903,
+            "rawKeywordScore": 12.357736807962294,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "tui",
+              "settings",
+              "setting"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 2,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 7,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 10,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,
-          "passedCount": 8,
+          "passedCount": 20,
           "wouldInject": true
         },
         {
@@ -2656,99 +3484,1503 @@
       "query": "How are image descriptions generated?",
       "queryIndex": 24,
       "resultCount": 20,
-      "latencyMs": 135.3,
+      "latencyMs": 143.8,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.6276211083278715,
-          "filePath": "src/chunker/image.ts",
-          "startLine": 151,
-          "endLine": 208,
+          "score": 0.9,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 32,
+          "endLine": 72,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6276211083278715,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6276211083278715,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 19.12990274047926,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "are",
+              "image",
+              "descriptions",
+              "description",
+              "generated",
+              "generat"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.6105379524493967,
-          "filePath": "src/chunker/image.ts",
-          "startLine": 231,
-          "endLine": 292,
+          "score": 0.9,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 153,
+          "endLine": 252,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6105379524493967,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6105379524493967,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 19.12990274047926,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "are",
+              "image",
+              "descriptions",
+              "description",
+              "generated",
+              "generat"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.6056255124575604,
-          "filePath": "src/mcp/handlers.ts",
-          "startLine": 308,
-          "endLine": 313,
+          "score": 0.8685222650210481,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.6056255124575604,
-            "keywordScore": 0,
-            "rawVectorScore": 0.6056255124575604,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.8397807930365859,
+            "keywordScore": 0.9116344729977415,
+            "rawVectorScore": 0.5267437286451684,
+            "rawKeywordScore": 17.43947880331486,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "how",
+              "image",
+              "description",
+              "generated",
+              "generat"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.5974183115666772,
+          "score": 0.8189121305411503,
           "filePath": "src/opencode/tools.ts",
           "startLine": 334,
           "endLine": 415,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5974183115666772,
-            "keywordScore": 0,
+            "vectorScore": 0.9524563771313621,
+            "keywordScore": 0.6185957606558325,
             "rawVectorScore": 0.5974183115666772,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "rawKeywordScore": 11.833676737018862,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "image",
+              "description",
+              "generated",
+              "generat"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.5939281969631285,
+          "score": 0.800242351753632,
           "filePath": "src/indexer/description-stage.ts",
           "startLine": 32,
           "endLine": 119,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.5939281969631285,
-            "keywordScore": 0,
-            "rawVectorScore": 0.5939281969631285,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4
+            "vectorScore": 0.9473960838540622,
+            "keywordScore": 0.5795117536029868,
+            "rawVectorScore": 0.5942442954769726,
+            "rawKeywordScore": 11.08600348338972,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "image",
+              "descriptions",
+              "description",
+              "generat"
+            ]
           }
         }
       ],
       "thresholdAnalysis": [
         {
           "threshold": 0.85,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 3,
+          "wouldInject": true
         },
         {
           "threshold": 0.75,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 8,
+          "wouldInject": true
         },
         {
           "threshold": 0.65,
-          "passedCount": 0,
-          "wouldInject": false
+          "passedCount": 15,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "retrieve function",
+      "queryIndex": 25,
+      "resultCount": 20,
+      "latencyMs": 133.7,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 1,
+          "filePath": "src/plugin.ts",
+          "startLine": 343,
+          "endLine": 367,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 1,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5246996104475332,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9941849960759197,
+          "filePath": "src/plugin.ts",
+          "startLine": 321,
+          "endLine": 336,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9903083267931995,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5196143932913402,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.9448813001304481,
+          "filePath": "src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9081355002174136,
+            "keywordScore": 1,
+            "rawVectorScore": 0.47649834319765266,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.9425550684563322,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9042584474272203,
+            "keywordScore": 1,
+            "rawVectorScore": 0.4744640551089537,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.9358091229777644,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8930152049629407,
+            "keywordScore": 1,
+            "rawVectorScore": 0.46856473016777905,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 18,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 19,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 19,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "KeywordIndex class",
+      "queryIndex": 26,
+      "resultCount": 20,
+      "latencyMs": 137.7,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.914294205642164,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8571570094036067,
+            "keywordScore": 1,
+            "rawVectorScore": 0.4787006763753458,
+            "rawKeywordScore": 9.758726665703923,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index",
+              "class"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9,
+          "filePath": "src/mcp/server.ts",
+          "startLine": 41,
+          "endLine": 140,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 9.758726665703923,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index",
+              "class"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.9,
+          "filePath": "src/plugin.ts",
+          "startLine": 699,
+          "endLine": 798,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 9.758726665703923,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index",
+              "class"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.8912517679248515,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8187529465414193,
+            "keywordScore": 1,
+            "rawVectorScore": 0.45725297115214325,
+            "rawKeywordScore": 9.758726665703923,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index",
+              "class"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.8882869850882339,
+          "filePath": "src/plugin.ts",
+          "startLine": 1044,
+          "endLine": 1061,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 1,
+            "keywordScore": 0.7207174627205848,
+            "rawVectorScore": 0.5584749014750711,
+            "rawKeywordScore": 7.033284721889844,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 6,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 18,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "embedder factory",
+      "queryIndex": 27,
+      "resultCount": 20,
+      "latencyMs": 138.7,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.9,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 10.266062163238725,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedder",
+              "embedd",
+              "factory"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.8569397435158297,
+          "filePath": "src/indexer/worker.ts",
+          "startLine": 388,
+          "endLine": 436,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7615662391930494,
+            "keywordScore": 1,
+            "rawVectorScore": 0.46191709563529343,
+            "rawKeywordScore": 10.266062163238725,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedder",
+              "embedd",
+              "factory"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.797305980685628,
+          "filePath": "src/embedder/factory.ts",
+          "startLine": 23,
+          "endLine": 46,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 1,
+            "keywordScore": 0.49326495171407003,
+            "rawVectorScore": 0.6065356785310464,
+            "rawKeywordScore": 5.0638886572435915,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.7129127235865278,
+          "filePath": "src/embedder/factory.ts",
+          "startLine": 62,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8593445715014998,
+            "keywordScore": 0.49326495171407003,
+            "rawVectorScore": 0.5212231427676335,
+            "rawKeywordScore": 5.0638886572435915,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.7076537488628087,
+          "filePath": "src/core/bootstrap.ts",
+          "startLine": 56,
+          "endLine": 66,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8505796136286347,
+            "keywordScore": 0.49326495171407003,
+            "rawVectorScore": 0.5159068830969192,
+            "rawKeywordScore": 5.0638886572435915,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 2,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 3,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 10,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "vector store LanceDB",
+      "queryIndex": 28,
+      "resultCount": 20,
+      "latencyMs": 140,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 1,
+          "filePath": "src/vectorstore/factory.ts",
+          "startLine": 22,
+          "endLine": 38,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 1,
+            "keywordScore": 1,
+            "rawVectorScore": 0.6107424489623263,
+            "rawKeywordScore": 14.404583382084791,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "vector",
+              "store",
+              "lancedb",
+              "lance"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.8589624938286113,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.7649374897143522,
+            "keywordScore": 1,
+            "rawVectorScore": 0.46717979577123775,
+            "rawKeywordScore": 14.404583382084791,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "vector",
+              "store",
+              "lancedb",
+              "lance"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.7286472776421293,
+          "filePath": "src/web/server.ts",
+          "startLine": 70,
+          "endLine": 121,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8071907572240995,
+            "keywordScore": 0.6108320582691741,
+            "rawVectorScore": 0.49298565984680115,
+            "rawKeywordScore": 8.798781315788794,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "vector",
+              "store",
+              "lance"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.7109057877464771,
+          "filePath": "src/web/api.ts",
+          "startLine": 165,
+          "endLine": 186,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9098879564030676,
+            "keywordScore": 0.4124325347615912,
+            "rawVectorScore": 0.5557071987749359,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "store",
+              "lance"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.7065442294147142,
+          "filePath": "src/web/api.ts",
+          "startLine": 189,
+          "endLine": 192,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9026186925167963,
+            "keywordScore": 0.4124325347615912,
+            "rawVectorScore": 0.5512675507468812,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "store",
+              "lance"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 2,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 2,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 9,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "find usages SearchResult",
+      "queryIndex": 29,
+      "resultCount": 20,
+      "latencyMs": 158.5,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 1,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 1,
+            "keywordScore": 1,
+            "rawVectorScore": 0.6141186463999263,
+            "rawKeywordScore": 17.003368879563602,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "searchresult",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9681490655655871,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9469151092759784,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5815182251642022,
+            "rawKeywordScore": 17.003368879563602,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "searchresult",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.9476248229319791,
+          "filePath": "src/plugin.ts",
+          "startLine": 412,
+          "endLine": 448,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9127080382199653,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5605110249899773,
+            "rawKeywordScore": 17.003368879563602,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "searchresult",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.9089417359768903,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 280,
+          "endLine": 287,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9737537652560392,
+            "keywordScore": 0.8117236920581673,
+            "rawVectorScore": 0.5980003442458703,
+            "rawKeywordScore": 13.802037364346312,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.8950049164809308,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 528,
+          "endLine": 627,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9505257327627733,
+            "keywordScore": 0.8117236920581673,
+            "rawVectorScore": 0.5837355763725725,
+            "rawKeywordScore": 13.802037364346312,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "search",
+              "result"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 6,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 11,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "chunkFile method",
+      "queryIndex": 30,
+      "resultCount": 20,
+      "latencyMs": 140.5,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.9500568670598307,
+          "filePath": "src/chunker/factory.ts",
+          "startLine": 232,
+          "endLine": 256,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9167614450997179,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5476871102549786,
+            "rawKeywordScore": 13.080329580273405,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chunkfile",
+              "chunkfil",
+              "chunk",
+              "file"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9262324191088813,
+          "filePath": "src/indexer/worker.ts",
+          "startLine": 148,
+          "endLine": 247,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8770540318481356,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5239653028690955,
+            "rawKeywordScore": 13.080329580273405,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chunkfile",
+              "chunkfil",
+              "chunk",
+              "file"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.9,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 13.080329580273405,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chunkfile",
+              "chunkfil",
+              "chunk",
+              "file"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.7077622265178538,
+          "filePath": "src/chunker/loader.ts",
+          "startLine": 19,
+          "endLine": 43,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8778786750581362,
+            "keywordScore": 0.4525875537074304,
+            "rawVectorScore": 0.5244579571567412,
+            "rawKeywordScore": 5.9199943664228805,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chunk",
+              "file",
+              "method"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.6818322673556733,
+          "filePath": "src/chunker/docx.ts",
+          "startLine": 39,
+          "endLine": 108,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 1,
+            "keywordScore": 0.2045806683891832,
+            "rawVectorScore": 0.5974150780254569,
+            "rawKeywordScore": 2.6759825682831373,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "chunk",
+              "file"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 3,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 3,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 8,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "embedBatch function",
+      "queryIndex": 31,
+      "resultCount": 20,
+      "latencyMs": 142.2,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 1,
+          "filePath": "src/embedder/factory.ts",
+          "startLine": 62,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 1,
+            "keywordScore": 1,
+            "rawVectorScore": 0.6198135019702848,
+            "rawKeywordScore": 12.716554521182438,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedbatch",
+              "embed",
+              "batch",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 12.716554521182438,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedbatch",
+              "embed",
+              "batch",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.8608235663450388,
+          "filePath": "src/indexer/worker.ts",
+          "startLine": 388,
+          "endLine": 436,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7680392772417312,
+            "keywordScore": 1,
+            "rawVectorScore": 0.4760411140779239,
+            "rawKeywordScore": 12.716554521182438,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedbatch",
+              "embed",
+              "batch",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.8345009576436294,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 553,
+          "endLine": 652,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7754076637233557,
+            "keywordScore": 0.92314089852404,
+            "rawVectorScore": 0.48060813950697007,
+            "rawKeywordScore": 11.7391715668143,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embedbatch",
+              "embed",
+              "batch"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.7081870475885089,
+          "filePath": "src/indexer/pipeline.ts",
+          "startLine": 453,
+          "endLine": 552,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.7713838982390567,
+            "keywordScore": 0.6133917716126873,
+            "rawVectorScore": 0.47811415533103957,
+            "rawKeywordScore": 7.8002299065574245,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "embed",
+              "batch",
+              "function"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 3,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 4,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 7,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "retriever retrieve vector search",
+      "queryIndex": 32,
+      "resultCount": 20,
+      "latencyMs": 133.4,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.872244005896184,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.7870733431603066,
+            "keywordScore": 1,
+            "rawVectorScore": 0.47721793688288794,
+            "rawKeywordScore": 17.384001602676744,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retriever",
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.8710123895655224,
+          "filePath": "src/plugin.ts",
+          "startLine": 343,
+          "endLine": 367,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 1,
+            "keywordScore": 0.6775309739138062,
+            "rawVectorScore": 0.6063195266742644,
+            "rawKeywordScore": 11.778199536380743,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.8666415925740285,
+          "filePath": "src/plugin.ts",
+          "startLine": 321,
+          "endLine": 336,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9927153383475101,
+            "keywordScore": 0.6775309739138062,
+            "rawVectorScore": 0.6019026940691445,
+            "rawKeywordScore": 11.778199536380743,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.813961496472041,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 184,
+          "endLine": 236,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9049151781775309,
+            "keywordScore": 0.6775309739138062,
+            "rawVectorScore": 0.5486677425129581,
+            "rawKeywordScore": 11.778199536380743,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.7841628992511804,
+          "filePath": "src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8552508494760965,
+            "keywordScore": 0.6775309739138062,
+            "rawVectorScore": 0.5185552902421093,
+            "rawKeywordScore": 11.778199536380743,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 3,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 8,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 12,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "session logger token",
+      "queryIndex": 33,
+      "resultCount": 20,
+      "latencyMs": 160.4,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.9902712151209971,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 43,
+          "endLine": 52,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9837853585349952,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5556086308352892,
+            "rawKeywordScore": 10.552134307163826,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.9464133693307005,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 58,
+          "endLine": 157,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9106889488845009,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5143262558410472,
+            "rawKeywordScore": 10.552134307163826,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.9388766964334574,
+          "filePath": "src/eval/index.ts",
+          "startLine": 1,
+          "endLine": 39,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.8981278273890957,
+            "keywordScore": 1,
+            "rawVectorScore": 0.5072321601063732,
+            "rawKeywordScore": 10.552134307163826,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.8523982312691667,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 158,
+          "endLine": 183,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.9310540735316989,
+            "keywordScore": 0.7344144678753682,
+            "rawVectorScore": 0.5258277880846958,
+            "rawKeywordScore": 7.749640102145139,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.811573796919766,
+          "filePath": "src/cli/commands/eval.ts",
+          "startLine": 22,
+          "endLine": 61,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8630133496160314,
+            "keywordScore": 0.7344144678753682,
+            "rawVectorScore": 0.487400693060511,
+            "rawKeywordScore": 7.749640102145139,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "session",
+              "logg",
+              "token"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 4,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 11,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 20,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 20,
+          "wouldInject": true
+        }
+      ]
+    },
+    {
+      "query": "config validation",
+      "queryIndex": 34,
+      "resultCount": 20,
+      "latencyMs": 147.1,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.9,
+          "filePath": "src/index.ts",
+          "startLine": 1,
+          "endLine": 42,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0,
+            "keywordScore": 1,
+            "rawVectorScore": 0,
+            "rawKeywordScore": 7.971585628547258,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "config",
+              "validation"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.6214729258197464,
+          "filePath": "src/embedder/health.ts",
+          "startLine": 64,
+          "endLine": 86,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8957511341298345,
+            "keywordScore": 0.21005561335461428,
+            "rawVectorScore": 0.45396624528289226,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "config"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.6158289803966197,
+          "filePath": "src/core/resolve-api-key.ts",
+          "startLine": 12,
+          "endLine": 23,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8863445584246232,
+            "keywordScore": 0.21005561335461428,
+            "rawVectorScore": 0.4491989972257493,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "config"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.6140378715926662,
+          "filePath": "src/embedder/health.ts",
+          "startLine": 26,
+          "endLine": 42,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8833593770847009,
+            "keywordScore": 0.21005561335461428,
+            "rawVectorScore": 0.44768610875400927,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "config"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.6134040328396435,
+          "filePath": "src/describer/describer.ts",
+          "startLine": 35,
+          "endLine": 37,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.8823029791629965,
+            "keywordScore": 0.21005561335461428,
+            "rawVectorScore": 0.4471507267938104,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "matchedTerms": [
+              "config"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 1,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 1,
+          "wouldInject": true
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 1,
+          "wouldInject": true
         },
         {
           "threshold": 0.5,

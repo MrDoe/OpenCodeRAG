@@ -49,6 +49,17 @@ const QUERIES: string[] = [
   "What is the FETCH_OVERFETCH_FACTOR constant?",
   "How does the TUI settings menu work?",
   "How are image descriptions generated?",
+  // Set B — Code-identifier queries (test hybrid search with keyword contributions)
+  "retrieve function",
+  "KeywordIndex class",
+  "embedder factory",
+  "vector store LanceDB",
+  "find usages SearchResult",
+  "chunkFile method",
+  "embedBatch function",
+  "retriever retrieve vector search",
+  "session logger token",
+  "config validation",
 ];
 
 const THRESHOLDS = [0.85, 0.75, 0.65, 0.50, 0.35];

@@ -6,7 +6,7 @@
  * Usage: node --import tsx src/eval/fast-index.ts --descriptions doc/chunk-descriptions.json
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadConfig, DEFAULT_CONFIG } from "../core/config.js";
@@ -306,7 +306,7 @@ async function main() {
   console.log("  Building keyword index...");
   const ki = new KeywordIndex();
   ki.addChunks(validChunks);
-  await ki.save(path.join(STORE_PATH, "keyword-index.json"));
+  await ki.save(STORE_PATH);
   console.log(`  Keyword index saved (${ki.count()} entries)`);
 
   console.log("\n  Fast indexing complete!\n");

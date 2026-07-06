@@ -200,13 +200,10 @@ async function main() {
     console.log("    Minor differences exist beyond position 5.\n");
   } else {
     console.log("  ◆ Ranking order differs between branches.\n");
-  }
-
-  if (avg(kendalls) > 0.999) {
-    console.log("  Explanation:");
-    console.log("  Both scoring methods are monotonic transforms of the same");
-    console.log("  raw vector similarity scores. When only one signal (vector)");
-    console.log("  contributes, rank order is preserved.\n");
+    console.log("  With keyword contributions active, RRF and linear fusion");
+    console.log("  produce different rank orderings. RRF rewards results that");
+    console.log("  rank highly in BOTH signals over results that rank well in");
+    console.log("  only ONE signal.\n");
   }
 
   // Also show queries where keyword matched
@@ -287,10 +284,11 @@ async function main() {
   report.push("");
   report.push("| # | Query | Top-1 same | Top-5 same | Full same | τ | main score | branch score |");
   report.push("|---|---|:---:|:---:|:---:|:---:|:---:|:---:|");
-  for (const pq of perQuery) {
+  for (let i = 0; i < perQuery.length; i++) {
+    const pq = perQuery[i]!;
     const q = pq.query.length > 48 ? pq.query.substring(0, 45) + "..." : pq.query;
     report.push(
-      "| " + (pq.queryIndex + 1) + " | " + q +
+      "| " + (i + 1) + " | " + q +
       " | " + (pq.top1Same ? "✓" : "✗") +
       " | " + (pq.top5Same ? "✓" : "✗") +
       " | " + (pq.topKFullSame ? "✓" : "✗") +

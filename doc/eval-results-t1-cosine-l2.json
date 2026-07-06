@@ -1,12 +1,12 @@
 {
   "branch": "t1-cosine-l2",
-  "commit": "e922a0b",
-  "timestamp": "2026-07-06T08:42:12.243Z",
+  "commit": "2fd954d",
+  "timestamp": "2026-07-06T09:23:48.604Z",
   "config": {
     "embeddingProvider": "ollama",
     "embeddingModel": "qwen3-embedding:0.6b",
     "topK": 20,
-    "minScore": 0.5,
+    "minScore": 0.35,
     "hybridEnabled": true,
     "keywordWeight": 0.4
   },
@@ -16,86 +16,120 @@
       "query": "How does the retrieval pipeline work end-to-end?",
       "queryIndex": 0,
       "resultCount": 20,
-      "latencyMs": 238.7,
+      "latencyMs": 261.6,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 343,
-          "endLine": 367,
+          "score": 0.01510907003444317,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8168614208698273,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.006153846153846154,
+            "rawVectorScore": 0.7622430622577667,
+            "rawKeywordScore": 8.513966001470433,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 6,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "the",
+              "retrieval",
+              "end",
+              "to"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.015044858523119393,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 321,
-          "endLine": 336,
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.806094765663147,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.006349206349206349,
+            "rawVectorScore": 0.7566157877445221,
+            "rawKeywordScore": 13.679000519189877,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 8,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "to"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/opencode/read-fallback.ts",
-          "startLine": 10,
-          "endLine": 17,
+          "score": 0.014973262032085561,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 599,
+          "endLine": 698,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7875233888626099,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.00909090909090909,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.7749603688716888,
+            "rawKeywordScore": 8.513966001470433,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 5,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "the",
+              "retrieval",
+              "end",
+              "to"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 301,
-          "endLine": 315,
+          "score": 0.014060606060606062,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 184,
+          "endLine": 236,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7825891375541687,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008,
+            "keywordScore": 0.006060606060606061,
+            "rawVectorScore": 0.7528767585754395,
+            "rawKeywordScore": 8.513966001470433,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 14,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "the",
+              "retrieval",
+              "end",
+              "to"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.013936651583710408,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
           "startLine": 71,
           "endLine": 80,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
+            "keywordScore": 0.004705882352941177,
             "rawVectorScore": 0.7752973139286041,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 6.358280942575536,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 24,
+            "matchedTerms": [
+              "the",
+              "retrieval",
+              "to"
+            ]
           }
         }
       ],
@@ -131,86 +165,121 @@
       "query": "How does the plugin interact with chat messages?",
       "queryIndex": 1,
       "resultCount": 20,
-      "latencyMs": 135.7,
+      "latencyMs": 141,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 460,
-          "endLine": 484,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7840714454650879,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/describer/anthropic.ts",
-          "startLine": 10,
-          "endLine": 13,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7757869064807892,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
+          "score": 0.01608118657298985,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
           "startLine": 799,
           "endLine": 898,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
+            "keywordScore": 0.006557377049180328,
             "rawVectorScore": 0.7745556533336639,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 22.625276878585613,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 2,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "plugin",
+              "with",
+              "chat",
+              "message"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.0151131221719457,
+          "filePath": "../OpenCodeRAG-main/src/describer/anthropic.ts",
+          "startLine": 39,
+          "endLine": 45,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00923076923076923,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.7691803574562073,
+            "rawKeywordScore": 8.742760625364115,
+            "keywordWeight": 0.4,
+            "vectorRank": 4,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "chat",
+              "messages",
+              "message"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.01510907003444317,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 699,
+          "endLine": 798,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.006153846153846154,
+            "rawVectorScore": 0.7685944736003876,
+            "rawKeywordScore": 9.987977277632007,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "the",
+              "plugin",
+              "chat",
+              "message"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/describer/describer.ts",
-          "startLine": 15,
-          "endLine": 18,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7724447548389435,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.014570361145703611,
           "filePath": "../OpenCodeRAG-main/src/types/opencode-plugin.d.ts",
           "startLine": 25,
           "endLine": 53,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
+            "vectorScore": 0.00909090909090909,
+            "keywordScore": 0.005479452054794521,
             "rawVectorScore": 0.7691034972667694,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 8.742760625364115,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 5,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "chat",
+              "messages",
+              "message"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014409937888198759,
+          "filePath": "../OpenCodeRAG-main/src/describer/describer.ts",
+          "startLine": 40,
+          "endLine": 47,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.005714285714285714,
+            "rawVectorScore": 0.7650110423564911,
+            "rawKeywordScore": 8.742760625364115,
+            "keywordWeight": 0.4,
+            "vectorRank": 8,
+            "keywordRank": 9,
+            "matchedTerms": [
+              "chat",
+              "messages",
+              "message"
+            ]
           }
         }
       ],
@@ -246,86 +315,125 @@
       "query": "How does the keyword index combine with vector search?",
       "queryIndex": 2,
       "resultCount": 20,
-      "latencyMs": 146.7,
+      "latencyMs": 134.4,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 321,
-          "endLine": 336,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8030349910259247,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.01555977229601518,
           "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
           "startLine": 184,
           "endLine": 236,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
+            "keywordScore": 0.0058823529411764705,
             "rawVectorScore": 0.7983307838439941,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 11.486179711065684,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 1,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "the",
+              "keyword",
+              "index",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014964270701975618,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 321,
+          "endLine": 336,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.005128205128205128,
+            "rawVectorScore": 0.8030349910259247,
+            "rawKeywordScore": 9.45674858996051,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 17,
+            "matchedTerms": [
+              "keyword",
+              "index",
+              "vector",
+              "search"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
-          "startLine": 245,
-          "endLine": 275,
+          "score": 0.014945652173913044,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7938066124916077,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.7647458612918854,
+            "rawKeywordScore": 13.82266635573541,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 8,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "the",
+              "keyword",
+              "index",
+              "with",
+              "vector",
+              "search"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
+          "score": 0.014884135472370767,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008823529411764706,
+            "keywordScore": 0.006060606060606061,
+            "rawVectorScore": 0.7698828876018524,
+            "rawKeywordScore": 11.486179711065684,
+            "keywordWeight": 0.4,
+            "vectorRank": 7,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "the",
+              "keyword",
+              "index",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014438291139240507,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
           "startLine": 343,
           "endLine": 367,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7928096354007721,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.005063291139240506,
+            "rawVectorScore": 0.7926949858665466,
+            "rawKeywordScore": 9.45674858996051,
             "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 1044,
-          "endLine": 1061,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7910011410713196,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 3,
+            "keywordRank": 18,
+            "matchedTerms": [
+              "keyword",
+              "index",
+              "vector",
+              "search"
+            ]
           }
         }
       ],
@@ -361,86 +469,114 @@
       "query": "Where is the embedder factory defined?",
       "queryIndex": 3,
       "resultCount": 20,
-      "latencyMs": 135.4,
+      "latencyMs": 149.7,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.014381520119225038,
           "filePath": "../OpenCodeRAG-main/src/embedder/factory.ts",
           "startLine": 23,
           "endLine": 46,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8202718496322632,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.004545454545454546,
+            "rawVectorScore": 0.821034848690033,
+            "rawKeywordScore": 6.940389354926737,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 0,
+            "keywordRank": 27,
+            "matchedTerms": [
+              "is",
+              "embedder",
+              "embedd"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.013844086021505376,
           "filePath": "../OpenCodeRAG-main/src/core/bootstrap.ts",
           "startLine": 56,
           "endLine": 66,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
+            "keywordScore": 0.004166666666666667,
             "rawVectorScore": 0.7910988032817841,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 5.0638886572435915,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 1,
+            "keywordRank": 35,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
+          "score": 0.013605442176870748,
           "filePath": "../OpenCodeRAG-main/src/embedder/factory.ts",
           "startLine": 62,
           "endLine": 101,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
+            "keywordScore": 0.004081632653061225,
             "rawVectorScore": 0.7568196654319763,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 5.0638886572435915,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 2,
+            "keywordRank": 37,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
+          "score": 0.013567073170731707,
+          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
+          "startLine": 388,
+          "endLine": 436,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.007317073170731707,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.7243208289146423,
+            "rawKeywordScore": 12.14256286092187,
+            "keywordWeight": 0.4,
+            "vectorRank": 21,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "is",
+              "embedder",
+              "embedd",
+              "factory"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.012914823008849557,
           "filePath": "../OpenCodeRAG-main/src/embedder/health.ts",
           "startLine": 45,
           "endLine": 61,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7538323998451233,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.003539823008849558,
+            "rawVectorScore": 0.7546127438545227,
+            "rawKeywordScore": 4.110642218847007,
             "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/embedder/health.ts",
-          "startLine": 397,
-          "endLine": 404,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7512085735797882,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 3,
+            "keywordRank": 52,
+            "matchedTerms": [
+              "is",
+              "embedd"
+            ]
           }
         }
       ],
@@ -476,86 +612,112 @@
       "query": "Where is the LanceDB store implementation?",
       "queryIndex": 4,
       "resultCount": 20,
-      "latencyMs": 131.3,
+      "latencyMs": 142.5,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
-          "startLine": 165,
-          "endLine": 186,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.813552737236023,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
-          "startLine": 189,
-          "endLine": 192,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.80718132853508,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
+          "score": 0.015873015873015872,
           "filePath": "../OpenCodeRAG-main/src/vectorstore/factory.ts",
           "startLine": 22,
           "endLine": 38,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
+            "keywordScore": 0.006349206349206349,
             "rawVectorScore": 0.799913078546524,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 11.546720902753922,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 2,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "lancedb",
+              "lance",
+              "store"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015633167023045853,
+          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
+          "startLine": 165,
+          "endLine": 186,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.005797101449275362,
+            "rawVectorScore": 0.8130159378051758,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "lance",
+              "store"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015391705069124424,
+          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
+          "startLine": 189,
+          "endLine": 192,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.005714285714285714,
+            "rawVectorScore": 0.8067699372768402,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 9,
+            "matchedTerms": [
+              "lance",
+              "store"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
+          "score": 0.014930555555555555,
           "filePath": "../OpenCodeRAG-main/src/web/api.ts",
           "startLine": 230,
           "endLine": 242,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7791714370250702,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.005555555555555556,
+            "rawVectorScore": 0.7796101272106171,
+            "rawKeywordScore": 5.940918836457924,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 3,
+            "keywordRank": 11,
+            "matchedTerms": [
+              "lance",
+              "store"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.014864572047670638,
           "filePath": "../OpenCodeRAG-main/src/web/api.ts",
           "startLine": 199,
           "endLine": 227,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
+            "keywordScore": 0.005633802816901409,
             "rawVectorScore": 0.7714079320430756,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 5.940918836457924,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "lance",
+              "store"
+            ]
           }
         }
       ],
@@ -591,86 +753,131 @@
       "query": "Find all usages of the retrieve function",
       "queryIndex": 5,
       "resultCount": 20,
-      "latencyMs": 137.1,
+      "latencyMs": 143.8,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.016393442622950817,
           "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
           "startLine": 366,
           "endLine": 465,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
+            "keywordScore": 0.006557377049180328,
             "rawVectorScore": 0.7996223568916321,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 23.679610717842714,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 0,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "the",
+              "retrieve",
+              "retriev",
+              "function"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
-          "startLine": 293,
-          "endLine": 299,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7925383448600769,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
+          "score": 0.015677655677655677,
           "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
           "startLine": 428,
           "endLine": 527,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
+            "keywordScore": 0.006153846153846154,
             "rawVectorScore": 0.7896517217159271,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 20.903555787626445,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 2,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "the",
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.01555977229601518,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 293,
+          "endLine": 299,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.7925383448600769,
+            "rawKeywordScore": 16.27237814950236,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "retrieve",
+              "retriev"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
+          "score": 0.014708333333333334,
           "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
           "startLine": 290,
           "endLine": 299,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009375,
-            "keywordScore": 0,
+            "keywordScore": 0.005333333333333334,
             "rawVectorScore": 0.7816400825977325,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 11.267447987657134,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 3,
+            "keywordRank": 14,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.014636174636174636,
           "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
           "startLine": 280,
           "endLine": 287,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
+            "keywordScore": 0.005405405405405406,
             "rawVectorScore": 0.7804376780986786,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 11.267447987657134,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 13,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of"
+            ]
           }
         }
       ],
@@ -706,86 +913,135 @@
       "query": "Find all usages of SearchResult type",
       "queryIndex": 6,
       "resultCount": 20,
-      "latencyMs": 146.2,
+      "latencyMs": 131.9,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
-          "startLine": 290,
-          "endLine": 299,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.815750241279602,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.016234796404019036,
           "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
           "startLine": 366,
           "endLine": 465,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
+            "keywordScore": 0.006557377049180328,
             "rawVectorScore": 0.8101376593112946,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 23.238308700996786,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 1,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "searchresult",
+              "search",
+              "result",
+              "type"
+            ]
           }
         },
         {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
-          "startLine": 176,
-          "endLine": 181,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8084167540073395,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
+          "rank": 1,
+          "score": 0.01543560606060606,
           "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
           "startLine": 528,
           "endLine": 627,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009375,
-            "keywordScore": 0,
+            "keywordScore": 0.006060606060606061,
             "rawVectorScore": 0.805400013923645,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 17.260922255563226,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 3,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "search",
+              "result",
+              "type"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015406836783822823,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.0064516129032258064,
+            "rawVectorScore": 0.7851665318012238,
+            "rawKeywordScore": 18.62773244221438,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "searchresult",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.015169398907103825,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 290,
+          "endLine": 299,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.005333333333333334,
+            "rawVectorScore": 0.815750241279602,
+            "rawKeywordScore": 13.135357594443214,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 14,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "result"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.015027870680044592,
           "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
           "startLine": 280,
           "endLine": 287,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
+            "keywordScore": 0.005797101449275362,
             "rawVectorScore": 0.8050737380981445,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 15.426400926997088,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "of",
+              "search",
+              "result"
+            ]
           }
         }
       ],
@@ -821,86 +1077,124 @@
       "query": "How does the chunker factory register new languages?",
       "queryIndex": 7,
       "resultCount": 20,
-      "latencyMs": 146.4,
+      "latencyMs": 149.6,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.016086065573770493,
           "filePath": "../OpenCodeRAG-main/src/chunker/factory.ts",
           "startLine": 97,
           "endLine": 115,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8382091820240021,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.8381350338459015,
+            "rawKeywordScore": 12.431347805284023,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 0,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "register",
+              "regist",
+              "language"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/chunker/base.ts",
-          "startLine": 57,
-          "endLine": 64,
+          "score": 0.01544011544011544,
+          "filePath": "../OpenCodeRAG-main/src/chunker/loader.ts",
+          "startLine": 19,
+          "endLine": 43,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8112517297267914,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.00909090909090909,
+            "keywordScore": 0.006349206349206349,
+            "rawVectorScore": 0.7848783433437347,
+            "rawKeywordScore": 15.053348043922359,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 5,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "does",
+              "chunker",
+              "chunk",
+              "register",
+              "regist"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/chunker/grammar.ts",
-          "startLine": 87,
-          "endLine": 97,
+          "score": 0.014511310285958173,
+          "filePath": "../OpenCodeRAG-main/src/chunker/loader.ts",
+          "startLine": 56,
+          "endLine": 70,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8037641048431396,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008450704225352112,
+            "keywordScore": 0.006060606060606061,
+            "rawVectorScore": 0.7729448676109314,
+            "rawKeywordScore": 12.026343420519646,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 10,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "register",
+              "regist",
+              "new"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/chunker/grammar.ts",
-          "startLine": 110,
-          "endLine": 123,
+          "score": 0.013457556935817806,
+          "filePath": "../OpenCodeRAG-main/src/chunker/base.ts",
+          "startLine": 26,
+          "endLine": 55,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7917411625385284,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.004761904761904762,
+            "rawVectorScore": 0.7798387110233307,
+            "rawKeywordScore": 7.854788943314285,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 8,
+            "keywordRank": 23,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "new",
+              "language"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.012242562929061784,
           "filePath": "../OpenCodeRAG-main/src/chunker/factory.ts",
-          "startLine": 134,
-          "endLine": 136,
+          "startLine": 232,
+          "endLine": 256,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7893357574939728,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.007894736842105263,
+            "keywordScore": 0.004347826086956522,
+            "rawVectorScore": 0.76323202252388,
+            "rawKeywordScore": 7.854788943314285,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 15,
+            "keywordRank": 31,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "new",
+              "language"
+            ]
           }
         }
       ],
@@ -936,86 +1230,125 @@
       "query": "What is the default minScore configuration?",
       "queryIndex": 8,
       "resultCount": 20,
-      "latencyMs": 142.8,
+      "latencyMs": 136.4,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/chunker/fallback.ts",
-          "startLine": 15,
-          "endLine": 17,
+          "score": 0.014368530020703934,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 343,
+          "endLine": 367,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7386708855628967,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008571428571428572,
+            "keywordScore": 0.005797101449275362,
+            "rawVectorScore": 0.720088392496109,
+            "rawKeywordScore": 14.945573785780137,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 9,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "default",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/retriever/context-optimizer.ts",
-          "startLine": 49,
-          "endLine": 51,
+          "score": 0.014302981466559226,
+          "filePath": "../OpenCodeRAG-main/src/core/runtime-overrides.ts",
+          "startLine": 12,
+          "endLine": 54,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7336792945861816,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008823529411764706,
+            "keywordScore": 0.005479452054794521,
+            "rawVectorScore": 0.7215653657913208,
+            "rawKeywordScore": 12.609087141110411,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 7,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/describer/anthropic.ts",
-          "startLine": 34,
-          "endLine": 36,
+          "score": 0.01384493670886076,
+          "filePath": "../OpenCodeRAG-main/src/tui.ts",
+          "startLine": 427,
+          "endLine": 526,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7315484285354614,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.007594936708860759,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.7123583853244781,
+            "rawKeywordScore": 16.975004906885314,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 18,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "the",
+              "default",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/embedder/cohere.ts",
-          "startLine": 26,
-          "endLine": 32,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.72625333070755,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.01327117327117327,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
           "startLine": 412,
           "endLine": 448,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
+            "keywordScore": 0.00404040404040404,
             "rawVectorScore": 0.7257089614868164,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 5.380057063460264,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 38,
+            "matchedTerms": [
+              "min",
+              "score"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.012903225806451613,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0064516129032258064,
+            "keywordScore": 0.0064516129032258064,
+            "rawVectorScore": 0.7039834856987,
+            "rawKeywordScore": 18.85150560456846,
+            "keywordWeight": 0.4,
+            "vectorRank": 32,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "is",
+              "the",
+              "default",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
           }
         }
       ],
@@ -1051,86 +1384,123 @@
       "query": "How does the session logger capture token usage?",
       "queryIndex": 9,
       "resultCount": 20,
-      "latencyMs": 145.5,
+      "latencyMs": 128.4,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
-          "startLine": 26,
-          "endLine": 40,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8653715550899506,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
-          "startLine": 12,
-          "endLine": 24,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8495024740695953,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
+          "score": 0.015584415584415583,
           "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
           "startLine": 43,
           "endLine": 52,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
+            "keywordScore": 0.006060606060606061,
             "rawVectorScore": 0.8369814157485962,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 10.552134307163826,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 2,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015380906460945034,
+          "filePath": "../OpenCodeRAG-main/src/eval/index.ts",
+          "startLine": 1,
+          "endLine": 39,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.008823529411764706,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.8056229650974274,
+            "rawKeywordScore": 27.43241842421657,
+            "keywordWeight": 0.4,
+            "vectorRank": 7,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "the",
+              "session",
+              "logger",
+              "logg",
+              "capture",
+              "captur",
+              "token",
+              "usage"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015315517628565012,
+          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
+          "startLine": 26,
+          "endLine": 40,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.005479452054794521,
+            "rawVectorScore": 0.8653715550899506,
+            "rawKeywordScore": 8.065350347317922,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "session",
+              "token",
+              "usage"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/eval/token-analysis.ts",
-          "startLine": 83,
-          "endLine": 182,
+          "score": 0.015232974910394267,
+          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
+          "startLine": 12,
+          "endLine": 24,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8313508629798889,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.005555555555555556,
+            "rawVectorScore": 0.8500174283981323,
+            "rawKeywordScore": 8.065350347317922,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 1,
+            "keywordRank": 11,
+            "matchedTerms": [
+              "session",
+              "token",
+              "usage"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
-          "startLine": 385,
-          "endLine": 407,
+          "score": 0.014888010540184453,
+          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
+          "startLine": 158,
+          "endLine": 183,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8137838542461395,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.00909090909090909,
+            "keywordScore": 0.005797101449275362,
+            "rawVectorScore": 0.81332927942276,
+            "rawKeywordScore": 9.779071223250313,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 5,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "the",
+              "session",
+              "logg",
+              "token"
+            ]
           }
         }
       ],
@@ -1166,86 +1536,116 @@
       "query": "How does L2 normalization affect vector search scores?",
       "queryIndex": 10,
       "resultCount": 20,
-      "latencyMs": 142.6,
+      "latencyMs": 138.3,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/retriever/context-optimizer.ts",
-          "startLine": 49,
-          "endLine": 51,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7815871834754944,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.01515687140963323,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
           "startLine": 343,
           "endLine": 367,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7660261392593384,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.005479452054794521,
+            "rawVectorScore": 0.7657628059387207,
+            "rawKeywordScore": 7.8035209315309295,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 1,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "vector",
+              "search",
+              "score"
+            ]
           }
         },
         {
-          "rank": 2,
-          "score": 0.009523809523809523,
+          "rank": 1,
+          "score": 0.015079365079365078,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
           "startLine": 321,
           "endLine": 336,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
+            "keywordScore": 0.005555555555555556,
             "rawVectorScore": 0.7581153213977814,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 7.8035209315309295,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 2,
+            "keywordRank": 11,
+            "matchedTerms": [
+              "vector",
+              "search",
+              "score"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014632034632034632,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 412,
+          "endLine": 448,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008571428571428572,
+            "keywordScore": 0.006060606060606061,
+            "rawVectorScore": 0.7314635813236237,
+            "rawKeywordScore": 9.64066934218794,
+            "keywordWeight": 0.4,
+            "vectorRank": 9,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "search",
+              "scores",
+              "score"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/embedder/ollama.ts",
-          "startLine": 51,
-          "endLine": 97,
+          "score": 0.014492753623188406,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 184,
+          "endLine": 236,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.752647191286087,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.005797101449275362,
+            "rawVectorScore": 0.7382060885429382,
+            "rawKeywordScore": 7.8035209315309295,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 8,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "vector",
+              "search",
+              "score"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/eval/token-analysis.ts",
-          "startLine": 223,
-          "endLine": 307,
+          "score": 0.014358108108108109,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 176,
+          "endLine": 181,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.748416930437088,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008108108108108109,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.7290540933609009,
+            "rawKeywordScore": 9.64066934218794,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 13,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "search",
+              "scores",
+              "score"
+            ]
           }
         }
       ],
@@ -1281,86 +1681,119 @@
       "query": "What is the MetadataFilter interface used for?",
       "queryIndex": 11,
       "resultCount": 20,
-      "latencyMs": 136.3,
+      "latencyMs": 139.9,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.013876469614174531,
           "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
           "startLine": 308,
           "endLine": 313,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
+            "keywordScore": 0.00404040404040404,
             "rawVectorScore": 0.7521616518497467,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 8.127817464437936,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 0,
+            "keywordRank": 38,
+            "matchedTerms": [
+              "the",
+              "metadata",
+              "interface",
+              "interfac"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.013313782991202346,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
           "startLine": 71,
           "endLine": 80,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
+            "keywordScore": 0.0036363636363636364,
             "rawVectorScore": 0.7493048906326294,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 7.338661360397543,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 1,
+            "keywordRank": 49,
+            "matchedTerms": [
+              "the",
+              "filter",
+              "filt"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/indexer/metadata.ts",
-          "startLine": 88,
-          "endLine": 105,
+          "score": 0.01321917808219178,
+          "filePath": "../OpenCodeRAG-main/src/opencode/read-format.ts",
+          "startLine": 10,
+          "endLine": 21,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7431941628456116,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.00821917808219178,
+            "keywordScore": 0.005,
+            "rawVectorScore": 0.7223770618438721,
+            "rawKeywordScore": 9.708793548492173,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 12,
+            "keywordRank": 19,
+            "matchedTerms": [
+              "the",
+              "interface",
+              "interfac",
+              "used"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
-          "startLine": 293,
-          "endLine": 299,
+          "score": 0.012937062937062937,
+          "filePath": "../OpenCodeRAG-main/src/opencode/create-read-tool.ts",
+          "startLine": 191,
+          "endLine": 215,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.741024911403656,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.00909090909090909,
+            "keywordScore": 0.0038461538461538464,
+            "rawVectorScore": 0.7375127971172333,
+            "rawKeywordScore": 7.645716883962097,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 5,
+            "keywordRank": 43,
+            "matchedTerms": [
+              "metadata",
+              "filter",
+              "filt"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/opencode/create-read-tool.ts",
-          "startLine": 261,
-          "endLine": 264,
+          "score": 0.01216931216931217,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 164,
+          "endLine": 173,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7397536337375641,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.007407407407407407,
+            "keywordScore": 0.004761904761904762,
+            "rawVectorScore": 0.7146406471729279,
+            "rawKeywordScore": 9.071129937955403,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 20,
+            "keywordRank": 23,
+            "matchedTerms": [
+              "filter",
+              "filt",
+              "interface",
+              "interfac"
+            ]
           }
         }
       ],
@@ -1396,86 +1829,127 @@
       "query": "How does the background indexer handle file changes?",
       "queryIndex": 12,
       "resultCount": 20,
-      "latencyMs": 139.7,
+      "latencyMs": 161.2,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.016185271922976842,
           "filePath": "../OpenCodeRAG-main/src/watcher.ts",
           "startLine": 78,
           "endLine": 177,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
+            "keywordScore": 0.006349206349206349,
             "rawVectorScore": 0.834298312664032,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 21.127461055894198,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 0,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "background",
+              "indexer",
+              "index",
+              "handle",
+              "handl",
+              "file",
+              "change"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/watcher.ts",
-          "startLine": 21,
-          "endLine": 24,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8222635090351105,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
+          "score": 0.01597542242703533,
           "filePath": "../OpenCodeRAG-main/src/watcher.ts",
           "startLine": 27,
           "endLine": 46,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
+            "keywordScore": 0.0064516129032258064,
             "rawVectorScore": 0.8211431503295898,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 21.285792055016966,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 2,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "the",
+              "background",
+              "indexer",
+              "index",
+              "file",
+              "changes",
+              "change"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015311222171740118,
+          "filePath": "../OpenCodeRAG-main/src/watcher.ts",
+          "startLine": 21,
+          "endLine": 24,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.005633802816901409,
+            "rawVectorScore": 0.8222635090351105,
+            "rawKeywordScore": 12.050435007069142,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "the",
+              "background",
+              "indexer",
+              "index"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
-          "startLine": 120,
-          "endLine": 125,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8077379763126373,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.01471022128556375,
           "filePath": "../OpenCodeRAG-main/src/watcher.ts",
           "startLine": 178,
           "endLine": 189,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7950503528118134,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.005479452054794521,
+            "rawVectorScore": 0.7941692173480988,
+            "rawKeywordScore": 11.193626160405827,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "background",
+              "indexer",
+              "index",
+              "file"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013701578192252512,
+          "filePath": "../OpenCodeRAG-main/src/indexer/stats.ts",
+          "startLine": 41,
+          "endLine": 58,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008823529411764706,
+            "keywordScore": 0.004878048780487805,
+            "rawVectorScore": 0.7871012985706329,
+            "rawKeywordScore": 9.676628481669152,
+            "keywordWeight": 0.4,
+            "vectorRank": 7,
+            "keywordRank": 21,
+            "matchedTerms": [
+              "does",
+              "the",
+              "index",
+              "file"
+            ]
           }
         }
       ],
@@ -1511,86 +1985,114 @@
       "query": "Where is the config validation logic?",
       "queryIndex": 13,
       "resultCount": 20,
-      "latencyMs": 137.3,
+      "latencyMs": 198,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/eval/run-token-test.ts",
-          "startLine": 40,
-          "endLine": 48,
+          "score": 0.01293827160493827,
+          "filePath": "../OpenCodeRAG-main/src/retriever/context-optimizer.ts",
+          "startLine": 8,
+          "endLine": 19,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7609131038188934,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008,
+            "keywordScore": 0.0049382716049382715,
+            "rawVectorScore": 0.7181599140167236,
+            "rawKeywordScore": 5.580408127401643,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 14,
+            "keywordRank": 20,
+            "matchedTerms": [
+              "is",
+              "the",
+              "config"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/tui.ts",
-          "startLine": 265,
-          "endLine": 271,
+          "score": 0.011868131868131869,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7607740163803101,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.005714285714285714,
+            "keywordScore": 0.006153846153846154,
+            "rawVectorScore": 0.7007447183132172,
+            "rawKeywordScore": 8.42044763650828,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 44,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/cli/format.ts",
-          "startLine": 130,
-          "endLine": 134,
+          "score": 0.011382978723404255,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 1313,
+          "endLine": 1391,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7549314498901367,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.006382978723404255,
+            "keywordScore": 0.005,
+            "rawVectorScore": 0.7044038772583008,
+            "rawKeywordScore": 5.580408127401643,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 33,
+            "keywordRank": 19,
+            "matchedTerms": [
+              "is",
+              "the",
+              "config"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 193,
-          "endLine": 215,
+          "score": 0.010948275862068965,
+          "filePath": "../OpenCodeRAG-main/src/tui.ts",
+          "startLine": 283,
+          "endLine": 294,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7490440607070923,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.0075,
+            "keywordScore": 0.003448275862068966,
+            "rawVectorScore": 0.7114178240299225,
+            "rawKeywordScore": 3.7039074297184973,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 19,
+            "keywordRank": 55,
+            "matchedTerms": [
+              "the",
+              "config"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/tui.ts",
-          "startLine": 361,
-          "endLine": 376,
+          "score": 0.01036699149906697,
+          "filePath": "../OpenCodeRAG-main/src/core/bootstrap.ts",
+          "startLine": 36,
+          "endLine": 53,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7405577898025513,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.006593406593406593,
+            "keywordScore": 0.0037735849056603774,
+            "rawVectorScore": 0.7052006125450134,
+            "rawKeywordScore": 3.7039074297184973,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 30,
+            "keywordRank": 45,
+            "matchedTerms": [
+              "the",
+              "config"
+            ]
           }
         }
       ],
@@ -1626,86 +2128,115 @@
       "query": "How are PDF documents chunked and indexed?",
       "queryIndex": 14,
       "resultCount": 20,
-      "latencyMs": 136.7,
+      "latencyMs": 140.3,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/chunker/docx.ts",
-          "startLine": 39,
-          "endLine": 108,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8325012028217316,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/chunker/doc.ts",
-          "startLine": 40,
-          "endLine": 109,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8193139731884003,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
-          "startLine": 120,
-          "endLine": 125,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8003702461719513,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/chunker/excel.ts",
-          "startLine": 49,
-          "endLine": 108,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7956143319606781,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.0141690408357075,
           "filePath": "../OpenCodeRAG-main/src/content/pdf.ts",
           "startLine": 15,
           "endLine": 23,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7940729856491089,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.0049382716049382715,
+            "rawVectorScore": 0.7934660017490387,
+            "rawKeywordScore": 6.705533799836411,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 20,
+            "matchedTerms": [
+              "pdf",
+              "chunk"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.013824884792626727,
+          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
+          "startLine": 120,
+          "endLine": 125,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.004301075268817204,
+            "rawVectorScore": 0.7998655140399933,
+            "rawKeywordScore": 6.140786969306384,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 32,
+            "matchedTerms": [
+              "chunk",
+              "indexed",
+              "index"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.012532299741602068,
+          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
+          "startLine": 20,
+          "endLine": 47,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0069767441860465115,
+            "keywordScore": 0.005555555555555556,
+            "rawVectorScore": 0.7648292779922485,
+            "rawKeywordScore": 8.374928490470245,
+            "keywordWeight": 0.4,
+            "vectorRank": 25,
+            "keywordRank": 11,
+            "matchedTerms": [
+              "chunk",
+              "and",
+              "indexed",
+              "index"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.012395604395604396,
+          "filePath": "../OpenCodeRAG-main/src/indexer/pipeline.ts",
+          "startLine": 749,
+          "endLine": 819,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008,
+            "keywordScore": 0.004395604395604396,
+            "rawVectorScore": 0.7735616862773895,
+            "rawKeywordScore": 6.140786969306384,
+            "keywordWeight": 0.4,
+            "vectorRank": 14,
+            "keywordRank": 30,
+            "matchedTerms": [
+              "chunk",
+              "indexed",
+              "index"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.012345054389071592,
+          "filePath": "../OpenCodeRAG-main/src/indexer/description-stage.ts",
+          "startLine": 32,
+          "endLine": 119,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.0033898305084745766,
+            "rawVectorScore": 0.784144252538681,
+            "rawKeywordScore": 4.839129870180977,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 57,
+            "matchedTerms": [
+              "document",
+              "chunk"
+            ]
           }
         }
       ],
@@ -1741,86 +2272,117 @@
       "query": "What embedding providers are supported?",
       "queryIndex": 15,
       "resultCount": 20,
-      "latencyMs": 133.1,
+      "latencyMs": 135.9,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.014884135472370767,
+          "filePath": "../OpenCodeRAG-main/src/core/provider-defaults.ts",
+          "startLine": 7,
+          "endLine": 16,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008823529411764706,
+            "keywordScore": 0.006060606060606061,
+            "rawVectorScore": 0.8289196789264679,
+            "rawKeywordScore": 10.448091959118075,
+            "keywordWeight": 0.4,
+            "vectorRank": 7,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider",
+              "support"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.013919413919413919,
+          "filePath": "../OpenCodeRAG-main/src/embedder/factory.ts",
+          "startLine": 23,
+          "endLine": 46,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.004395604395604396,
+            "rawVectorScore": 0.8618934750556946,
+            "rawKeywordScore": 6.530629230394111,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 30,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.013887945670628184,
+          "filePath": "../OpenCodeRAG-main/src/embedder/health.ts",
+          "startLine": 45,
+          "endLine": 61,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.004210526315789474,
+            "rawVectorScore": 0.8624624907970428,
+            "rawKeywordScore": 6.530629230394111,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 34,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.013876469614174531,
           "filePath": "../OpenCodeRAG-main/src/embedder/ollama.ts",
           "startLine": 51,
           "endLine": 97,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
+            "keywordScore": 0.00404040404040404,
             "rawVectorScore": 0.8716892302036285,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 6.530629230394111,
             "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/embedder/openai.ts",
-          "startLine": 60,
-          "endLine": 89,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8623208105564117,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/embedder/health.ts",
-          "startLine": 45,
-          "endLine": 61,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.862164169549942,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/embedder/factory.ts",
-          "startLine": 23,
-          "endLine": 46,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8614892065525055,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 0,
+            "keywordRank": 38,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.013828470380194517,
           "filePath": "../OpenCodeRAG-main/src/core/bootstrap.ts",
           "startLine": 56,
           "endLine": 66,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
+            "keywordScore": 0.004597701149425287,
             "rawVectorScore": 0.8396036028862,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 6.530629230394111,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 26,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "provider"
+            ]
           }
         }
       ],
@@ -1856,86 +2418,119 @@
       "query": "How does the CLI parse and dispatch commands?",
       "queryIndex": 16,
       "resultCount": 20,
-      "latencyMs": 189.2,
+      "latencyMs": 136.4,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.01571841851494696,
           "filePath": "../OpenCodeRAG-main/src/cli/commands/query.ts",
           "startLine": 25,
           "endLine": 101,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7968338131904602,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.7982566356658936,
+            "rawKeywordScore": 10.478336008139719,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 0,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "the",
+              "cli",
+              "parse",
+              "command"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.014890710382513661,
+          "filePath": "../OpenCodeRAG-main/src/cli.ts",
+          "startLine": 1,
+          "endLine": 10,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.008333333333333333,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.7459721565246582,
+            "rawKeywordScore": 15.680509514134853,
+            "keywordWeight": 0.4,
+            "vectorRank": 11,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "the",
+              "cli",
+              "and",
+              "commands",
+              "command"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014724711907810498,
+          "filePath": "../OpenCodeRAG-main/src/cli/types.ts",
+          "startLine": 7,
+          "endLine": 24,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00909090909090909,
+            "keywordScore": 0.005633802816901409,
+            "rawVectorScore": 0.7648557126522064,
+            "rawKeywordScore": 8.448904887034544,
+            "keywordWeight": 0.4,
+            "vectorRank": 5,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "cli",
+              "and",
+              "command"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.01461569095977698,
           "filePath": "../OpenCodeRAG-main/src/cli/commands/eval.ts",
           "startLine": 71,
           "endLine": 134,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
+            "keywordScore": 0.0049382716049382715,
             "rawVectorScore": 0.7839367687702179,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 6.214763365870683,
             "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/cli/format.ts",
-          "startLine": 110,
-          "endLine": 122,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7711082994937897,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/cli/commands/index.ts",
-          "startLine": 1,
-          "endLine": 18,
-          "language": "text",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7682340741157532,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 1,
+            "keywordRank": 20,
+            "matchedTerms": [
+              "cli",
+              "command"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/cli/commands/show.ts",
+          "score": 0.014492753623188406,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/ui.ts",
           "startLine": 22,
-          "endLine": 59,
+          "endLine": 82,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7663054168224335,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.005797101449275362,
+            "rawVectorScore": 0.7595089375972748,
+            "rawKeywordScore": 10.478336008139719,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 8,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "the",
+              "cli",
+              "parse",
+              "command"
+            ]
           }
         }
       ],
@@ -1971,86 +2566,120 @@
       "query": "How does the session logger persist events?",
       "queryIndex": 17,
       "resultCount": 20,
-      "latencyMs": 134.7,
+      "latencyMs": 133.7,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.01571841851494696,
           "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
           "startLine": 43,
           "endLine": 52,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
+            "keywordScore": 0.0058823529411764705,
             "rawVectorScore": 0.8729149699211121,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 11.348286077861328,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 0,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "event"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.015474520804114072,
           "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
           "startLine": 58,
           "endLine": 157,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
+            "keywordScore": 0.005797101449275362,
             "rawVectorScore": 0.866875559091568,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 11.348286077861328,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 1,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "event"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
+          "score": 0.015238095238095238,
           "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
           "startLine": 158,
           "endLine": 183,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
+            "keywordScore": 0.005714285714285714,
             "rawVectorScore": 0.8487854301929474,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 10.575222993947818,
             "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 2,
+            "keywordRank": 9,
+            "matchedTerms": [
+              "the",
+              "session",
+              "logg",
+              "event"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
-          "startLine": 26,
-          "endLine": 40,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8466207087039948,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.014864572047670638,
           "filePath": "../OpenCodeRAG-main/src/eval/storage.ts",
           "startLine": 26,
           "endLine": 35,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8365089297294617,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.005633802816901409,
+            "rawVectorScore": 0.8379587531089783,
+            "rawKeywordScore": 10.575222993947818,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "the",
+              "session",
+              "logg",
+              "event"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014360629286002421,
+          "filePath": "../OpenCodeRAG-main/src/eval/storage.ts",
+          "startLine": 165,
+          "endLine": 178,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.005405405405405406,
+            "rawVectorScore": 0.8185106813907623,
+            "rawKeywordScore": 10.02807074011448,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 13,
+            "matchedTerms": [
+              "session",
+              "events",
+              "event"
+            ]
           }
         }
       ],
@@ -2086,86 +2715,119 @@
       "query": "What is the manifest schema version used for?",
       "queryIndex": 18,
       "resultCount": 20,
-      "latencyMs": 150,
+      "latencyMs": 151.1,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
-          "startLine": 308,
-          "endLine": 313,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7399376928806305,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/core/version-check.ts",
-          "startLine": 1,
-          "endLine": 7,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7395970225334167,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/describer/anthropic.ts",
-          "startLine": 15,
-          "endLine": 17,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7377591729164124,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
+          "score": 0.013972701149425287,
           "filePath": "../OpenCodeRAG-main/src/indexer/pipeline.ts",
           "startLine": 749,
           "endLine": 819,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7363853752613068,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.004597701149425287,
+            "rawVectorScore": 0.7366407811641693,
+            "rawKeywordScore": 6.471085544344631,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 3,
+            "keywordRank": 26,
+            "matchedTerms": [
+              "is",
+              "manifest",
+              "for"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.013565085962592103,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.007594936708860759,
+            "keywordScore": 0.005970149253731343,
+            "rawVectorScore": 0.7220064103603363,
+            "rawKeywordScore": 11.938081691282836,
+            "keywordWeight": 0.4,
+            "vectorRank": 18,
+            "keywordRank": 6,
+            "matchedTerms": [
+              "is",
+              "the",
+              "manifest",
+              "version",
+              "for"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.013212608987256874,
+          "filePath": "../OpenCodeRAG-main/src/indexer/stats.ts",
+          "startLine": 41,
+          "endLine": 58,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008450704225352112,
+            "keywordScore": 0.004761904761904762,
+            "rawVectorScore": 0.7307842373847961,
+            "rawKeywordScore": 7.107263334005611,
+            "keywordWeight": 0.4,
+            "vectorRank": 10,
+            "keywordRank": 23,
+            "matchedTerms": [
+              "is",
+              "the",
+              "manifest"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.012372448979591836,
+          "filePath": "../OpenCodeRAG-main/src/indexer/pipeline.ts",
+          "startLine": 153,
+          "endLine": 252,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.006122448979591836,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.708729088306427,
+            "rawKeywordScore": 12.41797939417377,
+            "keywordWeight": 0.4,
+            "vectorRank": 37,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "is",
+              "the",
+              "manifest",
+              "used",
+              "for"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/eval/types.ts",
-          "startLine": 68,
-          "endLine": 93,
+          "score": 0.012267080745341614,
+          "filePath": "../OpenCodeRAG-main/src/tui.ts",
+          "startLine": 89,
+          "endLine": 128,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7348621487617493,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.0035714285714285718,
+            "rawVectorScore": 0.732252299785614,
+            "rawKeywordScore": 4.594584846661485,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 8,
+            "keywordRank": 51,
+            "matchedTerms": [
+              "manifest",
+              "for"
+            ]
           }
         }
       ],
@@ -2201,86 +2863,137 @@
       "query": "How does the OpenCode plugin register tools?",
       "queryIndex": 19,
       "resultCount": 20,
-      "latencyMs": 149.5,
+      "latencyMs": 140.8,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 1213,
-          "endLine": 1312,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8483277261257172,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
-          "startLine": 699,
-          "endLine": 798,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8436833918094635,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/plugin-entry.ts",
-          "startLine": 1,
-          "endLine": 19,
-          "language": "text",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8296231329441071,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/cli/commands/setup.ts",
-          "startLine": 28,
-          "endLine": 40,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8233766853809357,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
+          "score": 0.015682382133995035,
           "filePath": "../OpenCodeRAG-main/src/plugin.ts",
           "startLine": 499,
           "endLine": 598,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8075522482395172,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.0064516129032258064,
+            "rawVectorScore": 0.8066220283508301,
+            "rawKeywordScore": 25.1592075988563,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.01555977229601518,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 699,
+          "endLine": 798,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.8430216610431671,
+            "rawKeywordScore": 20.274502744032308,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "the",
+              "open",
+              "code",
+              "plugin",
+              "register",
+              "regist",
+              "tools"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015512600929777343,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.7970275580883026,
+            "rawKeywordScore": 29.273717830672997,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin",
+              "tools"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.015238095238095238,
+          "filePath": "../OpenCodeRAG-main/src/plugin-entry.ts",
+          "startLine": 1,
+          "endLine": 19,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.005714285714285714,
+            "rawVectorScore": 0.8296231329441071,
+            "rawKeywordScore": 17.942419523272093,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 9,
+            "matchedTerms": [
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin",
+              "register"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014714114354258297,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 1213,
+          "endLine": 1312,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.004878048780487805,
+            "rawVectorScore": 0.8487226665019989,
+            "rawKeywordScore": 12.828963521467251,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 21,
+            "matchedTerms": [
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin"
+            ]
           }
         }
       ],
@@ -2316,86 +3029,120 @@
       "query": "Where is the globMatch function defined?",
       "queryIndex": 20,
       "resultCount": 20,
-      "latencyMs": 150.5,
+      "latencyMs": 152.5,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.01500808127453244,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 528,
+          "endLine": 627,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008450704225352112,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.7083643674850464,
+            "rawKeywordScore": 24.972142610413826,
+            "keywordWeight": 0.4,
+            "vectorRank": 10,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "where",
+              "is",
+              "the",
+              "match",
+              "function",
+              "defined",
+              "defin"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014175104228707564,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.005479452054794521,
+            "rawVectorScore": 0.7087934911251068,
+            "rawKeywordScore": 5.98690745514285,
+            "keywordWeight": 0.4,
+            "vectorRank": 8,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "the",
+              "match",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014137140842587695,
           "filePath": "../OpenCodeRAG-main/src/chunker/ssl.ts",
           "startLine": 145,
           "endLine": 165,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7408466041088104,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.004301075268817204,
+            "rawVectorScore": 0.7416016161441803,
+            "rawKeywordScore": 3.9574763340376746,
             "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
-          "startLine": 290,
-          "endLine": 299,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.73261958360672,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
-          "startLine": 628,
-          "endLine": 642,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7154453098773956,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
+            "vectorRank": 0,
+            "keywordRank": 32,
+            "matchedTerms": [
+              "match",
+              "function"
+            ]
           }
         },
         {
           "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
-          "startLine": 159,
-          "endLine": 161,
+          "score": 0.013026017111925964,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7147655487060547,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.007228915662650602,
+            "keywordScore": 0.005797101449275362,
+            "rawVectorScore": 0.694938063621521,
+            "rawKeywordScore": 7.863408152825995,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 22,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "is",
+              "the",
+              "match",
+              "function"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/core/provider-defaults.ts",
-          "startLine": 100,
-          "endLine": 105,
+          "score": 0.012650406504065041,
+          "filePath": "../OpenCodeRAG-main/src/embedder/http.ts",
+          "startLine": 126,
+          "endLine": 140,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7120298743247986,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.007317073170731707,
+            "keywordScore": 0.005333333333333334,
+            "rawVectorScore": 0.6954189538955688,
+            "rawKeywordScore": 5.833977031720821,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 21,
+            "keywordRank": 14,
+            "matchedTerms": [
+              "is",
+              "match",
+              "function"
+            ]
           }
         }
       ],
@@ -2431,86 +3178,111 @@
       "query": "How does the proxy-aware HTTP client work?",
       "queryIndex": 21,
       "resultCount": 20,
-      "latencyMs": 155.8,
+      "latencyMs": 150.9,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
+          "score": 0.015469868390671899,
           "filePath": "../OpenCodeRAG-main/src/embedder/http.ts",
           "startLine": 152,
           "endLine": 164,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
+            "keywordScore": 0.005633802816901409,
             "rawVectorScore": 0.7926509976387024,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 6.059193994548162,
             "keywordWeight": 0.4,
-            "vectorRank": 0
+            "vectorRank": 0,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "proxy",
+              "http"
+            ]
           }
         },
         {
           "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.015232974910394267,
           "filePath": "../OpenCodeRAG-main/src/embedder/http.ts",
           "startLine": 484,
           "endLine": 501,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7897729575634003,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.005555555555555556,
+            "rawVectorScore": 0.7894213199615479,
+            "rawKeywordScore": 6.059193994548162,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 1,
+            "keywordRank": 11,
+            "matchedTerms": [
+              "proxy",
+              "http"
+            ]
           }
         },
         {
           "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/embedder/http.ts",
-          "startLine": 143,
-          "endLine": 149,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7867366969585419,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
+          "score": 0.01485445205479452,
           "filePath": "../OpenCodeRAG-main/src/embedder/http.ts",
           "startLine": 504,
           "endLine": 557,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7809644043445587,
-            "rawKeywordScore": 0,
+            "keywordScore": 0.005479452054794521,
+            "rawVectorScore": 0.781430721282959,
+            "rawKeywordScore": 6.059193994548162,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 3,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "proxy",
+              "http"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.01328722242446305,
+          "filePath": "../OpenCodeRAG-main/src/embedder/health.ts",
+          "startLine": 158,
+          "endLine": 192,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.007317073170731707,
+            "keywordScore": 0.005970149253731343,
+            "rawVectorScore": 0.7241736650466919,
+            "rawKeywordScore": 6.059193994548162,
+            "keywordWeight": 0.4,
+            "vectorRank": 21,
+            "keywordRank": 6,
+            "matchedTerms": [
+              "proxy",
+              "http"
+            ]
           }
         },
         {
           "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/embedder/cohere.ts",
-          "startLine": 26,
-          "endLine": 32,
+          "score": 0.013025210084033612,
+          "filePath": "../OpenCodeRAG-main/src/embedder/health.ts",
+          "startLine": 200,
+          "endLine": 232,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7768464982509613,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.007142857142857143,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.7169309258460999,
+            "rawKeywordScore": 6.059193994548162,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 23,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "proxy",
+              "http"
+            ]
           }
         }
       ],
@@ -2546,10 +3318,94 @@
       "query": "What is the FETCH_OVERFETCH_FACTOR constant?",
       "queryIndex": 22,
       "resultCount": 20,
-      "latencyMs": 146.1,
+      "latencyMs": 151.4,
       "topResults": [
         {
           "rank": 0,
+          "score": 0.013375558867362147,
+          "filePath": "../OpenCodeRAG-main/src/eval/token-analysis.ts",
+          "startLine": 183,
+          "endLine": 218,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.006818181818181818,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.7063843607902527,
+            "rawKeywordScore": 9.611335504612896,
+            "keywordWeight": 0.4,
+            "vectorRank": 27,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "what",
+              "h_"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.011292016806722689,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0050420168067226885,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.6948564350605011,
+            "rawKeywordScore": 7.823394547512285,
+            "keywordWeight": 0.4,
+            "vectorRank": 58,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "is",
+              "the",
+              "fetch"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.010998877665544332,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/setup.ts",
+          "startLine": 28,
+          "endLine": 40,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.006060606060606061,
+            "keywordScore": 0.0049382716049382715,
+            "rawVectorScore": 0.7020108103752136,
+            "rawKeywordScore": 3.90593181878832,
+            "keywordWeight": 0.4,
+            "vectorRank": 38,
+            "keywordRank": 20,
+            "matchedTerms": [
+              "is",
+              "the"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0106203007518797,
+          "filePath": "../OpenCodeRAG-main/src/embedder/health.ts",
+          "startLine": 309,
+          "endLine": 351,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.005357142857142857,
+            "keywordScore": 0.005263157894736842,
+            "rawVectorScore": 0.6967871785163879,
+            "rawKeywordScore": 3.9174627287239643,
+            "keywordWeight": 0.4,
+            "vectorRank": 51,
+            "keywordRank": 15,
+            "matchedTerms": [
+              "fetch"
+            ]
+          }
+        },
+        {
+          "rank": 4,
           "score": 0.009836065573770491,
           "filePath": "../OpenCodeRAG-main/src/core/runtime-overrides.ts",
           "startLine": 12,
@@ -2562,70 +3418,6 @@
             "rawKeywordScore": 0,
             "keywordWeight": 0.4,
             "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/eval/token-analysis.ts",
-          "startLine": 397,
-          "endLine": 420,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7409740090370178,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/chunker/fallback.ts",
-          "startLine": 15,
-          "endLine": 17,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7398375868797302,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/eval/token-analysis.ts",
-          "startLine": 223,
-          "endLine": 307,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7291486859321594,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
-          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
-          "startLine": 416,
-          "endLine": 440,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.7284904420375824,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 4
           }
         }
       ],
@@ -2661,86 +3453,116 @@
       "query": "How does the TUI settings menu work?",
       "queryIndex": 23,
       "resultCount": 20,
-      "latencyMs": 133.5,
+      "latencyMs": 187.8,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/tui.ts",
-          "startLine": 283,
-          "endLine": 294,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8115568161010742,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
+          "score": 0.016129032258064516,
           "filePath": "../OpenCodeRAG-main/src/tui.ts",
           "startLine": 608,
           "endLine": 707,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
+            "keywordScore": 0.0064516129032258064,
             "rawVectorScore": 0.8096809387207031,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 17.559910313957428,
             "keywordWeight": 0.4,
-            "vectorRank": 1
+            "vectorRank": 1,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "tui",
+              "settings",
+              "setting",
+              "menu"
+            ]
           }
         },
         {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/tui.ts",
-          "startLine": 297,
-          "endLine": 306,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8006298840045929,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
-          "filePath": "../OpenCodeRAG-main/src/tui.ts",
-          "startLine": 527,
-          "endLine": 602,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009375,
-            "keywordScore": 0,
-            "rawVectorScore": 0.779504120349884,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 3
-          }
-        },
-        {
-          "rank": 4,
-          "score": 0.00923076923076923,
+          "rank": 1,
+          "score": 0.01548076923076923,
           "filePath": "../OpenCodeRAG-main/src/tui.ts",
           "startLine": 427,
           "endLine": 526,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
+            "keywordScore": 0.00625,
             "rawVectorScore": 0.7658225297927856,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 13.424422351489037,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 4,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "the",
+              "tui",
+              "setting",
+              "work"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015315517628565012,
+          "filePath": "../OpenCodeRAG-main/src/tui.ts",
+          "startLine": 283,
+          "endLine": 294,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.005479452054794521,
+            "rawVectorScore": 0.8115052282810211,
+            "rawKeywordScore": 6.0403940743882245,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "the",
+              "setting"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.015238095238095238,
+          "filePath": "../OpenCodeRAG-main/src/tui.ts",
+          "startLine": 297,
+          "endLine": 306,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.005714285714285714,
+            "rawVectorScore": 0.7998878359794617,
+            "rawKeywordScore": 8.52547877100301,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 9,
+            "matchedTerms": [
+              "settings",
+              "setting"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014849498327759197,
+          "filePath": "../OpenCodeRAG-main/src/tui.ts",
+          "startLine": 196,
+          "endLine": 260,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.006153846153846154,
+            "rawVectorScore": 0.7494852542877197,
+            "rawKeywordScore": 12.357736807962294,
+            "keywordWeight": 0.4,
+            "vectorRank": 8,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "tui",
+              "settings",
+              "setting"
+            ]
           }
         }
       ],
@@ -2776,86 +3598,1564 @@
       "query": "How are image descriptions generated?",
       "queryIndex": 24,
       "resultCount": 20,
-      "latencyMs": 136.2,
+      "latencyMs": 139.7,
       "topResults": [
         {
           "rank": 0,
-          "score": 0.009836065573770491,
-          "filePath": "../OpenCodeRAG-main/src/chunker/image.ts",
-          "startLine": 151,
-          "endLine": 208,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009836065573770491,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8516704440116882,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 0
-          }
-        },
-        {
-          "rank": 1,
-          "score": 0.00967741935483871,
-          "filePath": "../OpenCodeRAG-main/src/chunker/image.ts",
-          "startLine": 231,
-          "endLine": 292,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.00967741935483871,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8405250906944275,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 1
-          }
-        },
-        {
-          "rank": 2,
-          "score": 0.009523809523809523,
-          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
-          "startLine": 308,
-          "endLine": 313,
-          "language": "typescript",
-          "explanation": {
-            "vectorScore": 0.009523809523809523,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8372036814689636,
-            "rawKeywordScore": 0,
-            "keywordWeight": 0.4,
-            "vectorRank": 2
-          }
-        },
-        {
-          "rank": 3,
-          "score": 0.009375,
+          "score": 0.01525735294117647,
           "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
           "startLine": 334,
           "endLine": 415,
           "language": "typescript",
           "explanation": {
             "vectorScore": 0.009375,
-            "keywordScore": 0,
+            "keywordScore": 0.0058823529411764705,
             "rawVectorScore": 0.8315328061580658,
-            "rawKeywordScore": 0,
+            "rawKeywordScore": 11.833676737018862,
             "keywordWeight": 0.4,
-            "vectorRank": 3
+            "vectorRank": 3,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "image",
+              "description",
+              "generated",
+              "generat"
+            ]
           }
         },
         {
-          "rank": 4,
-          "score": 0.00923076923076923,
+          "rank": 1,
+          "score": 0.014805194805194804,
           "filePath": "../OpenCodeRAG-main/src/indexer/description-stage.ts",
           "startLine": 32,
           "endLine": 119,
           "language": "typescript",
           "explanation": {
-            "vectorScore": 0.00923076923076923,
-            "keywordScore": 0,
-            "rawVectorScore": 0.8290737271308899,
-            "rawKeywordScore": 0,
+            "vectorScore": 0.00909090909090909,
+            "keywordScore": 0.005714285714285714,
+            "rawVectorScore": 0.8292976319789886,
+            "rawKeywordScore": 11.08600348338972,
             "keywordWeight": 0.4,
-            "vectorRank": 4
+            "vectorRank": 5,
+            "keywordRank": 9,
+            "matchedTerms": [
+              "image",
+              "descriptions",
+              "description",
+              "generat"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.013955223880597015,
+          "filePath": "../OpenCodeRAG-main/src/chunker/image.ts",
+          "startLine": 315,
+          "endLine": 373,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.005,
+            "rawVectorScore": 0.8289483487606049,
+            "rawKeywordScore": 5.636967115998509,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 19,
+            "matchedTerms": [
+              "image",
+              "generat"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.013828470380194517,
+          "filePath": "../OpenCodeRAG-main/src/describer/anthropic.ts",
+          "startLine": 39,
+          "endLine": 45,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00923076923076923,
+            "keywordScore": 0.004597701149425287,
+            "rawVectorScore": 0.8301655352115631,
+            "rawKeywordScore": 5.035852843783428,
+            "keywordWeight": 0.4,
+            "vectorRank": 4,
+            "keywordRank": 26,
+            "matchedTerms": [
+              "description",
+              "generat"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013748782862706914,
+          "filePath": "../OpenCodeRAG-main/src/describer/anthropic.ts",
+          "startLine": 48,
+          "endLine": 80,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.007594936708860759,
+            "keywordScore": 0.006153846153846154,
+            "rawVectorScore": 0.7916759252548218,
+            "rawKeywordScore": 13.012556175062718,
+            "keywordWeight": 0.4,
+            "vectorRank": 18,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "descriptions",
+              "description",
+              "generated",
+              "generat"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "retrieve function",
+      "queryIndex": 25,
+      "resultCount": 20,
+      "latencyMs": 134.2,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015391621129326048,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 343,
+          "endLine": 367,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.005555555555555556,
+            "rawVectorScore": 0.7735368311405182,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 11,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015253029223093371,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.7253389954566956,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "vectorRank": 8,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015157612340710933,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 321,
+          "endLine": 336,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.005633802816901409,
+            "rawVectorScore": 0.7688738703727722,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014604550379198266,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008450704225352112,
+            "keywordScore": 0.006153846153846154,
+            "rawVectorScore": 0.7230896055698395,
+            "rawKeywordScore": 7.606676678864138,
+            "keywordWeight": 0.4,
+            "vectorRank": 10,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014218381775333858,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 293,
+          "endLine": 299,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.005263157894736842,
+            "rawVectorScore": 0.7464181780815125,
+            "rawKeywordScore": 6.629293724495999,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 15,
+            "matchedTerms": [
+              "retrieve",
+              "retriev"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "KeywordIndex class",
+      "queryIndex": 26,
+      "resultCount": 20,
+      "latencyMs": 142.4,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015474520804114072,
+          "filePath": "../OpenCodeRAG-main/src/core/bootstrap.ts",
+          "startLine": 69,
+          "endLine": 76,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.005797101449275362,
+            "rawVectorScore": 0.793863832950592,
+            "rawKeywordScore": 7.033284721889844,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015015829941203075,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.006060606060606061,
+            "rawVectorScore": 0.7466518878936768,
+            "rawKeywordScore": 7.033284721889844,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014457314457314458,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008108108108108109,
+            "keywordScore": 0.006349206349206349,
+            "rawVectorScore": 0.7277529537677765,
+            "rawKeywordScore": 9.758726665703923,
+            "keywordWeight": 0.4,
+            "vectorRank": 13,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index",
+              "class"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014231669969374887,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 1044,
+          "endLine": 1061,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.004395604395604396,
+            "rawVectorScore": 0.802352249622345,
+            "rawKeywordScore": 7.033284721889844,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 30,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014136904761904762,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 293,
+          "endLine": 299,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009375,
+            "keywordScore": 0.004761904761904762,
+            "rawVectorScore": 0.7543212175369263,
+            "rawKeywordScore": 7.033284721889844,
+            "keywordWeight": 0.4,
+            "vectorRank": 3,
+            "keywordRank": 23,
+            "matchedTerms": [
+              "keywordindex",
+              "keyword",
+              "index"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "embedder factory",
+      "queryIndex": 27,
+      "resultCount": 20,
+      "latencyMs": 143.9,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015550351288056204,
+          "filePath": "../OpenCodeRAG-main/src/embedder/factory.ts",
+          "startLine": 23,
+          "endLine": 46,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.005714285714285714,
+            "rawVectorScore": 0.8378231525421143,
+            "rawKeywordScore": 5.0638886572435915,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 9,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015493958777540867,
+          "filePath": "../OpenCodeRAG-main/src/core/bootstrap.ts",
+          "startLine": 56,
+          "endLine": 66,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.005970149253731343,
+            "rawVectorScore": 0.7654164731502533,
+            "rawKeywordScore": 5.0638886572435915,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 6,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015311222171740118,
+          "filePath": "../OpenCodeRAG-main/src/embedder/factory.ts",
+          "startLine": 62,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.005633802816901409,
+            "rawVectorScore": 0.7703590393066406,
+            "rawKeywordScore": 5.0638886572435915,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0130450194966324,
+          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
+          "startLine": 388,
+          "endLine": 436,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.006593406593406593,
+            "keywordScore": 0.0064516129032258064,
+            "rawVectorScore": 0.7087774276733398,
+            "rawKeywordScore": 10.266062163238725,
+            "keywordWeight": 0.4,
+            "vectorRank": 30,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "embedder",
+              "embedd",
+              "factory"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.012981082844096542,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 321,
+          "endLine": 336,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00821917808219178,
+            "keywordScore": 0.004761904761904762,
+            "rawVectorScore": 0.7348208427429199,
+            "rawKeywordScore": 5.0638886572435915,
+            "keywordWeight": 0.4,
+            "vectorRank": 12,
+            "keywordRank": 23,
+            "matchedTerms": [
+              "embedder",
+              "embedd"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "vector store LanceDB",
+      "queryIndex": 28,
+      "resultCount": 20,
+      "latencyMs": 150.6,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.016287678476996297,
+          "filePath": "../OpenCodeRAG-main/src/vectorstore/factory.ts",
+          "startLine": 22,
+          "endLine": 38,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.0064516129032258064,
+            "rawVectorScore": 0.8406621813774109,
+            "rawKeywordScore": 14.404583382084791,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "vector",
+              "store",
+              "lancedb",
+              "lance"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015831265508684862,
+          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
+          "startLine": 165,
+          "endLine": 186,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.006153846153846154,
+            "rawVectorScore": 0.8001228272914886,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "store",
+              "lance"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015584415584415583,
+          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
+          "startLine": 189,
+          "endLine": 192,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.006060606060606061,
+            "rawVectorScore": 0.7964996695518494,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "store",
+              "lance"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014837576821773486,
+          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
+          "startLine": 230,
+          "endLine": 242,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.7671596109867096,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "store",
+              "lance"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014665801427644388,
+          "filePath": "../OpenCodeRAG-main/src/web/api.ts",
+          "startLine": 199,
+          "endLine": 227,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.005970149253731343,
+            "rawVectorScore": 0.7630512416362762,
+            "rawKeywordScore": 5.940918836457924,
+            "keywordWeight": 0.4,
+            "vectorRank": 8,
+            "keywordRank": 6,
+            "matchedTerms": [
+              "store",
+              "lance"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "find usages SearchResult",
+      "queryIndex": 29,
+      "resultCount": 20,
+      "latencyMs": 158.6,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.016393442622950817,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.8429126143455505,
+            "rawKeywordScore": 17.003368879563602,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "searchresult",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015773809523809523,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 280,
+          "endLine": 287,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.8319400548934937,
+            "rawKeywordScore": 13.802037364346312,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015682382133995035,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 428,
+          "endLine": 527,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00923076923076923,
+            "keywordScore": 0.0064516129032258064,
+            "rawVectorScore": 0.8200908601284027,
+            "rawKeywordScore": 17.003368879563602,
+            "keywordWeight": 0.4,
+            "vectorRank": 4,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "searchresult",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.01543560606060606,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 528,
+          "endLine": 627,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009375,
+            "keywordScore": 0.006060606060606061,
+            "rawVectorScore": 0.8217239081859589,
+            "rawKeywordScore": 13.802037364346312,
+            "keywordWeight": 0.4,
+            "vectorRank": 3,
+            "keywordRank": 5,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "search",
+              "result"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.01515687140963323,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 290,
+          "endLine": 299,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.005479452054794521,
+            "rawVectorScore": 0.8417533338069916,
+            "rawKeywordScore": 11.510994031792437,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "find",
+              "usages",
+              "usage",
+              "result"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "chunkFile method",
+      "queryIndex": 30,
+      "resultCount": 20,
+      "latencyMs": 145.9,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.014776555131372108,
+          "filePath": "../OpenCodeRAG-main/src/chunker/factory.ts",
+          "startLine": 232,
+          "endLine": 256,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00821917808219178,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.7935350239276886,
+            "rawKeywordScore": 13.080329580273405,
+            "keywordWeight": 0.4,
+            "vectorRank": 12,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "chunkfile",
+              "chunkfil",
+              "chunk",
+              "file"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.01409138472270666,
+          "filePath": "../OpenCodeRAG-main/src/chunker/docx.ts",
+          "startLine": 39,
+          "endLine": 108,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.00425531914893617,
+            "rawVectorScore": 0.8315305709838867,
+            "rawKeywordScore": 2.6759825682831373,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 33,
+            "matchedTerms": [
+              "chunk",
+              "file"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.013871635610766046,
+          "filePath": "../OpenCodeRAG-main/src/chunker/doc.ts",
+          "startLine": 40,
+          "endLine": 109,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.004347826086956522,
+            "rawVectorScore": 0.8236623108386993,
+            "rawKeywordScore": 2.6759825682831373,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 31,
+            "matchedTerms": [
+              "chunk",
+              "file"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.013585526315789473,
+          "filePath": "../OpenCodeRAG-main/src/chunker/excel.ts",
+          "startLine": 49,
+          "endLine": 108,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009375,
+            "keywordScore": 0.004210526315789474,
+            "rawVectorScore": 0.8127363920211792,
+            "rawKeywordScore": 2.6759825682831373,
+            "keywordWeight": 0.4,
+            "vectorRank": 3,
+            "keywordRank": 34,
+            "matchedTerms": [
+              "chunk",
+              "file"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013578122011856951,
+          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
+          "startLine": 148,
+          "endLine": 247,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.007228915662650602,
+            "keywordScore": 0.006349206349206349,
+            "rawVectorScore": 0.7728691697120667,
+            "rawKeywordScore": 13.080329580273405,
+            "keywordWeight": 0.4,
+            "vectorRank": 22,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "chunkfile",
+              "chunkfil",
+              "chunk",
+              "file"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "embedBatch function",
+      "queryIndex": 31,
+      "resultCount": 20,
+      "latencyMs": 149.1,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.016393442622950817,
+          "filePath": "../OpenCodeRAG-main/src/embedder/factory.ts",
+          "startLine": 62,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.8466528654098511,
+            "rawKeywordScore": 12.716554521182438,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "embedbatch",
+              "embed",
+              "batch",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014493927125506071,
+          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
+          "startLine": 91,
+          "endLine": 112,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00923076923076923,
+            "keywordScore": 0.005263157894736842,
+            "rawVectorScore": 0.7636113166809082,
+            "rawKeywordScore": 4.362664880724394,
+            "keywordWeight": 0.4,
+            "vectorRank": 4,
+            "keywordRank": 15,
+            "matchedTerms": [
+              "embed",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014358108108108109,
+          "filePath": "../OpenCodeRAG-main/src/indexer/pipeline.ts",
+          "startLine": 553,
+          "endLine": 652,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008108108108108109,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.7298257946968079,
+            "rawKeywordScore": 11.7391715668143,
+            "keywordWeight": 0.4,
+            "vectorRank": 13,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "embedbatch",
+              "embed",
+              "batch"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014329454990814453,
+          "filePath": "../OpenCodeRAG-main/src/core/bootstrap.ts",
+          "startLine": 56,
+          "endLine": 66,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008695652173913044,
+            "keywordScore": 0.005633802816901409,
+            "rawVectorScore": 0.7416476011276245,
+            "rawKeywordScore": 4.362664880724394,
+            "keywordWeight": 0.4,
+            "vectorRank": 8,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "embed",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014285714285714285,
+          "filePath": "../OpenCodeRAG-main/src/indexer/worker.ts",
+          "startLine": 327,
+          "endLine": 370,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00909090909090909,
+            "keywordScore": 0.005194805194805195,
+            "rawVectorScore": 0.7532026171684265,
+            "rawKeywordScore": 4.362664880724394,
+            "keywordWeight": 0.4,
+            "vectorRank": 5,
+            "keywordRank": 16,
+            "matchedTerms": [
+              "embed",
+              "function"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "retriever retrieve vector search",
+      "queryIndex": 32,
+      "resultCount": 20,
+      "latencyMs": 153.3,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.01571841851494696,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 343,
+          "endLine": 367,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.8376761972904205,
+            "rawKeywordScore": 11.778199536380743,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015647568608570053,
+          "filePath": "../OpenCodeRAG-main/src/plugin.ts",
+          "startLine": 321,
+          "endLine": 336,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00967741935483871,
+            "keywordScore": 0.005970149253731343,
+            "rawVectorScore": 0.8346504867076874,
+            "rawKeywordScore": 11.778199536380743,
+            "keywordWeight": 0.4,
+            "vectorRank": 1,
+            "keywordRank": 6,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015625,
+          "filePath": "../OpenCodeRAG-main/src/mcp/handlers.ts",
+          "startLine": 184,
+          "endLine": 236,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009375,
+            "keywordScore": 0.00625,
+            "rawVectorScore": 0.7943508625030518,
+            "rawKeywordScore": 11.778199536380743,
+            "keywordWeight": 0.4,
+            "vectorRank": 3,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014902317128577917,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008450704225352112,
+            "keywordScore": 0.0064516129032258064,
+            "rawVectorScore": 0.7678912580013275,
+            "rawKeywordScore": 11.778199536380743,
+            "keywordWeight": 0.4,
+            "vectorRank": 10,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014752325329872378,
+          "filePath": "../OpenCodeRAG-main/src/opencode/tools.ts",
+          "startLine": 293,
+          "endLine": 299,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.005797101449275362,
+            "rawVectorScore": 0.777654618024826,
+            "rawKeywordScore": 9.487156203826869,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "retriev",
+              "retrieve",
+              "vector"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "session logger token",
+      "queryIndex": 33,
+      "resultCount": 20,
+      "latencyMs": 137.9,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.01597542242703533,
+          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
+          "startLine": 43,
+          "endLine": 52,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009523809523809523,
+            "keywordScore": 0.0064516129032258064,
+            "rawVectorScore": 0.800042986869812,
+            "rawKeywordScore": 10.552134307163826,
+            "keywordWeight": 0.4,
+            "vectorRank": 2,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.01492537313432836,
+          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
+          "startLine": 158,
+          "endLine": 183,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008955223880597015,
+            "keywordScore": 0.005970149253731343,
+            "rawVectorScore": 0.7745591402053833,
+            "rawKeywordScore": 7.749640102145139,
+            "keywordWeight": 0.4,
+            "vectorRank": 6,
+            "keywordRank": 6,
+            "matchedTerms": [
+              "session",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.01456838443139813,
+          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
+          "startLine": 58,
+          "endLine": 157,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.00821917808219178,
+            "keywordScore": 0.006349206349206349,
+            "rawVectorScore": 0.7639272212982178,
+            "rawKeywordScore": 10.552134307163826,
+            "keywordWeight": 0.4,
+            "vectorRank": 12,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014452113891285591,
+          "filePath": "../OpenCodeRAG-main/src/eval/index.ts",
+          "startLine": 1,
+          "endLine": 39,
+          "language": "text",
+          "explanation": {
+            "vectorScore": 0.007894736842105263,
+            "keywordScore": 0.006557377049180328,
+            "rawVectorScore": 0.7571290135383606,
+            "rawKeywordScore": 10.552134307163826,
+            "keywordWeight": 0.4,
+            "vectorRank": 15,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.01371956071940156,
+          "filePath": "../OpenCodeRAG-main/src/eval/session-logger.ts",
+          "startLine": 26,
+          "endLine": 40,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.009836065573770491,
+            "keywordScore": 0.0038834951456310682,
+            "rawVectorScore": 0.8073388338088989,
+            "rawKeywordScore": 5.11740873760028,
+            "keywordWeight": 0.4,
+            "vectorRank": 0,
+            "keywordRank": 42,
+            "matchedTerms": [
+              "session",
+              "token"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "config validation",
+      "queryIndex": 34,
+      "resultCount": 20,
+      "latencyMs": 133.7,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.012955465587044534,
+          "filePath": "../OpenCodeRAG-main/src/cli/commands/eval.ts",
+          "startLine": 144,
+          "endLine": 174,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.007692307692307692,
+            "keywordScore": 0.005263157894736842,
+            "rawVectorScore": 0.6872305274009705,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "vectorRank": 17,
+            "keywordRank": 15,
+            "matchedTerms": [
+              "config"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.012941176470588234,
+          "filePath": "../OpenCodeRAG-main/src/chunker/image.ts",
+          "startLine": 383,
+          "endLine": 400,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.007058823529411764,
+            "keywordScore": 0.0058823529411764705,
+            "rawVectorScore": 0.6849385499954224,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "vectorRank": 24,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "config"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.012695139911634758,
+          "filePath": "../OpenCodeRAG-main/src/core/resolve-api-key.ts",
+          "startLine": 12,
+          "endLine": 23,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008571428571428572,
+            "keywordScore": 0.004123711340206186,
+            "rawVectorScore": 0.693453848361969,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "vectorRank": 9,
+            "keywordRank": 36,
+            "matchedTerms": [
+              "config"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.012403846153846154,
+          "filePath": "../OpenCodeRAG-main/src/chunker/image.ts",
+          "startLine": 143,
+          "endLine": 149,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0062499999999999995,
+            "keywordScore": 0.006153846153846154,
+            "rawVectorScore": 0.6809921264648438,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "vectorRank": 35,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "config"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.012242332830568125,
+          "filePath": "../OpenCodeRAG-main/src/embedder/health.ts",
+          "startLine": 64,
+          "endLine": 86,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.008823529411764706,
+            "keywordScore": 0.003418803418803419,
+            "rawVectorScore": 0.6992982029914856,
+            "rawKeywordScore": 1.6744763086133228,
+            "keywordWeight": 0.4,
+            "vectorRank": 7,
+            "keywordRank": 56,
+            "matchedTerms": [
+              "config"
+            ]
           }
         }
       ],
