@@ -3,7 +3,7 @@
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { readFileSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LanceDbStore } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
@@ -88,7 +88,18 @@ export async function startWebUi(
     }
 
     if (url.startsWith("/ui/")) {
-      const assetPath = join(uiDir, url.slice("/ui/".length));
+      const decoded = decodeURIComponent(url.slice("/ui/".length));
+      if (decoded.includes("..") || decoded === "") {
+        res.writeHead(403, { "Content-Type": "text/plain" });
+        res.end("Forbidden");
+        return;
+      }
+      const assetPath = join(uiDir, decoded);
+      if (!assetPath.startsWith(uiDir + sep)) {
+        res.writeHead(403, { "Content-Type": "text/plain" });
+        res.end("Forbidden");
+        return;
+      }
       serveUiAsset(res, assetPath);
       return;
     }

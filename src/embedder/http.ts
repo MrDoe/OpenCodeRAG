@@ -378,9 +378,9 @@ async function sendRawHttpRequest(
       }
 
       if (isChunked) {
-        if (bodyBuffer.length >= 5) {
-          const tail = bodyBuffer.slice(-7).toString("ascii");
-          if (tail === "\r\n0\r\n\r\n" || bodyBuffer.toString("ascii") === "0\r\n\r\n") {
+        if (bodyBuffer.length >= 7) {
+          const ascii = bodyBuffer.toString("ascii");
+          if (/0(?:;[^\n]*)?\r\n(?:[^\n]+:[^\n]*\r\n)*\r\n$/.test(ascii)) {
             settle(() => {
               releaseOrDestroy();
               resolve(assembled);
@@ -451,7 +451,23 @@ async function sendRawHttpRequest(
       };
     }
 
-    return sendRawHttpRequest(new URL(location, url), body, headers, timeoutMs, redirectCount + 1);
+    const redirectUrl = new URL(location, url);
+
+    const sameOrigin =
+      url.protocol === redirectUrl.protocol &&
+      url.hostname === redirectUrl.hostname &&
+      (url.port || (url.protocol === "https:" ? "443" : "80")) ===
+        (redirectUrl.port || (redirectUrl.protocol === "https:" ? "443" : "80"));
+
+    const safeHeaders: Record<string, string> = sameOrigin
+      ? headers
+      : Object.fromEntries(
+          Object.entries(headers).filter(
+            ([key]) => key.toLowerCase() !== "authorization"
+          )
+        );
+
+    return sendRawHttpRequest(redirectUrl, body, safeHeaders, timeoutMs, redirectCount + 1);
   }
 
   const text = response.body.toString("utf8");

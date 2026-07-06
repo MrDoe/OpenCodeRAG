@@ -65,10 +65,10 @@ async function main() {
     if (batch.length >= 100) {
       console.log(`    Updating batch of ${batch.length}...`);
       for (const b of batch) {
-        await table.update(
-          { description: b.description },
-          `id = '${b.id.replace(/'/g, "''")}'`,
-        );
+      await table.update({
+        where: `id = '${b.id.replace(/'/g, "''")}'`,
+        values: { description: b.description },
+      });
       }
       batch = [];
     }
@@ -78,10 +78,10 @@ async function main() {
   if (batch.length > 0) {
     console.log(`    Updating final batch of ${batch.length}...`);
     for (const b of batch) {
-      await table.update(
-        { description: b.description },
-        `id = '${b.id.replace(/'/g, "''")}'`,
-      );
+      await table.update({
+        where: `id = '${b.id.replace(/'/g, "''")}'`,
+        values: { description: b.description },
+      });
     }
   }
 

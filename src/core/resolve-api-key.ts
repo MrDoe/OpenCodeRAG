@@ -56,7 +56,10 @@ function resolveForSection(
 }
 
 function stripJsoncComments(text: string): string {
-  return text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  return text.replace(
+    /("[^"\\]*(?:\\.[^"\\]*)*")|(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g,
+    (_, string) => string ?? "",
+  );
 }
 
 function readOpenCodeProviderKey(worktree: string, providerId: string): string | undefined {

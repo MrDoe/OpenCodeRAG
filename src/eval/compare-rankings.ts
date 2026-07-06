@@ -173,7 +173,6 @@ async function main() {
   console.log(SEP.repeat(80) + "\n");
 
   const w = [38, 14];
-  const a: ("left" | "right")[] = ["left", "right"];
   const top = "┌─" + w.map((x) => SEP.repeat(x)).join("─┬─") + "─┐";
   const sep = "├─" + w.map((x) => SEP.repeat(x)).join("─┼─") + "─┤";
   const bot = "└─" + w.map((x) => SEP.repeat(x)).join("─┴─") + "─┘";
