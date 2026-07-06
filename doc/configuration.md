@@ -138,7 +138,7 @@ Controls how queries are matched against the index.
 | `topK` | `10` | Default number of chunks fetched per query |
 | `minScore` | `0.35` | Minimum relevance score (0–1) |
 | `hybridSearch.enabled` | `true` | Enable combined TF×IDF + vector search |
-| `hybridSearch.keywordWeight` | `0.4` | Weight for keyword score in fusion: `(1-kw)*vScore + kw*kScore` |
+| `hybridSearch.keywordWeight` | `0.4` | Keyword weight in RRF fusion: `vContrib = (1-kw)×(K+1)/(K+vRank+1)` |
 | `contextOptimization.enabled` | `true` | Enable post-retrieval optimization pipeline |
 | `contextOptimization.maxPerFile` | `3` | Max chunks per file in final result (0 = unlimited) |
 | `contextOptimization.mergeAdjacent` | `true` | Merge consecutive same-file chunks separated by ≤ gap |

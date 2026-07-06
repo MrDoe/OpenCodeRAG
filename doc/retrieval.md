@@ -45,18 +45,24 @@ The `KeywordIndex` (`src/retriever/keyword-index.ts`) is a zero-dependency inver
 
 ### Score Fusion
 
-Results are merged via weighted combination:
+Results are merged via **Reciprocal Rank Fusion (RRF)** with normalization to [0, 1]:
 
 ```
-score = (1 - kw) * vScore + kw * kScore
+vContrib = (1 - kw) × (K + 1) / (K + vRank + 1)
+kContrib = kw × (K + 1) / (K + kRank + 1)
+score    = vContrib + kContrib
 ```
 
 Where:
 - `kw` = `retrieval.hybridSearch.keywordWeight` (default 0.4)
-- `vScore` = vector similarity score (0–1)
-- `kScore` = keyword TF×IDF score, normalized by top keyword result
+- `K` = 60 (RRF rank constant)
+- `vRank` = rank in vector search results (0-indexed)
+- `kRank` = rank in keyword search results
+- `(K + 1)` = normalization factor mapping the maximum score to exactly 1.0
 
-Low-scoring chunks that don't meet `minScore` are filtered out.
+This produces scores on a [0, 1] scale. A result at rank 0 in both signals scores **1.0** (perfect). A vector-only result at rank 0 scores **0.6** (= 1 − kw). A keyword-only result at rank 0 scores **0.4** (= kw).
+
+RRF **rewards results that rank highly in both signals** over results that rank well in only one. When only one signal contributes, the ranking matches the raw vector order (normalization preserves monotonicity). Low-scoring chunks that don't meet `minScore` are filtered out.
 
 ### `retrieve()` API
 

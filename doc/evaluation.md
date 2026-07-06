@@ -250,7 +250,7 @@ node --import tsx src/eval/run-token-test.ts
 | 0.65 | Aggressive — broader injection, more coverage |
 | 0.50 | Maximum — all retrieval results injected |
 
-The right threshold depends on your embedding model. Larger models (e.g., `bge-m3` at 1024d) produce higher relevance scores and work well at 0.85. Smaller models (e.g., `qwen3-embedding:0.6b` at 4096d) may need 0.65.
+Scores are on a [0, 1] scale where 1.0 = perfect (rank 0 in both vector and keyword signals) and 0.6 = vector-only at rank 0. Larger models (e.g., `bge-m3` at 1024d) produce tighter score clusters and work well at 0.85. Smaller models (e.g., `qwen3-embedding:0.6b` at 4096d) may need 0.65.
 
 ### Verdict
 
