@@ -62,7 +62,7 @@ export async function retrieve(
     }
 
     if (keywordResults.length === 0) {
-      const filtered = vectorResults.filter((r) => r.score >= minScore);
+      const filtered = vectorResults.filter((r) => r.score >= minScore).slice(0, topK);
       if (options.explain) {
         const kw = options.keywordWeight ?? 0.4;
         for (const r of filtered) {
