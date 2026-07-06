@@ -59,8 +59,8 @@ describe("retrieve", () => {
 
     const results = await retrieve("test query", embedder, store);
     assert.equal(results.length, 1);
-    // RRF contribution for single vector result at rank 0: (1-0.4)/(60+0+1) = 0.6/61
-    const expectedScore = (1 - 0.4) / (60 + 0 + 1);
+    // Normalized RRF for single vector result at rank 0: (1-0.4)*(60+1)/(60+0+1) = 0.6
+    const expectedScore = (1 - 0.4);
     assert.ok(Math.abs(results[0]!.score - expectedScore) < 1e-10);
     assert.equal(results[0]!.chunk.id, "chunk-1");
   });
@@ -141,10 +141,10 @@ describe("retrieve", () => {
       { score: 0.7, chunk: { id: "c", content: "mid", metadata: { filePath: "c.ts", startLine: 1, endLine: 2, language: "ts" } } },
     ]);
 
-    const results = await retrieve("query", embedder, store, { minScore: 0.0096 });
+    const results = await retrieve("query", embedder, store, { minScore: 0.59 });
     assert.equal(results.length, 2);
-    // RRF contributions: rank 0 → 0.6/61, rank 1 → 0.6/62
-    const expectedScores = [(1 - 0.4) / (60 + 0 + 1), (1 - 0.4) / (60 + 1 + 1)];
+    // Normalized RRF: rank 0 → 0.6*61/61 = 0.6, rank 1 → 0.6*61/62
+    const expectedScores = [(1 - 0.4), (1 - 0.4) * 61 / (60 + 1 + 1)];
     assert.ok(Math.abs(results[0]!.score - expectedScores[0]!) < 1e-10);
     assert.ok(Math.abs(results[1]!.score - expectedScores[1]!) < 1e-10);
   });
@@ -223,7 +223,7 @@ describe("retrieve", () => {
         { score: 0.1, chunk: { id: "a", content: "low relevance", metadata: { filePath: "a.ts", startLine: 1, endLine: 2, language: "ts" } } },
       ]);
       const ki = makeKeywordIndex([]);
-      const results = await retrieve("test", embedder, store, { keywordIndex: ki, minScore: 0.5 });
+      const results = await retrieve("test", embedder, store, { keywordIndex: ki, minScore: 0.7 });
       assert.equal(results.length, 0);
     });
 
@@ -315,8 +315,8 @@ describe("retrieve", () => {
       assert.equal(exp!.matchedTerms, undefined);
       assert.equal(exp!.scoreBreakdown.vectorRank, 0);
       assert.equal(exp!.scoreBreakdown.keywordRank, undefined);
-      // RRF contribution: (1-0.4) / (60 + 0 + 1) = 0.6 / 61
-      const expectedVScore = (1 - 0.4) / (60 + 0 + 1);
+      // Normalized RRF: (1-0.4)*(60+1)/(60+0+1) = 0.6
+      const expectedVScore = (1 - 0.4);
       assert.ok(Math.abs(exp!.scoreBreakdown.vectorScore - expectedVScore) < 1e-10);
     });
 
@@ -341,10 +341,9 @@ describe("retrieve", () => {
       // RRF: chunk "a" is vector-only at rank 0, no keyword match
       assert.equal(exp!.scoreBreakdown.vectorRank, 0);
       assert.equal(exp!.scoreBreakdown.keywordRank, undefined);
-      const expectedVScore = (1 - 0.4) / (60 + 0 + 1);
+      const expectedVScore = (1 - 0.4);
       assert.ok(Math.abs(exp!.scoreBreakdown.vectorScore - expectedVScore) < 1e-10);
     });
-
     it("includes matchedTerms when keywordIndex matches the chunk", async () => {
       const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
       const store = makeStore([

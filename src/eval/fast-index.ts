@@ -100,16 +100,19 @@ function walkFiles(dir: string): string[] {
   return results;
 }
 
-function parseArgs(): { descriptionsPath: string } {
+function parseArgs(): { descriptionsPath: string; force: boolean } {
   const args = process.argv.slice(2);
   let descriptionsPath = path.join(WORKTREE, "doc", "chunk-descriptions.json");
+  let force = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--descriptions" && args[i + 1]) {
       descriptionsPath = path.resolve(WORKTREE, args[i + 1]!);
-      break;
+      i++;
+    } else if (args[i] === "--force") {
+      force = true;
     }
   }
-  return { descriptionsPath };
+  return { descriptionsPath, force };
 }
 
 function getConfig() {
@@ -127,7 +130,7 @@ function getConfig() {
 }
 
 async function main() {
-  const { descriptionsPath } = parseArgs();
+  const { descriptionsPath, force } = parseArgs();
   console.log(`\n  Fast Indexer — skipping description generation`);
   console.log(`  Descriptions: ${descriptionsPath}\n`);
 
@@ -186,10 +189,20 @@ async function main() {
   const dimension = probe[0]?.length ?? 384;
   console.log(`  Embedding dimension: ${dimension}\n`);
 
-  // Clear existing store
+  // Clear existing store (requires --force if data exists)
   const store = createVectorStore(cfg, STORE_PATH, dimension);
-  await store.clear();
-  console.log("  Cleared existing store\n");
+  const existingCount = await store.count();
+  if (existingCount > 0 && !force) {
+    console.error(`  Store already has ${existingCount} chunks. Use --force to overwrite.`);
+    await store.close();
+    process.exit(1);
+  }
+  if (existingCount > 0) {
+    await store.clear();
+    console.log(`  Cleared existing store (backed up ${existingCount} chunks)\n`);
+  } else {
+    console.log("  Store is empty\n");
+  }
 
   // Walk files
   const srcDir = path.join(WORKTREE, "src");

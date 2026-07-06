@@ -4,6 +4,7 @@
 import * as lancedb from "@lancedb/lancedb";
 import type { Connection, Table, Version } from "@lancedb/lancedb";
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { VectorStore, Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
 
@@ -503,10 +504,33 @@ export class LanceDbStore implements VectorStore {
   }
 
   /**
+   * Back up the chunks.lance directory before a destructive operation.
+   * Creates a timestamped copy at chunks.lance.backup-<ISO timestamp>.
+   * Skips if chunks.lance doesn't exist or noBackup is set.
+   * @returns The backup path, or null if nothing was backed up.
+   */
+  private async backupBeforeClear(noBackup?: boolean): Promise<string | null> {
+    if (noBackup) return null;
+    const lancePath = path.join(this.dbPath, "chunks.lance");
+    try {
+      await fs.access(lancePath);
+    } catch {
+      return null;
+    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const backupPath = `${lancePath}.backup-${timestamp}`;
+    await fs.cp(lancePath, backupPath, { recursive: true });
+    return backupPath;
+  }
+
+  /**
    * Remove all chunks by dropping the underlying LanceDB table.
    * Falls back to deleting the database directory if dropTable fails.
+   * @param options - Optional. Set `{ noBackup: true }` to skip backup (test use only).
    */
-  async clear(): Promise<void> {
+  async clear(options?: { noBackup?: boolean }): Promise<void> {
+    const backup = await this.backupBeforeClear(options?.noBackup);
+    if (backup) console.warn(`[lancedb] Backed up chunks.lance to ${backup}`);
     await this.table?.close();
     this.table = null;
     try {
@@ -529,8 +553,25 @@ export class LanceDbStore implements VectorStore {
   /**
    * Completely remove the entire LanceDB database directory from disk.
    * All data is permanently lost.
+   * @param options - Optional. Set `{ noBackup: true }` to skip backup (test use only).
    */
-  async dropDatabase(): Promise<void> {
+  async dropDatabase(options?: { noBackup?: boolean }): Promise<void> {
+    if (!options?.noBackup) {
+      // Back up the entire store directory since dropDatabase deletes it.
+      try {
+        await fs.access(this.dbPath);
+      } catch {
+        // nothing to back up
+      }
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const backupPath = `${this.dbPath}.backup-${timestamp}`;
+        await fs.cp(this.dbPath, backupPath, { recursive: true });
+        console.warn(`[lancedb] Backed up database to ${backupPath}`);
+      } catch {
+        // backup failed, continue anyway
+      }
+    }
     this.table = null;
     this.db = null;
     try {

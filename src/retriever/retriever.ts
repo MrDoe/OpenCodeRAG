@@ -8,6 +8,8 @@ import type { EmbeddingProvider, KeywordIndex, VectorStore, SearchResult, Metada
  *  we slice back to the requested topK. */
 const FETCH_OVERFETCH_FACTOR = 3;
 const RRF_K = 60;
+/** Multiply raw RRF scores by (K+1) to normalize to ~[0,1]. */
+const RRF_NORMALIZE = RRF_K + 1;
 
 /** Options controlling the retrieval behavior. */
 export interface RetrieveOptions {
@@ -75,8 +77,8 @@ export async function retrieve(
     const combinedResults: SearchResult[] = [...allIds].map((id) => {
       const vR = vRank.get(id);
       const kR = kRank.get(id);
-      const vContrib = vR !== undefined ? (1 - kw) / (RRF_K + vR + 1) : 0;
-      const kContrib = kR !== undefined ? kw / (RRF_K + kR + 1) : 0;
+      const vContrib = vR !== undefined ? ((1 - kw) * RRF_NORMALIZE) / (RRF_K + vR + 1) : 0;
+      const kContrib = kR !== undefined ? (kw * RRF_NORMALIZE) / (RRF_K + kR + 1) : 0;
       const score = vContrib + kContrib;
       const result: SearchResult = { chunk: chunkById.get(id)!.chunk, score };
       if (options.explain) {
