@@ -26,21 +26,14 @@ function getStandardFontsUrl(): string {
 
 /**
  * Create a pdfjs-dist PDF document from a buffer.
- * Attempts to load the `canvas` native module for DOMMatrix; falls back to
- * `@thednp/dommatrix` polyfill if unavailable.
+ * Uses `@thednp/dommatrix` for DOMMatrix polyfill (lighter alternative to native canvas).
  * @param buffer - Raw buffer of the PDF file.
  * @returns A promise resolving to a pdfjs-dist PDFDocumentProxy.
  */
 async function createPdfDocument(buffer: Buffer) {
-  try {
-    const { DOMMatrix } = await import("canvas");
-    globalThis.DOMMatrix ??= DOMMatrix as unknown as typeof globalThis.DOMMatrix;
-    globalThis.DOMMatrixReadOnly ??= DOMMatrix as unknown as typeof globalThis.DOMMatrixReadOnly;
-  } catch {
-    const { default: CSSMatrix } = await import("@thednp/dommatrix");
-    globalThis.DOMMatrix ??= CSSMatrix as unknown as typeof globalThis.DOMMatrix;
-    globalThis.DOMMatrixReadOnly ??= CSSMatrix as unknown as typeof globalThis.DOMMatrixReadOnly;
-  }
+  const { default: CSSMatrix } = await import("@thednp/dommatrix");
+  globalThis.DOMMatrix ??= CSSMatrix as unknown as typeof globalThis.DOMMatrix;
+  globalThis.DOMMatrixReadOnly ??= CSSMatrix as unknown as typeof globalThis.DOMMatrixReadOnly;
 
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const loadingTask = getDocument({

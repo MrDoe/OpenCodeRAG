@@ -1,0 +1,3277 @@
+{
+  "branch": "t1-cosine-l2",
+  "commit": "8b9af91",
+  "timestamp": "2026-07-06T07:36:52.613Z",
+  "config": {
+    "embeddingProvider": "ollama",
+    "embeddingModel": "qwen3-embedding:0.6b",
+    "topK": 20,
+    "minScore": 0.5,
+    "hybridEnabled": true,
+    "keywordWeight": 0.1
+  },
+  "indexChunkCount": 1180,
+  "queries": [
+    {
+      "query": "How does the retrieval pipeline work end-to-end?",
+      "queryIndex": 0,
+      "resultCount": 20,
+      "latencyMs": 357.1,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 46,
+          "endLine": 53,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8427461385726929,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.01464374482187241,
+          "filePath": "doc/retrieval.md",
+          "startLine": 101,
+          "endLine": 159,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.013235294117647059,
+            "keywordScore": 0.0014084507042253522,
+            "rawVectorScore": 0.8234953284263611,
+            "rawKeywordScore": 17.758572049438392,
+            "keywordWeight": 0.1,
+            "vectorRank": 7,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "does",
+              "the",
+              "retrieval",
+              "pipeline",
+              "pipelin",
+              "to"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.json",
+          "startLine": 2,
+          "endLine": 7,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.835597425699234,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "opencode-rag.yaml",
+          "startLine": 1,
+          "endLine": 1,
+          "language": "yaml",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8310764133930206,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.0140625,
+          "filePath": "opencode-rag.json",
+          "startLine": 108,
+          "endLine": 118,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.827063649892807,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the plugin interact with chat messages?",
+      "queryIndex": 1,
+      "resultCount": 20,
+      "latencyMs": 167.9,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015295429208472686,
+          "filePath": "src/plugin.ts",
+          "startLine": 799,
+          "endLine": 898,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0.0014492753623188406,
+            "rawVectorScore": 0.7802304327487946,
+            "rawKeywordScore": 19.479181718823977,
+            "keywordWeight": 0.1,
+            "vectorRank": 4,
+            "keywordRank": 8,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "plugin",
+              "with",
+              "chat",
+              "message"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015174825174825176,
+          "filePath": "doc/plugin.md",
+          "startLine": 1,
+          "endLine": 100,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.013636363636363637,
+            "keywordScore": 0.0015384615384615385,
+            "rawVectorScore": 0.7801464796066284,
+            "rawKeywordScore": 19.479181718823977,
+            "keywordWeight": 0.1,
+            "vectorRank": 5,
+            "keywordRank": 4,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "plugin",
+              "with",
+              "chat",
+              "message"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014754098360655738,
+          "filePath": "src/plugin.ts",
+          "startLine": 460,
+          "endLine": 484,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7988472580909729,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014516129032258065,
+          "filePath": "doc/assets/eval.png",
+          "startLine": 1,
+          "endLine": 1,
+          "language": "image",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7970900237560272,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014285714285714285,
+          "filePath": "opencode-rag.json",
+          "startLine": 128,
+          "endLine": 137,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7896163761615753,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the keyword index combine with vector search?",
+      "queryIndex": 2,
+      "resultCount": 20,
+      "latencyMs": 164.5,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015395833333333334,
+          "filePath": "src/__tests__/retriever/retriever.test.ts",
+          "startLine": 141,
+          "endLine": 240,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.0013333333333333335,
+            "rawVectorScore": 0.8250711560249329,
+            "rawKeywordScore": 19.41557447405785,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 14,
+            "matchedTerms": [
+              "keyword",
+              "index",
+              "combine",
+              "combin",
+              "with",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 46,
+          "endLine": 53,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.845950573682785,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.json",
+          "startLine": 100,
+          "endLine": 107,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8453532159328461,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014341926729986432,
+          "filePath": "src/retriever/retriever.ts",
+          "startLine": 38,
+          "endLine": 109,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013432835820895522,
+            "keywordScore": 0.0009090909090909091,
+            "rawVectorScore": 0.8154186010360718,
+            "rawKeywordScore": 14.015001406805467,
+            "keywordWeight": 0.1,
+            "vectorRank": 6,
+            "keywordRank": 49,
+            "matchedTerms": [
+              "keyword",
+              "index",
+              "combin",
+              "with",
+              "vector",
+              "search"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014285714285714285,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 43,
+          "endLine": 45,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8284553587436676,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "Where is the embedder factory defined?",
+      "queryIndex": 3,
+      "resultCount": 20,
+      "latencyMs": 229.7,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.014754098360655738,
+          "filePath": "src/embedder/factory.ts",
+          "startLine": 23,
+          "endLine": 46,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8163399994373322,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014516129032258065,
+          "filePath": "src/__tests__/embedder/factory.test.ts",
+          "startLine": 18,
+          "endLine": 104,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7862143516540527,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014285714285714285,
+          "filePath": "src/__tests__/embedder/factory.test.ts",
+          "startLine": 7,
+          "endLine": 16,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7788006663322449,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0140625,
+          "filePath": "src/indexer/embed-stage.ts",
+          "startLine": 8,
+          "endLine": 13,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7775427997112274,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "src/core/bootstrap.ts",
+          "startLine": 56,
+          "endLine": 66,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7608658671379089,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "Where is the LanceDB store implementation?",
+      "queryIndex": 4,
+      "resultCount": 20,
+      "latencyMs": 154.4,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.014754098360655738,
+          "filePath": "src/vectorstore/lancedb.ts",
+          "startLine": 70,
+          "endLine": 79,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8301048576831818,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014516129032258065,
+          "filePath": "src/vectorstore/lancedb.ts",
+          "startLine": 122,
+          "endLine": 190,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8278456628322601,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014285714285714285,
+          "filePath": "src/__tests__/vectorstore/lancedb.test.ts",
+          "startLine": 408,
+          "endLine": 458,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8243442475795746,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0140625,
+          "filePath": "src/vectorstore/lancedb.ts",
+          "startLine": 97,
+          "endLine": 100,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8228226900100708,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "src/vectorstore/lancedb.ts",
+          "startLine": 396,
+          "endLine": 413,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8127427101135254,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "Find all usages of the retrieve function",
+      "queryIndex": 5,
+      "resultCount": 20,
+      "latencyMs": 157.6,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.01636700158646219,
+          "filePath": "doc/eval-token-plan.md",
+          "startLine": 1,
+          "endLine": 43,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0.0016129032258064516,
+            "rawVectorScore": 0.7897215187549591,
+            "rawKeywordScore": 21.775589443671887,
+            "keywordWeight": 0.1,
+            "vectorRank": 0,
+            "keywordRank": 1,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "the",
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.01478578892371996,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013636363636363637,
+            "keywordScore": 0.0011494252873563218,
+            "rawVectorScore": 0.770317018032074,
+            "rawKeywordScore": 21.775589443671887,
+            "keywordWeight": 0.1,
+            "vectorRank": 5,
+            "keywordRank": 26,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "the",
+              "retrieve",
+              "retriev",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 46,
+          "endLine": 53,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7881893515586853,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "AGENTS.md",
+          "startLine": 6,
+          "endLine": 16,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7757284939289093,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.0140625,
+          "filePath": "opencode-rag.yaml",
+          "startLine": 4,
+          "endLine": 11,
+          "language": "yaml",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7722410261631012,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "Find all usages of SearchResult type",
+      "queryIndex": 6,
+      "resultCount": 20,
+      "latencyMs": 160.8,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015533088235294118,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 366,
+          "endLine": 465,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.0014705882352941176,
+            "rawVectorScore": 0.7884072363376617,
+            "rawKeywordScore": 21.261192954073486,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "find",
+              "all",
+              "usages",
+              "usage",
+              "of",
+              "searchresult",
+              "search",
+              "result",
+              "type"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014754098360655738,
+          "filePath": "src/opencode/tools.ts",
+          "startLine": 528,
+          "endLine": 627,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7973710894584656,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014516129032258065,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 290,
+          "endLine": 299,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7940610945224762,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "opencode-rag.json",
+          "startLine": 100,
+          "endLine": 107,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7898558080196381,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "src/mcp/handlers.ts",
+          "startLine": 176,
+          "endLine": 181,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7862828373908997,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the chunker factory register new languages?",
+      "queryIndex": 7,
+      "resultCount": 20,
+      "latencyMs": 169.7,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.016078629032258065,
+          "filePath": "doc/chunking.md",
+          "startLine": 101,
+          "endLine": 194,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0.0015625,
+            "rawVectorScore": 0.8264632523059845,
+            "rawKeywordScore": 27.050321517754146,
+            "keywordWeight": 0.1,
+            "vectorRank": 1,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "the",
+              "chunker",
+              "chunk",
+              "factory",
+              "register",
+              "regist",
+              "new",
+              "languages",
+              "language"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015435139573070607,
+          "filePath": "src/__tests__/chunker/pdf.test.ts",
+          "startLine": 78,
+          "endLine": 88,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0.0011494252873563218,
+            "rawVectorScore": 0.7940249741077423,
+            "rawKeywordScore": 14.77358961732654,
+            "keywordWeight": 0.1,
+            "vectorRank": 2,
+            "keywordRank": 26,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "factory",
+              "register",
+              "language"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.015238970588235295,
+          "filePath": "src/__tests__/chunker/docx.test.ts",
+          "startLine": 77,
+          "endLine": 83,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.0011764705882352942,
+            "rawVectorScore": 0.7913006544113159,
+            "rawKeywordScore": 14.77358961732654,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 24,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "factory",
+              "register",
+              "language"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.01512820512820513,
+          "filePath": "doc/chunking.md",
+          "startLine": 1,
+          "endLine": 100,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0.001282051282051282,
+            "rawVectorScore": 0.7867843210697174,
+            "rawKeywordScore": 16.35401077111984,
+            "keywordWeight": 0.1,
+            "vectorRank": 4,
+            "keywordRank": 17,
+            "matchedTerms": [
+              "how",
+              "the",
+              "chunker",
+              "chunk",
+              "languages",
+              "language"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014826839826839827,
+          "filePath": "src/__tests__/chunker/doc.test.ts",
+          "startLine": 67,
+          "endLine": 73,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013636363636363637,
+            "keywordScore": 0.0011904761904761906,
+            "rawVectorScore": 0.7864995002746582,
+            "rawKeywordScore": 14.77358961732654,
+            "keywordWeight": 0.1,
+            "vectorRank": 5,
+            "keywordRank": 23,
+            "matchedTerms": [
+              "chunker",
+              "chunk",
+              "factory",
+              "register",
+              "language"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "What is the default minScore configuration?",
+      "queryIndex": 8,
+      "resultCount": 20,
+      "latencyMs": 174.9,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015223665223665224,
+          "filePath": "doc/evaluation.md",
+          "startLine": 201,
+          "endLine": 270,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.013636363636363637,
+            "keywordScore": 0.0015873015873015873,
+            "rawVectorScore": 0.7552255094051361,
+            "rawKeywordScore": 24.24757791165203,
+            "keywordWeight": 0.1,
+            "vectorRank": 5,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "what",
+              "is",
+              "the",
+              "default",
+              "minscore",
+              "minscor",
+              "min",
+              "score",
+              "configuration"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015147783251231527,
+          "filePath": "src/__tests__/retriever/retriever.test.ts",
+          "startLine": 141,
+          "endLine": 240,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0.0008620689655172415,
+            "rawVectorScore": 0.7666915357112885,
+            "rawKeywordScore": 14.352532583513808,
+            "keywordWeight": 0.1,
+            "vectorRank": 2,
+            "keywordRank": 55,
+            "matchedTerms": [
+              "is",
+              "default",
+              "minscore",
+              "minscor",
+              "min",
+              "score"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.json",
+          "startLine": 100,
+          "endLine": 107,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7759099304676056,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 46,
+          "endLine": 53,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7738143503665924,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.0140625,
+          "filePath": "opencode.json",
+          "startLine": 2,
+          "endLine": 2,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7616708278656006,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the session logger capture token usage?",
+      "queryIndex": 9,
+      "resultCount": 20,
+      "latencyMs": 163.3,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.016078629032258065,
+          "filePath": "doc/evaluation.md",
+          "startLine": 1,
+          "endLine": 100,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0.0015625,
+            "rawVectorScore": 0.8386000990867615,
+            "rawKeywordScore": 28.9714043366769,
+            "keywordWeight": 0.1,
+            "vectorRank": 1,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "session",
+              "logger",
+              "logg",
+              "capture",
+              "token",
+              "usage"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014754098360655738,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 26,
+          "endLine": 40,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.850882351398468,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014693611473272491,
+          "filePath": "doc/webui.md",
+          "startLine": 101,
+          "endLine": 188,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0.0008474576271186442,
+            "rawVectorScore": 0.8151412010192871,
+            "rawKeywordScore": 10.510117667381786,
+            "keywordWeight": 0.1,
+            "vectorRank": 4,
+            "keywordRank": 57,
+            "matchedTerms": [
+              "the",
+              "session",
+              "token",
+              "usage"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014636363636363638,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 43,
+          "endLine": 52,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013636363636363637,
+            "keywordScore": 0.001,
+            "rawVectorScore": 0.8138251900672913,
+            "rawKeywordScore": 12.181645640785014,
+            "keywordWeight": 0.1,
+            "vectorRank": 5,
+            "keywordRank": 39,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "token"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014285714285714285,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 12,
+          "endLine": 24,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8287589848041534,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does L2 normalization affect vector search scores?",
+      "queryIndex": 10,
+      "resultCount": 20,
+      "latencyMs": 157.5,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.json",
+          "startLine": 100,
+          "endLine": 107,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.817032665014267,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 46,
+          "endLine": 53,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8085566163063049,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014444444444444444,
+          "filePath": "doc/evaluation.md",
+          "startLine": 201,
+          "endLine": 270,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.012857142857142857,
+            "keywordScore": 0.0015873015873015873,
+            "rawVectorScore": 0.7841782867908478,
+            "rawKeywordScore": 17.190573334377124,
+            "keywordWeight": 0.1,
+            "vectorRank": 9,
+            "keywordRank": 2,
+            "matchedTerms": [
+              "how",
+              "does",
+              "vector",
+              "search",
+              "scores",
+              "score"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "opencode-rag.json",
+          "startLine": 2,
+          "endLine": 7,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8067222833633423,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.0140625,
+          "filePath": "src/vectorstore/lancedb.ts",
+          "startLine": 18,
+          "endLine": 24,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8061452209949493,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "What is the MetadataFilter interface used for?",
+      "queryIndex": 11,
+      "resultCount": 20,
+      "latencyMs": 162,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015197505197505198,
+          "filePath": "src/core/interfaces.ts",
+          "startLine": 141,
+          "endLine": 146,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0.0013513513513513514,
+            "rawVectorScore": 0.7834407091140747,
+            "rawKeywordScore": 20.45902043523328,
+            "keywordWeight": 0.1,
+            "vectorRank": 4,
+            "keywordRank": 13,
+            "matchedTerms": [
+              "metadatafilter",
+              "metadatafilt",
+              "metadata",
+              "filter",
+              "filt",
+              "interface",
+              "interfac"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.01490342405618964,
+          "filePath": "src/retriever/retriever.ts",
+          "startLine": 13,
+          "endLine": 23,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013432835820895522,
+            "keywordScore": 0.0014705882352941176,
+            "rawVectorScore": 0.7768649458885193,
+            "rawKeywordScore": 22.181936038363684,
+            "keywordWeight": 0.1,
+            "vectorRank": 6,
+            "keywordRank": 7,
+            "matchedTerms": [
+              "is",
+              "metadatafilter",
+              "metadatafilt",
+              "metadata",
+              "filter",
+              "filt",
+              "interface",
+              "interfac"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 46,
+          "endLine": 53,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7963960766792297,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.json",
+          "startLine": 100,
+          "endLine": 107,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7859067916870117,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014285714285714285,
+          "filePath": "opencode-rag.json",
+          "startLine": 108,
+          "endLine": 118,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7849999964237213,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the background indexer handle file changes?",
+      "queryIndex": 12,
+      "resultCount": 20,
+      "latencyMs": 161.5,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.01570184426229508,
+          "filePath": "src/watcher.ts",
+          "startLine": 78,
+          "endLine": 177,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.001639344262295082,
+            "rawVectorScore": 0.809533566236496,
+            "rawKeywordScore": 21.61063651171747,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "background",
+              "indexer",
+              "index",
+              "handle",
+              "handl",
+              "file",
+              "change"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014995335820895522,
+          "filePath": "src/watcher.ts",
+          "startLine": 27,
+          "endLine": 46,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013432835820895522,
+            "keywordScore": 0.0015625,
+            "rawVectorScore": 0.797376424074173,
+            "rawKeywordScore": 21.547132576424417,
+            "keywordWeight": 0.1,
+            "vectorRank": 6,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "the",
+              "background",
+              "indexer",
+              "index",
+              "file",
+              "changes",
+              "change"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 54,
+          "endLine": 64,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8205663859844208,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.json",
+          "startLine": 8,
+          "endLine": 96,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8194581270217896,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014513556618819777,
+          "filePath": "src/__tests__/watcher/integration.test.ts",
+          "startLine": 49,
+          "endLine": 92,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013636363636363637,
+            "keywordScore": 0.0008771929824561404,
+            "rawVectorScore": 0.8071028888225555,
+            "rawKeywordScore": 13.083250206130188,
+            "keywordWeight": 0.1,
+            "vectorRank": 5,
+            "keywordRank": 53,
+            "matchedTerms": [
+              "the",
+              "background",
+              "indexer",
+              "index",
+              "file"
+            ]
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "Where is the config validation logic?",
+      "queryIndex": 13,
+      "resultCount": 20,
+      "latencyMs": 155.6,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015764199370756748,
+          "filePath": "src/core/config.ts",
+          "startLine": 519,
+          "endLine": 618,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0.00101010101010101,
+            "rawVectorScore": 0.8152535855770111,
+            "rawKeywordScore": 8.709803050743009,
+            "keywordWeight": 0.1,
+            "vectorRank": 0,
+            "keywordRank": 38,
+            "matchedTerms": [
+              "is",
+              "config",
+              "validation"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.01543236301369863,
+          "filePath": "src/core/config.ts",
+          "startLine": 511,
+          "endLine": 516,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.0013698630136986301,
+            "rawVectorScore": 0.7841500341892242,
+            "rawKeywordScore": 10.557328832636422,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 12,
+            "matchedTerms": [
+              "is",
+              "the",
+              "config",
+              "validation"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014516129032258065,
+          "filePath": "src/__tests__/core/config.test.ts",
+          "startLine": 168,
+          "endLine": 243,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8064544796943665,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "src/__tests__/_images/aa_configuration1.png",
+          "startLine": 1,
+          "endLine": 1,
+          "language": "image",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7884787619113922,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "src/core/config.ts",
+          "startLine": 647,
+          "endLine": 746,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7797802984714508,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How are PDF documents chunked and indexed?",
+      "queryIndex": 14,
+      "resultCount": 20,
+      "latencyMs": 167.8,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.01570184426229508,
+          "filePath": "doc/chunking.md",
+          "startLine": 1,
+          "endLine": 100,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.001639344262295082,
+            "rawVectorScore": 0.8490744233131409,
+            "rawKeywordScore": 29.35721047632773,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "how",
+              "are",
+              "pdf",
+              "documents",
+              "document",
+              "chunk",
+              "and",
+              "indexed",
+              "index"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.json",
+          "startLine": 8,
+          "endLine": 96,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8706968128681183,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 10,
+          "endLine": 42,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8565496206283569,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "src/chunker/pdf.ts",
+          "startLine": 86,
+          "endLine": 155,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.851568341255188,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "opencode-rag.json",
+          "startLine": 108,
+          "endLine": 118,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8429512679576874,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "What embedding providers are supported?",
+      "queryIndex": 15,
+      "resultCount": 20,
+      "latencyMs": 156.5,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015924579736483417,
+          "filePath": "doc/embedding.md",
+          "startLine": 101,
+          "endLine": 177,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0.0014084507042253522,
+            "rawVectorScore": 0.861149400472641,
+            "rawKeywordScore": 17.470580330681912,
+            "keywordWeight": 0.1,
+            "vectorRank": 1,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "providers",
+              "provider",
+              "are",
+              "support"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015267319277108435,
+          "filePath": "doc/embedding.md",
+          "startLine": 1,
+          "endLine": 100,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.0012048192771084338,
+            "rawVectorScore": 0.8509677648544312,
+            "rawKeywordScore": 14.376358224406216,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 22,
+            "matchedTerms": [
+              "embedding",
+              "embedd",
+              "providers",
+              "provider",
+              "support"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.json",
+          "startLine": 2,
+          "endLine": 7,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8729893863201141,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "src/embedder/ollama.ts",
+          "startLine": 51,
+          "endLine": 97,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8556520640850067,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "opencode-rag.json",
+          "startLine": 119,
+          "endLine": 127,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8397506773471832,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the CLI parse and dispatch commands?",
+      "queryIndex": 16,
+      "resultCount": 20,
+      "latencyMs": 160.2,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015817928147889782,
+          "filePath": "src/cli/commands/query.ts",
+          "startLine": 25,
+          "endLine": 101,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0.0010638297872340426,
+            "rawVectorScore": 0.780185878276825,
+            "rawKeywordScore": 12.346213527527617,
+            "keywordWeight": 0.1,
+            "vectorRank": 0,
+            "keywordRank": 33,
+            "matchedTerms": [
+              "the",
+              "cli",
+              "parse",
+              "command"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014516129032258065,
+          "filePath": "doc/cli.md",
+          "startLine": 301,
+          "endLine": 326,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7749454081058502,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014285714285714285,
+          "filePath": "doc/cli.md",
+          "startLine": 1,
+          "endLine": 100,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7710533440113068,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0140625,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 76,
+          "endLine": 88,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7686161696910858,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "opencode-rag.yaml",
+          "startLine": 4,
+          "endLine": 11,
+          "language": "yaml",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7647121846675873,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the session logger persist events?",
+      "queryIndex": 17,
+      "resultCount": 20,
+      "latencyMs": 151.3,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015536537195523371,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 43,
+          "endLine": 52,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0.0010204081632653062,
+            "rawVectorScore": 0.8493432104587555,
+            "rawKeywordScore": 13.060379719854602,
+            "keywordWeight": 0.1,
+            "vectorRank": 1,
+            "keywordRank": 37,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "event"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015295815295815295,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 58,
+          "endLine": 157,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0.00101010101010101,
+            "rawVectorScore": 0.8436324000358582,
+            "rawKeywordScore": 13.060379719854602,
+            "keywordWeight": 0.1,
+            "vectorRank": 2,
+            "keywordRank": 38,
+            "matchedTerms": [
+              "session",
+              "logger",
+              "logg",
+              "event"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014987714987714989,
+          "filePath": "src/__tests__/eval/session-logger.test.ts",
+          "startLine": 243,
+          "endLine": 317,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013636363636363637,
+            "keywordScore": 0.0013513513513513514,
+            "rawVectorScore": 0.821203887462616,
+            "rawKeywordScore": 20.948872557602602,
+            "keywordWeight": 0.1,
+            "vectorRank": 5,
+            "keywordRank": 13,
+            "matchedTerms": [
+              "does",
+              "session",
+              "logger",
+              "logg",
+              "events",
+              "event"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014921422663358148,
+          "filePath": "src/__tests__/eval/session-logger.test.ts",
+          "startLine": 14,
+          "endLine": 69,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0.001075268817204301,
+            "rawVectorScore": 0.8220250904560089,
+            "rawKeywordScore": 14.400145295323934,
+            "keywordWeight": 0.1,
+            "vectorRank": 4,
+            "keywordRank": 32,
+            "matchedTerms": [
+              "does",
+              "session",
+              "events",
+              "event"
+            ]
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014754098360655738,
+          "filePath": "src/eval/session-logger.ts",
+          "startLine": 158,
+          "endLine": 183,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8558421730995178,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "What is the manifest schema version used for?",
+      "queryIndex": 18,
+      "resultCount": 20,
+      "latencyMs": 161.1,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015848214285714285,
+          "filePath": "src/core/manifest.ts",
+          "startLine": 44,
+          "endLine": 53,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0.0015625,
+            "rawVectorScore": 0.7973486483097076,
+            "rawKeywordScore": 17.080199086744877,
+            "keywordWeight": 0.1,
+            "vectorRank": 2,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "the",
+              "manifest",
+              "schema",
+              "version",
+              "used",
+              "for"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014754098360655738,
+          "filePath": "src/core/manifest.ts",
+          "startLine": 69,
+          "endLine": 71,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8144239783287048,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 98,
+          "endLine": 100,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8012023866176605,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0140625,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 95,
+          "endLine": 97,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7942595481872559,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "opencode.json",
+          "startLine": 2,
+          "endLine": 2,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7845654487609863,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the OpenCode plugin register tools?",
+      "queryIndex": 19,
+      "resultCount": 20,
+      "latencyMs": 156.5,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.01639344262295082,
+          "filePath": "doc/plugin.md",
+          "startLine": 1,
+          "endLine": 100,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0.001639344262295082,
+            "rawVectorScore": 0.8655109405517578,
+            "rawKeywordScore": 28.207124918352243,
+            "keywordWeight": 0.1,
+            "vectorRank": 0,
+            "keywordRank": 0,
+            "matchedTerms": [
+              "how",
+              "does",
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin",
+              "register",
+              "tools"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.015282012195121951,
+          "filePath": "doc/plugin.md",
+          "startLine": 201,
+          "endLine": 300,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.0012195121951219512,
+            "rawVectorScore": 0.8423999845981598,
+            "rawKeywordScore": 20.989464751071853,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 21,
+            "matchedTerms": [
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin",
+              "register",
+              "regist"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.01464374482187241,
+          "filePath": "doc/plugin.md",
+          "startLine": 101,
+          "endLine": 200,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.013235294117647059,
+            "keywordScore": 0.0014084507042253522,
+            "rawVectorScore": 0.837580680847168,
+            "rawKeywordScore": 24.607899626498302,
+            "keywordWeight": 0.1,
+            "vectorRank": 7,
+            "keywordRank": 10,
+            "matchedTerms": [
+              "how",
+              "the",
+              "opencode",
+              "opencod",
+              "open",
+              "code",
+              "plugin",
+              "register",
+              "tools"
+            ]
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014516129032258065,
+          "filePath": "doc/plugin.md",
+          "startLine": 301,
+          "endLine": 317,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8536486327648163,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.014285714285714285,
+          "filePath": "package.json",
+          "startLine": 4,
+          "endLine": 4,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8469464778900146,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "Where is the globMatch function defined?",
+      "queryIndex": 20,
+      "resultCount": 20,
+      "latencyMs": 151.5,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.015798180314309348,
+          "filePath": "src/vectorstore/memory.ts",
+          "startLine": 67,
+          "endLine": 75,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0.001282051282051282,
+            "rawVectorScore": 0.7614469528198242,
+            "rawKeywordScore": 13.927089960969257,
+            "keywordWeight": 0.1,
+            "vectorRank": 1,
+            "keywordRank": 17,
+            "matchedTerms": [
+              "globmatch",
+              "glob",
+              "match",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.0153125,
+          "filePath": "src/retriever/keyword-index.ts",
+          "startLine": 292,
+          "endLine": 300,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0.00125,
+            "rawVectorScore": 0.7540619969367981,
+            "rawKeywordScore": 13.927089960969257,
+            "keywordWeight": 0.1,
+            "vectorRank": 3,
+            "keywordRank": 19,
+            "matchedTerms": [
+              "globmatch",
+              "glob",
+              "match",
+              "function"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014754098360655738,
+          "filePath": "src/web/ui/highlight.min.js",
+          "startLine": 12,
+          "endLine": 13,
+          "language": "javascript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7684441804885864,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "src/web/ui/highlight.min.js",
+          "startLine": 90,
+          "endLine": 93,
+          "language": "javascript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7582259476184845,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "src/web/ui/highlight.min.js",
+          "startLine": 404,
+          "endLine": 404,
+          "language": "javascript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7536023259162903,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the proxy-aware HTTP client work?",
+      "queryIndex": 21,
+      "resultCount": 20,
+      "latencyMs": 155.4,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.014754098360655738,
+          "filePath": "src/embedder/http.ts",
+          "startLine": 484,
+          "endLine": 501,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.781366229057312,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014516129032258065,
+          "filePath": "src/embedder/http.ts",
+          "startLine": 143,
+          "endLine": 149,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7775079607963562,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014285714285714285,
+          "filePath": "src/embedder/http.ts",
+          "startLine": 152,
+          "endLine": 164,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7714857459068298,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0140625,
+          "filePath": "src/embedder/http.ts",
+          "startLine": 126,
+          "endLine": 140,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7665490210056305,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "src/embedder/http.ts",
+          "startLine": 504,
+          "endLine": 557,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7620988488197327,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "What is the FETCH_OVERFETCH_FACTOR constant?",
+      "queryIndex": 22,
+      "resultCount": 20,
+      "latencyMs": 159.3,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 98,
+          "endLine": 100,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.779962420463562,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 95,
+          "endLine": 97,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7755001187324524,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014285714285714285,
+          "filePath": "opencode-rag.json",
+          "startLine": 108,
+          "endLine": 118,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7711337506771088,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0140625,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 46,
+          "endLine": 53,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.768333375453949,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 54,
+          "endLine": 64,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7682041823863983,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How does the TUI settings menu work?",
+      "queryIndex": 23,
+      "resultCount": 20,
+      "latencyMs": 152.7,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.01631659836065574,
+          "filePath": "src/tui.ts",
+          "startLine": 608,
+          "endLine": 707,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0.0015625,
+            "rawVectorScore": 0.7985324859619141,
+            "rawKeywordScore": 18.51390782180293,
+            "keywordWeight": 0.1,
+            "vectorRank": 0,
+            "keywordRank": 3,
+            "matchedTerms": [
+              "tui",
+              "settings",
+              "setting",
+              "menu"
+            ]
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014799154334038056,
+          "filePath": "src/tui.ts",
+          "startLine": 427,
+          "endLine": 526,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.013636363636363637,
+            "keywordScore": 0.0011627906976744186,
+            "rawVectorScore": 0.7671421766281128,
+            "rawKeywordScore": 13.712315698485432,
+            "keywordWeight": 0.1,
+            "vectorRank": 5,
+            "keywordRank": 25,
+            "matchedTerms": [
+              "the",
+              "tui",
+              "setting",
+              "work"
+            ]
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 105,
+          "endLine": 108,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7976454794406891,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.014285714285714285,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 98,
+          "endLine": 100,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7935173511505127,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.0140625,
+          "filePath": "src/tui.ts",
+          "startLine": 283,
+          "endLine": 294,
+          "language": "typescript",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.7797922194004059,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    },
+    {
+      "query": "How are image descriptions generated?",
+      "queryIndex": 24,
+      "resultCount": 20,
+      "latencyMs": 166.6,
+      "topResults": [
+        {
+          "rank": 0,
+          "score": 0.014754098360655738,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 65,
+          "endLine": 75,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014754098360655738,
+            "keywordScore": 0,
+            "rawVectorScore": 0.9295038282871246,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 0
+          }
+        },
+        {
+          "rank": 1,
+          "score": 0.014516129032258065,
+          "filePath": "opencode-rag.json",
+          "startLine": 119,
+          "endLine": 127,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.014516129032258065,
+            "keywordScore": 0,
+            "rawVectorScore": 0.9003736972808838,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 1
+          }
+        },
+        {
+          "rank": 2,
+          "score": 0.014285714285714285,
+          "filePath": "doc/retrieval.md",
+          "startLine": 101,
+          "endLine": 159,
+          "language": "markdown",
+          "explanation": {
+            "vectorScore": 0.014285714285714285,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8528095781803131,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 2
+          }
+        },
+        {
+          "rank": 3,
+          "score": 0.0140625,
+          "filePath": "opencode-rag.json",
+          "startLine": 2,
+          "endLine": 7,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.0140625,
+            "keywordScore": 0,
+            "rawVectorScore": 0.845047801733017,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 3
+          }
+        },
+        {
+          "rank": 4,
+          "score": 0.013846153846153847,
+          "filePath": "opencode-rag.example.json",
+          "startLine": 76,
+          "endLine": 88,
+          "language": "json",
+          "explanation": {
+            "vectorScore": 0.013846153846153847,
+            "keywordScore": 0,
+            "rawVectorScore": 0.8441265523433685,
+            "rawKeywordScore": 0,
+            "keywordWeight": 0.1,
+            "vectorRank": 4
+          }
+        }
+      ],
+      "thresholdAnalysis": [
+        {
+          "threshold": 0.85,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.75,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.65,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.5,
+          "passedCount": 0,
+          "wouldInject": false
+        },
+        {
+          "threshold": 0.35,
+          "passedCount": 0,
+          "wouldInject": false
+        }
+      ]
+    }
+  ]
+}
