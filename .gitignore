@@ -36,3 +36,4 @@ opencode-rag-db/__manifest/*
 .graphify*
 graphify-out/*
 package-lock.json
+paper/*
