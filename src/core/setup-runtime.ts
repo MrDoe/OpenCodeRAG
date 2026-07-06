@@ -51,6 +51,69 @@ export function readVersionFile(versionFile: string): string | null {
   }
 }
 
+/** Bin name npm generates for this package (without .cmd/.ps1). */
+function getBinName(): string {
+  const pkgJson = path.join(getNpmGlobalRoot(), PLUGIN_NAME, "package.json");
+  try {
+    const pkg = JSON.parse(readFileSync(pkgJson, "utf-8")) as { bin?: Record<string, string> | string };
+    if (pkg.bin && typeof pkg.bin === "object") {
+      return Object.keys(pkg.bin)[0] ?? PLUGIN_NAME;
+    }
+    if (typeof pkg.bin === "string") {
+      return PLUGIN_NAME;
+    }
+  } catch {
+    // fall through
+  }
+  return PLUGIN_NAME;
+}
+
+/**
+ * npm-generated .cmd / .ps1 wrappers on Windows invoke `.js` files directly
+ * via file association. If the `.js` association points to a text editor
+ * (e.g. Notepad++) instead of Node.js, the CLI opens the editor instead of
+ * running. This function patches the wrappers to call `node` explicitly.
+ *
+ * Runs only on Windows. Safe to call on every setup — detects already-patched
+ * wrappers by checking for the `node` prefix.
+ */
+export function patchWindowsWrappers(npmGlobalRoot: string): void {
+  if (process.platform !== "win32") return;
+
+  const binDir = path.resolve(npmGlobalRoot, "..");
+  const binName = getBinName();
+
+  // ── .cmd wrapper ──────────────────────────────────────────────
+  const cmdFile = path.join(binDir, `${binName}.cmd`);
+  if (existsSync(cmdFile)) {
+    const content = readFileSync(cmdFile, "utf-8");
+    // npm generates: "%dp0%\node_modules\opencode-rag-plugin\dist\cli\index.js"   %*
+    // We want:       node "%dp0%\node_modules\opencode-rag-plugin\dist\cli\index.js"   %*
+    const cmdJsLine = /^(?!node\s)("[^"]+\.js"\s+%\*)$/m;
+    if (cmdJsLine.test(content)) {
+      const patched = content.replace(cmdJsLine, "node $1");
+      writeFileSync(cmdFile, patched, "utf-8");
+    }
+  }
+
+  // ── PowerShell wrapper ────────────────────────────────────────
+  const ps1File = path.join(binDir, `${binName}.ps1`);
+  if (existsSync(ps1File)) {
+    let content = readFileSync(ps1File, "utf-8");
+    // Skip if already patched
+    if (content.includes('node "$basedir')) return;
+    // npm generates:
+    //   $input | & "$basedir/node_modules/.../index.js"   $args
+    //   & "$basedir/node_modules/.../index.js"   $args
+    // Replace to: & node "$basedir/.../index.js"   $args
+    const ps1DirectLine = /(&\s+)("\$basedir\/[^"]+\.js"\s+\$args)/g;
+    if (ps1DirectLine.test(content)) {
+      content = content.replace(ps1DirectLine, "$1node $2");
+      writeFileSync(ps1File, content, "utf-8");
+    }
+  }
+}
+
 export async function setupRuntime(options?: {
   force?: boolean;
   silent?: boolean;
@@ -129,6 +192,8 @@ export async function setupRuntime(options?: {
   }
 
   writeFileSync(versionFile, pluginVersion, "utf-8");
+
+  patchWindowsWrappers(npmGlobalRoot);
 
   const cliEntry = path.join(runtimePluginDir, "dist", "cli.js");
   const pluginEntry = path.join(runtimePluginDir, "dist", "plugin-entry.js");
