@@ -27,6 +27,7 @@ import {
   generateWorkspacePluginFile,
   generateWorkspaceTuiPluginFile,
   installPluginFromGlobal,
+  mergeAgentsMdContent,
   mergeGitignoreContent,
 } from "./init-helpers.js";
 
@@ -152,6 +153,21 @@ export function registerInitCommand(program: Command): void {
         console.log(`  ${c.updated("Updated:")}  .opencode/skills/opencode-rag/SKILL.md`);
       } else {
         console.log(`  ${c.exists("Exists:")}   .opencode/skills/opencode-rag/SKILL.md`);
+      }
+
+      const agentsMdPath = path.join(cwd, "AGENTS.md");
+      const agentsMdExists = existsSync(agentsMdPath);
+      const nextAgentsMd = mergeAgentsMdContent(
+        agentsMdExists ? readFileSync(agentsMdPath, "utf-8") : undefined,
+      );
+      if (!agentsMdExists || options.force) {
+        writeFileSync(agentsMdPath, nextAgentsMd, "utf-8");
+        console.log(`  ${agentsMdExists ? c.updated("Updated:") : c.created("Created:")} AGENTS.md`);
+      } else if (readFileSync(agentsMdPath, "utf-8") !== nextAgentsMd) {
+        writeFileSync(agentsMdPath, nextAgentsMd, "utf-8");
+        console.log(`  ${c.updated("Updated:")}  AGENTS.md`);
+      } else {
+        console.log(`  ${c.exists("Exists:")}   AGENTS.md`);
       }
 
       const workspacePackageExists = existsSync(opencodePackagePath);

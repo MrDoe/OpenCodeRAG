@@ -198,6 +198,105 @@ describe("opencode-rag init", () => {
   });
 });
 
+describe("opencode-rag init AGENTS.md", () => {
+  let tmpDir: string;
+
+  before(() => {
+    tmpDir = join(tmpdir(), `opencode-rag-init-agents-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  after(() => {
+    process.cwd = originalCwd;
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it("creates AGENTS.md with the OpenCodeRAG directive on fresh workspace", async () => {
+    process.cwd = () => tmpDir;
+
+    const { runCli } = await import("../cli.js");
+    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+
+    const agentsPath = join(tmpDir, "AGENTS.md");
+    assert.ok(existsSync(agentsPath), "AGENTS.md should exist at workspace root");
+    const content = readFileSync(agentsPath, "utf-8");
+    assert.ok(content.includes("ALWAYS use OpenCodeRAG tools before reading or editing"), "should contain the directive");
+    assert.ok(content.includes("`search_semantic`"), "should mention search_semantic");
+    assert.ok(content.includes("`get_file_skeleton`"), "should mention get_file_skeleton");
+    assert.ok(content.includes("`find_usages`"), "should mention find_usages");
+    assert.ok(content.includes("`describe_image`"), "should mention describe_image");
+    assert.ok(content.includes("<!-- BEGIN opencode-rag -->"), "should contain begin sentinel");
+    assert.ok(content.includes("<!-- END opencode-rag -->"), "should contain end sentinel");
+  });
+
+  it("preserves existing custom content and appends the directive", async () => {
+    const sub = join(tmpDir, "preserve-test");
+    mkdirSync(sub, { recursive: true });
+    const custom = "# My Project\n\nCustom notes about the workspace.\n";
+    writeFileSync(join(sub, "AGENTS.md"), custom, "utf-8");
+    process.cwd = () => sub;
+
+    const { runCli } = await import("../cli.js");
+    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+
+    const content = readFileSync(join(sub, "AGENTS.md"), "utf-8");
+    assert.ok(content.includes("Custom notes about the workspace."), "should preserve custom content");
+    assert.ok(content.includes("<!-- BEGIN opencode-rag -->"), "should append the directive section");
+    assert.ok(content.includes("ALWAYS use OpenCodeRAG tools"), "should include the directive body");
+  });
+
+  it("replaces the section in place on re-run without duplicating", async () => {
+    const sub = join(tmpDir, "rerun-test");
+    mkdirSync(sub, { recursive: true });
+    process.cwd = () => sub;
+
+    const { runCli } = await import("../cli.js");
+    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+
+    const content = readFileSync(join(sub, "AGENTS.md"), "utf-8");
+    const beginCount = (content.match(/<!-- BEGIN opencode-rag -->/g) ?? []).length;
+    const endCount = (content.match(/<!-- END opencode-rag -->/g) ?? []).length;
+    assert.equal(beginCount, 1, "should have exactly one begin sentinel");
+    assert.equal(endCount, 1, "should have exactly one end sentinel");
+    assert.ok(content.includes("ALWAYS use OpenCodeRAG tools"), "directive body should be present");
+  });
+});
+
+describe("mergeAgentsMdContent helper", () => {
+  let mergeAgentsMdContent: typeof import("../cli/commands/init-helpers.js").mergeAgentsMdContent;
+
+  before(async () => {
+    ({ mergeAgentsMdContent } = await import("../cli/commands/init-helpers.js"));
+  });
+
+  it("returns the section alone when no existing content", () => {
+    const out = mergeAgentsMdContent(undefined);
+    assert.ok(out.startsWith("<!-- BEGIN opencode-rag -->"));
+    assert.ok(out.trimEnd().endsWith("<!-- END opencode-rag -->"));
+    assert.ok(out.endsWith("\n"), "should end with newline");
+    assert.ok(out.includes("search_semantic"));
+  });
+
+  it("appends section preserving custom content", () => {
+    const out = mergeAgentsMdContent("# Cool Project\n\nSome notes.\n");
+    assert.ok(out.includes("Some notes."), "custom content preserved");
+    assert.ok(out.includes("<!-- BEGIN opencode-rag -->"), "section appended");
+    assert.ok(out.includes("<!-- END opencode-rag -->"));
+  });
+
+  it("replaces existing section in place", () => {
+    const existing = "# Project\n\n<!-- BEGIN opencode-rag -->\nOLD BODY\n<!-- END opencode-rag -->\n\nTrailing.\n";
+    const out = mergeAgentsMdContent(existing);
+    assert.ok(out.includes("<!-- BEGIN opencode-rag -->"));
+    assert.ok(out.includes("ALWAYS use OpenCodeRAG tools"), "old body replaced with new directive");
+    assert.ok(!out.includes("OLD BODY"), "stale body removed");
+    assert.ok(out.includes("Trailing."), "trailing content preserved");
+    const beginCount = (out.match(/<!-- BEGIN opencode-rag -->/g) ?? []).length;
+    assert.equal(beginCount, 1, "no duplicate sections");
+  });
+});
+
 describe("opencode-rag describe-image", () => {
   let tmpDir: string;
 

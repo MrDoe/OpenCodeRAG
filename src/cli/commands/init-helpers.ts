@@ -281,6 +281,54 @@ export function mergeGitignoreContent(existingContent?: string): string {
   return merged.join("\n");
 }
 
+const BEGIN_MARKER = "<!-- BEGIN opencode-rag -->";
+const END_MARKER = "<!-- END opencode-rag -->";
+
+const AGENTS_MD_SECTION = [
+  BEGIN_MARKER,
+  "## Code Navigation",
+  "",
+  "ALWAYS use OpenCodeRAG tools before reading or editing:",
+  "- **Search first** — `search_semantic(query)` instead of grep/glob",
+  "- **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines",
+  "- **Usages before edit** — `find_usages(symbolName)` before modifying any symbol",
+  "- **Images via describe** — `describe_image(filePath)` — never read raw bytes",
+  "",
+  "If no results, run `opencode-rag index`.",
+  END_MARKER,
+].join("\n");
+
+/**
+ * Merge the OpenCodeRAG directive section into an existing `AGENTS.md`.
+ *
+ * The directive is wrapped in sentinel markers so re-runs replace the
+ * section in place rather than appending duplicates. Existing content
+ * outside the markers is always preserved. If no existing content is
+ * provided, the section alone is returned as a new file.
+ *
+ * @param existingContent - The current `AGENTS.md` content, or `undefined` if absent.
+ * @returns The merged `AGENTS.md` content with a trailing newline.
+ */
+export function mergeAgentsMdContent(existingContent?: string): string {
+  if (!existingContent) {
+    return `${AGENTS_MD_SECTION}\n`;
+  }
+
+  const beginIdx = existingContent.indexOf(BEGIN_MARKER);
+  const endIdx = existingContent.indexOf(END_MARKER);
+
+  if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
+    const before = existingContent.slice(0, beginIdx);
+    const after = existingContent.slice(endIdx + END_MARKER.length);
+    const merged = `${before}${AGENTS_MD_SECTION}${after}`;
+    return merged.endsWith("\n") ? merged : `${merged}\n`;
+  }
+
+  const trimmed = existingContent.trimEnd();
+  const separator = trimmed.endsWith(BEGIN_MARKER) ? "" : "\n\n";
+  return `${trimmed}${separator}${AGENTS_MD_SECTION}\n`;
+}
+
 /**
  * Get the runtime directory path (`~/.opencode`).
  *
