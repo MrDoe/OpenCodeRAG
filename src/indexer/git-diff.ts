@@ -1,7 +1,7 @@
 /**
  * @fileoverview Uses git to detect changed, deleted, and untracked files for incremental indexing.
  */
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 /** Result of comparing the working tree against a prior commit. */
 export interface GitDiffResult {
@@ -18,7 +18,7 @@ export interface GitDiffResult {
  */
 export function getRepoRoot(cwd: string): string | null {
   try {
-    return execSync("git rev-parse --show-toplevel", {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
       cwd,
       encoding: "utf-8",
       timeout: 5000,
@@ -37,7 +37,7 @@ export function getRepoRoot(cwd: string): string | null {
  */
 export function getCurrentCommit(cwd: string): string | null {
   try {
-    return execSync("git rev-parse HEAD", {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
       cwd,
       encoding: "utf-8",
       timeout: 5000,
@@ -60,15 +60,13 @@ export function getChangedFilesSince(
   fromCommit: string,
 ): GitDiffResult | null {
   try {
-    const changedRaw = execSync(
-      `git diff --name-only --diff-filter=ACMRT "${fromCommit}" HEAD`,
-      { cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    const changedRaw = execFileSync("git", ["diff", "--name-only", "--diff-filter=ACMRT", fromCommit, "HEAD"], {
+      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
 
-    const deletedRaw = execSync(
-      `git diff --name-only --diff-filter=D "${fromCommit}" HEAD`,
-      { cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    const deletedRaw = execFileSync("git", ["diff", "--name-only", "--diff-filter=D", fromCommit, "HEAD"], {
+      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
 
     const changedFiles = changedRaw.length > 0 ? changedRaw.split("\n") : [];
     const deletedFiles = deletedRaw.length > 0 ? deletedRaw.split("\n") : [];
@@ -90,10 +88,9 @@ export function getChangedFilesSince(
  */
 export function getUntrackedFiles(cwd: string): string[] {
   try {
-    const raw = execSync(
-      "git ls-files --others --exclude-standard",
-      { cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    const raw = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+      cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
     return raw.length > 0 ? raw.split("\n") : [];
   } catch {
     return [];
@@ -120,20 +117,17 @@ export interface WorkingTreeChanges {
  */
 export function getWorkingTreeChanges(cwd: string): WorkingTreeChanges | null {
   try {
-    const modifiedRaw = execSync(
-      "git diff-index --name-only -M HEAD",
-      { cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    const modifiedRaw = execFileSync("git", ["diff-index", "--name-only", "-M", "HEAD"], {
+      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
 
-    const deletedRaw = execSync(
-      "git diff --name-only --diff-filter=D HEAD",
-      { cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    const deletedRaw = execFileSync("git", ["diff", "--name-only", "--diff-filter=D", "HEAD"], {
+      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
 
-    const untrackedRaw = execSync(
-      "git ls-files --others --exclude-standard",
-      { cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    const untrackedRaw = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+      cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
 
     const changedFiles = modifiedRaw.length > 0 ? modifiedRaw.split("\n") : [];
     const deletedFiles = deletedRaw.length > 0 ? deletedRaw.split("\n") : [];

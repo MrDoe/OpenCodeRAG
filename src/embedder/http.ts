@@ -27,6 +27,11 @@ interface PooledSocket {
 
 const connectionPool = new Map<string, PooledSocket[]>();
 
+// Serialize proxied fetch requests that mutate process.env,
+// preventing races when concurrent requests interleave
+// set/restore of HTTP_PROXY/HTTPS_PROXY.
+let proxyRequestQueue = Promise.resolve<void>(undefined);
+
 function poolKey(host: string, port: number, isHttps: boolean): string {
   return `${isHttps ? "tls" : "tcp"}:${host}:${port}`;
 }
@@ -69,7 +74,12 @@ function releaseConnection(socket: net.Socket | tls.TLSSocket, host: string, por
     socket.destroy();
   }, IDLE_TIMEOUT_MS);
 
-  socket.removeAllListeners();
+  // Avoid removeAllListeners — that would strip the error handler
+  // and cause an unhandled crash on ECONNRESET/TLS alert.
+  socket.removeAllListeners("data");
+  socket.removeAllListeners("end");
+  socket.removeAllListeners("drain");
+  socket.on("error", () => socket.destroy());
   pool.push({ socket, idleTimer });
 }
 
@@ -512,46 +522,56 @@ async function postJsonViaFetch(
   const authHeader = buildProxyAuthHeader(proxy);
   const envOverride = applyProxyEnv(proxy);
 
-  const savedHttpProxy = process.env.HTTP_PROXY;
-  const savedHttpsProxy = process.env.HTTPS_PROXY;
+  // Serialize fetch requests that mutate process.env to prevent
+  // concurrent requests from interleaving set/restore of proxy vars.
+  const [savedHttpProxy, savedHttpsProxy] = [process.env.HTTP_PROXY, process.env.HTTPS_PROXY];
 
-  try {
-    if (envOverride) {
-      process.env.HTTP_PROXY = envOverride.httpProxy;
-      process.env.HTTPS_PROXY = envOverride.httpsProxy;
-    }
+  return new Promise<HttpResponseLike>((resolve, reject) => {
+    proxyRequestQueue = proxyRequestQueue.then(async () => {
+      try {
+        if (envOverride) {
+          process.env.HTTP_PROXY = envOverride.httpProxy;
+          process.env.HTTPS_PROXY = envOverride.httpsProxy;
+        }
 
-    const requestHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...headers,
-    };
+        const requestHeaders: Record<string, string> = {
+          "Content-Type": "application/json",
+          ...headers,
+        };
 
-    if (authHeader) {
-      requestHeaders["Proxy-Authorization"] = authHeader;
-    }
+        if (authHeader) {
+          requestHeaders["Proxy-Authorization"] = authHeader;
+        }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    const onAbort = () => { controller.abort(); clearTimeout(timeout); };
-    signal?.addEventListener("abort", onAbort, { once: true });
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        const onAbort = () => { controller.abort(); clearTimeout(timeout); };
+        signal?.addEventListener("abort", onAbort, { once: true });
 
-    try {
-      const response = await fetch(urlString, {
-        method: "POST",
-        headers: requestHeaders,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+        try {
+          const response = await fetch(urlString, {
+            method: "POST",
+            headers: requestHeaders,
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
 
-      return response as unknown as HttpResponseLike;
-    } finally {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", onAbort);
-    }
-  } finally {
-    if (envOverride) {
-      process.env.HTTP_PROXY = savedHttpProxy;
-      process.env.HTTPS_PROXY = savedHttpsProxy;
-    }
-  }
+          resolve(response as unknown as HttpResponseLike);
+        } finally {
+          clearTimeout(timeout);
+          signal?.removeEventListener("abort", onAbort);
+          if (envOverride) {
+            process.env.HTTP_PROXY = savedHttpProxy;
+            process.env.HTTPS_PROXY = savedHttpsProxy;
+          }
+        }
+      } catch (err) {
+        if (envOverride) {
+          process.env.HTTP_PROXY = savedHttpProxy;
+          process.env.HTTPS_PROXY = savedHttpsProxy;
+        }
+        reject(err);
+      }
+    });
+  });
 }

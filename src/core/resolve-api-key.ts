@@ -73,7 +73,9 @@ function readOpenCodeProviderKey(worktree: string, providerId: string): string |
     try {
       if (!existsSync(loc)) continue;
       const raw = readFileSync(loc, "utf-8");
-      const cleaned = stripJsoncComments(raw);
+      // Only strip JSONC comments from .jsonc files; plain JSON may contain
+      // "https://" URLs that look like line-comment markers after "//".
+      const cleaned = loc.endsWith(".jsonc") ? stripJsoncComments(raw) : raw;
       const config = JSON.parse(cleaned) as Record<string, unknown>;
       const providerSection = config.provider as Record<string, unknown> | undefined;
       if (!providerSection) continue;

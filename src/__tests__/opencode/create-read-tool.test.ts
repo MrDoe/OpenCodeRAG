@@ -34,6 +34,9 @@ function makeStore(options: {
     deleteByFilePath: async () => {},
     close: async () => {},
     getFilePaths: async () => [],
+    getChunks: async () => [],
+    listFiles: async () => [],
+    getChunksByFilePath: async () => [],
   };
 }
 
@@ -273,6 +276,9 @@ describe("createRagReadTool", () => {
       deleteByFilePath: async () => {},
       close: async () => {},
       getFilePaths: async () => [],
+      getChunks: async () => [],
+      listFiles: async () => [],
+      getChunksByFilePath: async () => [],
     };
 
     const tool = createRagReadTool({
@@ -490,8 +496,10 @@ describe("createRagReadTool", () => {
       deleteByFilePath: async () => {},
       close: async () => {},
       getFilePaths: async () => [],
+      getChunks: async () => [],
+      listFiles: async () => [],
+      getChunksByFilePath: async () => [],
     };
-
     const embedder = makeEmbedder();
     const sessionLastMessage = new Map<string, string>();
     const sessionRetrievalCache = new Map<
@@ -544,6 +552,9 @@ describe("createRagReadTool", () => {
       deleteByFilePath: async () => {},
       close: async () => {},
       getFilePaths: async () => [],
+      getChunks: async () => [],
+      listFiles: async () => [],
+      getChunksByFilePath: async () => [],
     };
 
     const sessionLastMessage = new Map<string, string>();

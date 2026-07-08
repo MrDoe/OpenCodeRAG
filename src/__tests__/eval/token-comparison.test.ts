@@ -57,6 +57,9 @@ const dummyStore: VectorStore = {
   deleteByFilePath: async () => {},
   close: async () => {},
   getFilePaths: async () => [],
+  getChunks: async () => [],
+  listFiles: async () => [],
+  getChunksByFilePath: async () => [],
 };
 
 // ── Token estimation tests ──────────────────────────────────────

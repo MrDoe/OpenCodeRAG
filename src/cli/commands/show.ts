@@ -32,7 +32,7 @@ export function registerShowCommand(program: Command): void {
         const { store } = ctx;
         logFilePath = ctx.logFilePath;
 
-        const chunks = await (store as any).getChunksByFilePath(file);
+        const chunks = await store.getChunksByFilePath(file);
 
         if (chunks.length === 0) {
           logCliInfo(logFilePath, "show", `${c.warn(`No chunks found for '${file}'.`)}`);

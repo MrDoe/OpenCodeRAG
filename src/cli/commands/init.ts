@@ -12,7 +12,7 @@
 
 import type { Command } from "commander";
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
 import { loadConfig } from "../../core/config.js";
 import { checkProviderHealth, pullOllamaModels } from "../../embedder/health.js";
 import { destroyAllPooledConnections } from "../../embedder/http.js";
@@ -168,6 +168,10 @@ export function registerInitCommand(program: Command): void {
 
       const configExists = existsSync(configPath);
       if (!configExists || options.force) {
+        if (configExists && options.force) {
+          copyFileSync(configPath, configPath + ".bak");
+          console.log(`  ${c.dim("Backup:")}        ${configPath}.bak`);
+        }
         writeFileSync(configPath, generateDefaultConfigJson(), "utf-8");
         console.log(`  ${configExists ? c.updated("Updated:") : c.created("Created:")} opencode-rag.json`);
       } else {

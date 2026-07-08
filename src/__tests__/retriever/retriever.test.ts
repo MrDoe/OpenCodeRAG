@@ -35,6 +35,9 @@ function makeStore(results: SearchResult[]): VectorStore {
     async deleteByFilePath(_filePath: string): Promise<void> {},
     async close(): Promise<void> {},
     async getFilePaths(): Promise<string[]> { return []; },
+    async getChunks(): Promise<[]> { return []; },
+    async listFiles(): Promise<[]> { return []; },
+    async getChunksByFilePath(): Promise<[]> { return []; },
   };
 }
 
@@ -100,6 +103,9 @@ describe("retrieve", () => {
       async deleteByFilePath(_filePath: string): Promise<void> {},
       async close(): Promise<void> {},
       async getFilePaths(): Promise<string[]> { return []; },
+      async getChunks(): Promise<[]> { return []; },
+      async listFiles(): Promise<[]> { return []; },
+      async getChunksByFilePath(): Promise<[]> { return []; },
     };
 
     await retrieve("query", embedder, store, { topK: 5 });
@@ -126,6 +132,9 @@ describe("retrieve", () => {
       async deleteByFilePath(_filePath: string): Promise<void> {},
       async close(): Promise<void> {},
       async getFilePaths(): Promise<string[]> { return []; },
+      async getChunks(): Promise<[]> { return []; },
+      async listFiles(): Promise<[]> { return []; },
+      async getChunksByFilePath(): Promise<[]> { return []; },
     };
 
     await retrieve("query", embedder, store);

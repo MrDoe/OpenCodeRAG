@@ -82,9 +82,8 @@ export function createWatchPassScheduler(
       if (rerunRequested) {
         rerunRequested = false;
         schedule();
-      } else {
-        resolveWaiters();
       }
+      resolveWaiters();
     }
   }
 

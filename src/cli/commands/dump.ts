@@ -43,7 +43,7 @@ export function registerDumpCommand(program: Command): void {
 
         const offset = parseInt(options.offset ?? "0", 10);
         const limit = parseInt(options.limit ?? "25", 10);
-        const chunks = await (store as any).getChunks(offset, limit);
+        const chunks = await store.getChunks(offset, limit);
 
         logCliInfo(logFilePath, "dump", `\n${c.heading("Chunks")} ${c.value(String(offset + 1))}${c.label("-")}${c.value(String(offset + chunks.length))} of ${c.num(total)}:\n`);
         for (const chunk of chunks) {

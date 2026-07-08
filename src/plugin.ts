@@ -49,6 +49,36 @@ const mcpServers = new Map<string, { close: () => Promise<void> }>();
 /** Pending update notifications keyed by workspace directory. */
 const pendingUpdateInfo = new Map<string, UpdateInfo>();
 
+/** Guard flag to prevent re-entrant shutdown. */
+let shutdownRegistered = false;
+
+/** Close all active background indexers and MCP servers, then destroy idle sockets. */
+async function shutdownPluginResources(): Promise<void> {
+  for (const [dir, indexer] of backgroundIndexers) {
+    try { await indexer.close(); } catch { /* best-effort */ }
+    backgroundIndexers.delete(dir);
+  }
+  for (const [dir, server] of mcpServers) {
+    try { await server.close(); } catch { /* best-effort */ }
+    mcpServers.delete(dir);
+  }
+  configCache.clear();
+  pendingUpdateInfo.clear();
+  destroyAllPooledConnections();
+}
+
+/** Register a process.beforeExit handler so that resources are cleaned up
+ *  when the OpenCode process exits (rather than only on plugin reload). */
+function registerShutdownHandler(): void {
+  if (shutdownRegistered) return;
+  shutdownRegistered = true;
+  process.once("beforeExit", () => {
+    void shutdownPluginResources();
+  });
+}
+
+registerShutdownHandler();
+
 /** Set a bounded Map entry, evicting the oldest key if the map exceeds maximum size. */
 function boundedSet<V>(map: Map<string, V>, key: string, value: V, maxSize: number): void {
   if (map.has(key)) {
@@ -784,38 +814,40 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         message: "system guidance injected",
       });
 
-      const guidance = [
-        "MANDATORY: OpenCodeRAG tools MUST be used before any code task:",
-        "- `search_semantic(query)`: retrieve relevant code chunks. Call BEFORE planning, editing, or answering. Accepts `pathHints` and `languageHints`.",
-        "- `get_file_skeleton(filePath)`: structural overview of a file. Call BEFORE reading any file.",
-        "- `find_usages(symbolName)`: find all references. Call BEFORE editing any function, class, or variable.",
-        "- `describe_image(filePath)`: describe an image file using a vision model. Call when user refers to a screenshot, diagram, or image.",
-        "",
-        "Decision tree — ALWAYS follow this order:",
-        "1. User mentions code behavior/architecture → `search_semantic(query)`",
-        "2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines",
-        "3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`",
-        "4. User asks a code question → `search_semantic` to gather context before answering",
-        "5. User asks about an image or visual asset → `describe_image(filePath)` to retrieve its generated description, then optionally `search_semantic` for related code",
-        "",
-        "Proactive triggers — you MUST call these tools when:",
-        "- User asks about code behavior, architecture, or implementation details",
-        "- User asks to edit, refactor, or fix code — call `find_usages` first",
-        "- User references files or functions you haven't read yet",
-        "- User says \"find\", \"search\", \"look up\", \"where is\", \"how does\"",
-        "- User refers to an image, screenshot, diagram, or visual asset",
-        "- Before answering ANY code-related question, retrieve context first",
-        "- Before reading ANY file, call `get_file_skeleton` to orient first",
-        "",
-        "Anti-patterns — NEVER do these:",
-        "- Reading full files without calling `get_file_skeleton` first (wastes tokens)",
-        "- Editing a function without calling `find_usages` first (breaks call sites)",
-        "- Answering code questions without calling `search_semantic` first (you guess at behavior)",
-        "- Using `grep`/`glob` when `search_semantic` would find the answer faster",
-        "- Treating image files as text — use `describe_image` instead of reading raw bytes",
-      ];
-
-      output.system.unshift(guidance.join("\n"));
+      const cfg = getEffectiveCfg();
+      if (cfg.openCode.injectSystemPrompt !== false) {
+        const guidance = [
+          "MANDATORY: OpenCodeRAG tools MUST be used before any code task:",
+          "- `search_semantic(query)`: retrieve relevant code chunks. Call BEFORE planning, editing, or answering. Accepts `pathHints` and `languageHints`.",
+          "- `get_file_skeleton(filePath)`: structural overview of a file. Call BEFORE reading any file.",
+          "- `find_usages(symbolName)`: find all references. Call BEFORE editing any function, class, or variable.",
+          "- `describe_image(filePath)`: describe an image file using a vision model. Call when user refers to a screenshot, diagram, or image.",
+          "",
+          "Decision tree — ALWAYS follow this order:",
+          "1. User mentions code behavior/architecture → `search_semantic(query)`",
+          "2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines",
+          "3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`",
+          "4. User asks a code question → `search_semantic` to gather context before answering",
+          "5. User asks about an image or visual asset → `describe_image(filePath)` to retrieve its generated description, then optionally `search_semantic` for related code",
+          "",
+          "Proactive triggers — you MUST call these tools when:",
+          "- User asks about code behavior, architecture, or implementation details",
+          "- User asks to edit, refactor, or fix code — call `find_usages` first",
+          "- User references files or functions you haven't read yet",
+          "- User says \"find\", \"search\", \"look up\", \"where is\", \"how does\"",
+          "- User refers to an image, screenshot, diagram, or visual asset",
+          "- Before answering ANY code-related question, retrieve context first",
+          "- Before reading ANY file, call `get_file_skeleton` to orient first",
+          "",
+          "Anti-patterns — NEVER do these:",
+          "- Reading full files without calling `get_file_skeleton` first (wastes tokens)",
+          "- Editing a function without calling `find_usages` first (breaks call sites)",
+          "- Answering code questions without calling `search_semantic` first (you guess at behavior)",
+          "- Using `grep`/`glob` when `search_semantic` would find the answer faster",
+          "- Treating image files as text — use `describe_image` instead of reading raw bytes",
+        ];
+        output.system.unshift(guidance.join("\n"));
+      }
 
       // Inject update notification if available
       const updateInfo = pendingUpdateInfo.get(options.worktree);

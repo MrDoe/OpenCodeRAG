@@ -70,6 +70,9 @@ const populatedStore: VectorStore = {
   deleteByFilePath: async () => {},
   close: async () => {},
   getFilePaths: async () => [],
+  getChunks: async () => [],
+  listFiles: async () => [],
+  getChunksByFilePath: async () => [],
 };
 
 type SeenRetrieveCall = {
@@ -460,6 +463,9 @@ describe("ragPlugin", () => {
       deleteByFilePath: async () => {},
       close: async () => {},
       getFilePaths: async () => [],
+      getChunks: async () => [],
+      listFiles: async () => [],
+      getChunksByFilePath: async () => [],
     };
 
     const { dependencies } = makeDependencies(results, 1);

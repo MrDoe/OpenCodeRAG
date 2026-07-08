@@ -251,6 +251,8 @@ export interface RagConfig {
     readNoResultsBehavior?: ReadNoResultsBehavior;
     /** Maximum related files shown when read results are empty. */
     readRelatedFilesMax?: number;
+    /** Whether to inject RAG tool guidance into system prompts (default true). */
+    injectSystemPrompt?: boolean;
   };
   /** Custom chunker module registrations. */
   chunkers?: ChunkerConfig[];
@@ -414,6 +416,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     enabled: true,
     maxContextChunks: 10,
     readOverride: true,
+    injectSystemPrompt: true,
     autoIndex: {
       enabled: false,
       debounceMs: 2000,

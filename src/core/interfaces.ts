@@ -117,6 +117,24 @@ export interface KeywordIndex {
   save(filePath?: string): Promise<void>;
 }
 
+/** A paginated chunk summary for dump/list operations. */
+export interface ChunkSummary {
+  id: string;
+  filePath: string;
+  language: string;
+  startLine: number;
+  endLine: number;
+  content: string;
+  description: string;
+}
+
+/** A file summary for list operations. */
+export interface FileSummary {
+  filePath: string;
+  language: string;
+  chunkCount: number;
+}
+
 /** Persistent vector storage and retrieval backend (LanceDB or in-memory). */
 export interface VectorStore {
   /** Store a batch of chunks with their embeddings. */
@@ -135,6 +153,14 @@ export interface VectorStore {
   getFilePaths(): Promise<string[]>;
   /** Release any held resources and close the store. */
   close(): Promise<void>;
+  /** Retrieve a paginated list of chunks without embeddings. */
+  getChunks(offset: number, limit: number): Promise<ChunkSummary[]>;
+  /** List all distinct file paths with language and chunk count. */
+  listFiles(): Promise<FileSummary[]>;
+  /** Retrieve all chunks for a specific file path, sorted by start line. */
+  getChunksByFilePath(filePath: string): Promise<Chunk[]>;
+  /** Re-open the store, optionally pointing at a new database path. */
+  reopen?(newPath?: string): Promise<void>;
 }
 
 /** Filter criteria for narrowing search results by file path patterns or language. */

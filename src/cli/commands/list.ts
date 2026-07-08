@@ -31,7 +31,7 @@ export function registerListCommand(program: Command): void {
         const { store } = ctx;
         logFilePath = ctx.logFilePath;
 
-        const files = await (store as any).listFiles();
+        const files = await store.listFiles();
 
         if (files.length === 0) {
           logCliInfo(logFilePath, "list", `${c.warn("No indexed files found.")} Run 'opencode-rag index' first.`);

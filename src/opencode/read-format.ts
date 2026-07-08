@@ -188,9 +188,10 @@ function formatChunk(index: number, result: SearchResult): string {
   lines.push(`Score: ${score.toFixed(4)}`);
   lines.push("");
   lines.push("```" + language);
-  lines.push(chunk.content);
-  if (!chunk.content.endsWith("\n")) {
-    // Ensure code block closes on its own line
+  if (chunk.content.endsWith("\n")) {
+    lines.push(chunk.content.slice(0, -1));
+  } else {
+    lines.push(chunk.content);
   }
   lines.push("```");
 

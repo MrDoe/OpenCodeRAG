@@ -253,17 +253,19 @@ export class LanceDbStore implements VectorStore {
 
     // THEN DEDUP: remove old rows at the same (filePath, startLine) positions,
     // but preserve the newly inserted rows by filtering out their IDs.
+    // IMPORTANT: use a single NOT IN clause per position so that when multiple
+    // new IDs share the same startLine they don't delete each other.
     for (const [key, newIds] of newIdsByLine) {
       const colonIdx = key.lastIndexOf(":");
       const filePath = key.slice(0, colonIdx);
       const startLine = parseInt(key.slice(colonIdx + 1), 10);
       const escapedPath = filePath.replace(/'/g, "''");
-      for (const id of newIds) {
-        const escapedId = id.replace(/'/g, "''");
-        await table.delete(
-          `filePath = '${escapedPath}' AND startLine = ${startLine} AND id != '${escapedId}'`,
-        );
-      }
+      const idList = [...newIds]
+        .map((id) => `'${id.replace(/'/g, "''")}'`)
+        .join(", ");
+      await table.delete(
+        `filePath = '${escapedPath}' AND startLine = ${startLine} AND id NOT IN (${idList})`,
+      );
     }
 
     // FINALLY: remove stale chunks for the same file that belong to a
@@ -497,9 +499,9 @@ export class LanceDbStore implements VectorStore {
 
   /** Close the database connection and release resources. */
   async close(): Promise<void> {
-    this.table?.close();
+    await this.table?.close();
     this.table = null;
-    this.db?.close();
+    await this.db?.close();
     this.db = null;
   }
 

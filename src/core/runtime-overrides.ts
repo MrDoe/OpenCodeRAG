@@ -127,35 +127,37 @@ export function applyRuntimeOverrides(
   }
 
   if (overrides.description) {
+    const defaultDesc = DEFAULT_CONFIG.description!;
     if (overrides.description.enabled !== undefined) {
-      if (!merged.description) merged.description = { enabled: true, provider: "ollama", baseUrl: "http://127.0.0.1:11434/api", model: "qwen2.5:3b", systemPrompt: "" };
+      if (!merged.description) merged.description = { ...defaultDesc };
       merged.description.enabled = overrides.description.enabled;
     }
     if (overrides.description.provider !== undefined) {
-      if (!merged.description) merged.description = { enabled: true, provider: "ollama", baseUrl: "http://127.0.0.1:11434/api", model: "qwen2.5:3b", systemPrompt: "" };
+      if (!merged.description) merged.description = { ...defaultDesc };
       merged.description.provider = overrides.description.provider;
     }
     if (overrides.description.model !== undefined) {
-      if (!merged.description) merged.description = { enabled: true, provider: "ollama", baseUrl: "http://127.0.0.1:11434/api", model: "qwen2.5:3b", systemPrompt: "" };
+      if (!merged.description) merged.description = { ...defaultDesc };
       merged.description.model = overrides.description.model;
     }
     if (overrides.description.baseUrl !== undefined) {
-      if (!merged.description) merged.description = { enabled: true, provider: "ollama", baseUrl: "http://127.0.0.1:11434/api", model: "qwen2.5:3b", systemPrompt: "" };
+      if (!merged.description) merged.description = { ...defaultDesc };
       merged.description.baseUrl = overrides.description.baseUrl;
     }
   }
 
   if (overrides.imageDescription) {
+    const defaultImg = DEFAULT_CONFIG.imageDescription!;
     if (overrides.imageDescription.enabled !== undefined) {
-      if (!merged.imageDescription) merged.imageDescription = { enabled: false, provider: "ollama", model: "llama3.2-vision", baseUrl: "http://127.0.0.1:11434/api", timeoutMs: 60000, prompt: "" };
+      if (!merged.imageDescription) merged.imageDescription = { ...defaultImg };
       merged.imageDescription.enabled = overrides.imageDescription.enabled;
     }
     if (overrides.imageDescription.provider !== undefined) {
-      if (!merged.imageDescription) merged.imageDescription = { enabled: false, provider: "ollama", model: "llama3.2-vision", baseUrl: "http://127.0.0.1:11434/api", timeoutMs: 60000, prompt: "" };
+      if (!merged.imageDescription) merged.imageDescription = { ...defaultImg };
       merged.imageDescription.provider = overrides.imageDescription.provider;
     }
     if (overrides.imageDescription.model !== undefined) {
-      if (!merged.imageDescription) merged.imageDescription = { enabled: false, provider: "ollama", model: "llama3.2-vision", baseUrl: "http://127.0.0.1:11434/api", timeoutMs: 60000, prompt: "" };
+      if (!merged.imageDescription) merged.imageDescription = { ...defaultImg };
       merged.imageDescription.model = overrides.imageDescription.model;
     }
   }

@@ -46,7 +46,7 @@ export class GeminiDescriptionProvider implements DescriptionProvider {
   }
 
   async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger): Promise<Map<string, string>> {
-    const log = logger ?? { info: (msg: string) => console.log(msg), warn: (msg: string) => console.warn(msg), debug: (msg: string) => console.debug(msg) };
+    const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => process.stderr.write(`${msg}\n`), debug: (msg: string) => process.stderr.write(`${msg}\n`) };
     const concurrency = this.config.batchConcurrency ?? 3;
     const total = chunks.length;
     log.info(`[describer] Generating descriptions for ${total} chunks (concurrency: ${concurrency})`);

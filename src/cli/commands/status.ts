@@ -158,11 +158,14 @@ export function registerStatusCommand(program: Command): void {
         }
 
         // Async GitHub update check (fire-and-forget, 5s timeout)
-        checkForUpdate(pkg.version).then((info) => {
-          if (info.updateAvailable) {
-            process.stdout.write(`  ${c.label("Update:")}            ${c.warn(`v${info.latestVersion} available — npm update -g opencode-rag-plugin`)}\n`);
-          }
-        }).catch(() => { /* ignore network errors */ });
+        // Only phone home if autoUpdate is explicitly enabled (opt-in).
+        if (config.autoUpdate?.enabled) {
+          checkForUpdate(pkg.version).then((info) => {
+            if (info.updateAvailable) {
+              process.stdout.write(`  ${c.label("Update:")}            ${c.warn(`v${info.latestVersion} available — npm update -g opencode-rag-plugin`)}\n`);
+            }
+          }).catch(() => { /* ignore network errors */ });
+        }
 
         await cleanupContext(ctx);
       } catch (err) {

@@ -18,7 +18,7 @@ interface ChatResponse {
 }
 
 /** HTTP status codes that are safe to retry on. */
-const RETRYABLE_STATUSES = new Set([404, 408, 429, 500, 502, 503, 504]);
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
 /**
  * Description provider that works with any OpenAI-compatible chat API (including Ollama).
@@ -48,7 +48,7 @@ export class LlmDescriptionProvider implements DescriptionProvider {
 
   /** @inheritdoc */
   async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger): Promise<Map<string, string>> {
-    const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => console.warn(msg), debug: (msg: string) => console.debug(msg) };
+    const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => process.stderr.write(`${msg}\n`), debug: (msg: string) => process.stderr.write(`${msg}\n`) };
     const concurrency = this.config.batchConcurrency ?? 3;
     const total = chunks.length;
     log.info(`Generating descriptions for ${total} chunks via ${this.config.provider}/${this.config.model} (concurrency: ${concurrency})...`);

@@ -24,7 +24,7 @@ import { retrieve } from "../retriever/retriever.js";
 import { Parser } from "web-tree-sitter";
 import { initParser, loadLanguage, walkTree, type AstNode } from "../chunker/grammar.js";
 import { readFileSync } from "node:fs";
-import { resolve, isAbsolute } from "node:path";
+import { resolveWorkspacePath } from "./tool-args.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Skeleton configuration: file extension → tree-sitter grammar + node types
@@ -86,8 +86,7 @@ function getExtension(filePath: string): string {
  * Resolve a file path relative to the workspace root.
  */
 function resolveFilePath(filePath: string, worktree: string): string {
-  if (isAbsolute(filePath)) return filePath;
-  return resolve(worktree, filePath);
+  return resolveWorkspacePath(worktree, filePath);
 }
 
 /**
@@ -352,9 +351,7 @@ export function createDescribeImageTool(
         const { existsSync, readFileSync } = await import("node:fs");
         const path = await import("node:path");
 
-        const resolvedPath = isAbsolute(args.filePath)
-          ? args.filePath
-          : resolve(worktree, args.filePath);
+        const resolvedPath = resolveWorkspacePath(worktree, args.filePath);
 
         if (!existsSync(resolvedPath)) {
           return {

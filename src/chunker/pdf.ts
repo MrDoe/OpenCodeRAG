@@ -51,11 +51,19 @@ async function createPdfDocument(buffer: Buffer) {
  * @param buffer - Raw buffer of the PDF file.
  * @returns The extracted text with double-newline page separators.
  */
+const MAX_PDF_PAGES = 500;
+const MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+
 export async function extractPdfText(buffer: Buffer): Promise<string> {
+  if (buffer.length > MAX_PDF_SIZE_BYTES) {
+    throw new Error(`PDF too large: ${(buffer.length / 1024 / 1024).toFixed(1)} MB (max 100 MB)`);
+  }
+
   const pdf = await createPdfDocument(buffer);
   const texts: string[] = [];
+  const numPages = Math.min(pdf.numPages, MAX_PDF_PAGES);
 
-  for (let i = 1; i <= pdf.numPages; i++) {
+  for (let i = 1; i <= numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const textItems = content.items.filter(

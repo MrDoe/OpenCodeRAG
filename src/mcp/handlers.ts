@@ -9,7 +9,7 @@ import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "../retriever/cont
 import { Parser } from "web-tree-sitter";
 import { initParser, loadLanguage, walkTree, type AstNode } from "../chunker/grammar.js";
 import { readFileSync } from "node:fs";
-import { resolve, isAbsolute } from "node:path";
+import { resolveWorkspacePath } from "../opencode/tool-args.js";
 
 interface SkeletonConfig {
   grammarName: string;
@@ -60,8 +60,7 @@ function getExtension(filePath: string): string {
 }
 
 function resolveFilePath(filePath: string, worktree: string): string {
-  if (isAbsolute(filePath)) return filePath;
-  return resolve(worktree, filePath);
+  return resolveWorkspacePath(worktree, filePath);
 }
 
 async function extractSkeleton(

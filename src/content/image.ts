@@ -52,6 +52,15 @@ function decodeBmp(buffer: Buffer): { pixels: Buffer; width: number; height: num
   const absHeight = Math.abs(rawHeight);
 
   const pixelOffset = buffer.readUInt32LE(10);
+
+  // Clamp dimensions to prevent OOM from crafted BMP headers.
+  const MAX_BMP_DIM = 16384;
+  if (width > MAX_BMP_DIM || absHeight > MAX_BMP_DIM) {
+    throw new Error(
+      `BMP dimensions too large: ${width}x${absHeight} (max ${MAX_BMP_DIM})`,
+    );
+  }
+
   const pixels = Buffer.alloc(width * absHeight * channels);
 
   for (let y = 0; y < absHeight; y++) {

@@ -514,7 +514,9 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   let manifestSaveChain = Promise.resolve<void>(undefined);
   function enqueueManifestSave(): void {
     manifestSaveChain = manifestSaveChain.then(() =>
-      saveManifest(manifestTargetPath(), manifest),
+      saveManifest(manifestTargetPath(), manifest).catch((err) => {
+        options.logger?.warn?.(`Failed to save manifest: ${(err as Error).message}`);
+      }),
     );
   }
 
@@ -651,9 +653,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         // Swap the newly-built temp directory into the real path
         await swapStoreDirectories(tempStorePath, options.storePath);
         // Re-open the original store handle so callers can search the new data
-        if (typeof (options.store as any).reopen === "function") {
-          await (options.store as any).reopen(options.storePath);
-        }
+        await options.store.reopen?.(options.storePath);
         logger.debug(`Promoted temporary store ${tempStorePath} → ${options.storePath}`);
       } catch (err) {
         logger.warn(

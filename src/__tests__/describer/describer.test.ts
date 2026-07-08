@@ -396,23 +396,22 @@ describe("createDescriptionProvider", () => {
 });
 
 describe("LlmDescriptionProvider retry logic", () => {
-  it("retries on 404 and succeeds on second attempt", async () => {
+  it("does not retry on 404 (bad request)", async () => {
     let callCount = 0;
     const { baseUrl, close } = await startMockServer(() => {
       callCount++;
-      if (callCount === 1) {
-        return { status: 404, body: "404 page not found" };
-      }
-      return { status: 200, body: { message: { content: "Description after retry." } } };
+      return { status: 404, body: "404 page not found" };
     });
 
     try {
       const provider = new LlmDescriptionProvider(
         makeConfig({ baseUrl: `${baseUrl}/api`, retryMax: 2, retryBaseDelayMs: 10 })
       );
-      const desc = await provider.generateDescription(makeChunk());
-      assert.equal(desc, "Description after retry.");
-      assert.equal(callCount, 2);
+      await assert.rejects(
+        () => provider.generateDescription(makeChunk()),
+        { message: /404/ }
+      );
+      assert.equal(callCount, 1);
     } finally {
       await close();
     }

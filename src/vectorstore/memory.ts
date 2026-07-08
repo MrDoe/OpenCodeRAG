@@ -1,7 +1,7 @@
 /**
  * @fileoverview Ephemeral in-memory vector store using cosine similarity search.
  */
-import type { VectorStore, Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
+import type { VectorStore, Chunk, ChunkSummary, FileSummary, SearchResult, MetadataFilter } from "../core/interfaces.js";
 
 /** Ephemeral in-memory vector store using cosine similarity search. */
 export class InMemoryVectorStore implements VectorStore {
@@ -51,6 +51,39 @@ export class InMemoryVectorStore implements VectorStore {
    */
   async deleteByFilePath(filePath: string): Promise<void> {
     this.chunks = this.chunks.filter((c) => c.metadata.filePath !== filePath);
+  }
+
+  async getChunks(offset: number, limit: number): Promise<ChunkSummary[]> {
+    return this.chunks.slice(offset, offset + limit).map((c) => ({
+      id: c.id,
+      filePath: c.metadata.filePath,
+      language: c.metadata.language,
+      startLine: c.metadata.startLine,
+      endLine: c.metadata.endLine,
+      content: c.content,
+      description: c.description ?? "",
+    }));
+  }
+
+  async listFiles(): Promise<FileSummary[]> {
+    const fileMap = new Map<string, { language: string; chunkCount: number }>();
+    for (const c of this.chunks) {
+      const existing = fileMap.get(c.metadata.filePath);
+      if (existing) {
+        existing.chunkCount++;
+      } else {
+        fileMap.set(c.metadata.filePath, { language: c.metadata.language, chunkCount: 1 });
+      }
+    }
+    return Array.from(fileMap.entries())
+      .map(([filePath, info]) => ({ filePath, ...info }))
+      .sort((a, b) => a.filePath.localeCompare(b.filePath));
+  }
+
+  async getChunksByFilePath(filePath: string): Promise<Chunk[]> {
+    return this.chunks
+      .filter((c) => c.metadata.filePath === filePath)
+      .sort((a, b) => a.metadata.startLine - b.metadata.startLine);
   }
 
   /** Release any held resources. No-op for the in-memory store. */

@@ -68,6 +68,9 @@ export async function initParser(): Promise<void> {
   initPromise = Parser.init().then(() => {
     initialized = true;
     initPromise = null;
+  }).catch((err) => {
+    initPromise = null;
+    throw err;
   });
   return initPromise;
 }
