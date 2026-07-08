@@ -28,14 +28,24 @@ function isBmpFile(fp: string): boolean {
   return fp.toLowerCase().endsWith(".bmp");
 }
 
+const MAX_BMP_DIMENSION = 10_000;
+const MAX_BMP_ALLOC = 500 * 1024 * 1024; // 500 MB
+
 function decodeBmp(buffer: Buffer): { pixels: Buffer; width: number; height: number; channels: number } {
   const signature = buffer.toString("ascii", 0, 2);
   if (signature !== "BM") throw new Error("Not a BMP file");
+
+  if (buffer.length < 54) throw new Error("Truncated BMP header");
 
   const dibSize = buffer.readUInt32LE(14);
   const width = buffer.readInt32LE(18);
   const rawHeight = buffer.readInt32LE(22);
   const bitsPerPixel = buffer.readUInt16LE(28);
+
+  if (width <= 0 || Math.abs(rawHeight) <= 0)
+    throw new Error("Invalid BMP dimensions");
+  if (width > MAX_BMP_DIMENSION || Math.abs(rawHeight) > MAX_BMP_DIMENSION)
+    throw new Error(`BMP dimensions (${width}x${rawHeight}) exceed ${MAX_BMP_DIMENSION}x${MAX_BMP_DIMENSION} limit`);
 
   if (bitsPerPixel !== 24 && bitsPerPixel !== 32)
     throw new Error(`Unsupported BMP bit depth: ${bitsPerPixel}. Only 24 and 32 bit are supported.`);
@@ -50,9 +60,17 @@ function decodeBmp(buffer: Buffer): { pixels: Buffer; width: number; height: num
   const rowSize = Math.floor((bitsPerPixel * width + 31) / 32) * 4;
   const topDown = rawHeight < 0;
   const absHeight = Math.abs(rawHeight);
+  const allocSize = width * absHeight * channels;
+
+  if (allocSize > MAX_BMP_ALLOC)
+    throw new Error(`BMP allocation (${allocSize} bytes) exceeds ${MAX_BMP_ALLOC} byte limit`);
 
   const pixelOffset = buffer.readUInt32LE(10);
-  const pixels = Buffer.alloc(width * absHeight * channels);
+  if (pixelOffset >= buffer.length)
+    throw new Error("BMP pixel offset exceeds buffer length");
+
+  const pixels = Buffer.alloc(allocSize);
+  const lastValidSrc = buffer.length - 1;
 
   for (let y = 0; y < absHeight; y++) {
     const srcY = topDown ? y : absHeight - 1 - y;
@@ -62,6 +80,10 @@ function decodeBmp(buffer: Buffer): { pixels: Buffer; width: number; height: num
     for (let x = 0; x < width; x++) {
       const srcPx = srcRow + x * (bitsPerPixel / 8);
       const dstPx = dstRow + x * channels;
+      if (srcPx + 3 > lastValidSrc) {
+        pixels.fill(0, dstPx, dstPx + channels);
+        continue;
+      }
       if (channels === 4) {
         pixels[dstPx] = buffer[srcPx + 2]!;
         pixels[dstPx + 1] = buffer[srcPx + 1]!;
@@ -114,8 +136,10 @@ export async function resizeImage(
       .resize({ width: maxDimension, fit: "inside", withoutEnlargement: true })
       .jpeg({ quality: 80 })
       .toBuffer();
-  } catch {
-    return buffer;
+  } catch (err) {
+    throw new Error(
+      `Image resize failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
