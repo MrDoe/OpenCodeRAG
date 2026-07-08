@@ -9,7 +9,8 @@ import path from "node:path";
 
 const MAX_CHUNK_CHARS = 4000;
 const MIN_GROUP_CHARS = 300;
-
+const MAX_PDF_PAGES = 1000;
+const MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
 const PARAGRAPH_SPLIT = /\n\s*\n/;
 
 /**
@@ -51,8 +52,6 @@ async function createPdfDocument(buffer: Buffer) {
  * @param buffer - Raw buffer of the PDF file.
  * @returns The extracted text with double-newline page separators.
  */
-const MAX_PDF_PAGES = 500;
-const MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
 
 export async function extractPdfText(buffer: Buffer): Promise<string> {
   if (buffer.length > MAX_PDF_SIZE_BYTES) {
@@ -61,9 +60,9 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
 
   const pdf = await createPdfDocument(buffer);
   const texts: string[] = [];
-  const numPages = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
 
-  for (let i = 1; i <= numPages; i++) {
+  for (let i = 1; i <= pageCount; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const textItems = content.items.filter(

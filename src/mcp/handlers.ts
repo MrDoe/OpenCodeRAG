@@ -9,7 +9,28 @@ import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "../retriever/cont
 import { Parser } from "web-tree-sitter";
 import { initParser, loadLanguage, walkTree, type AstNode } from "../chunker/grammar.js";
 import { readFileSync } from "node:fs";
-import { resolveWorkspacePath } from "../opencode/tool-args.js";
+import { resolve, isAbsolute, relative } from "node:path";
+
+/**
+ * Resolve a user-supplied file path against the worktree root, refusing to
+ * escape the worktree. Absolute paths are accepted only if they already reside
+ * under the worktree; relative paths are joined to the worktree and any `..`
+ * segments that would escape are rejected.
+ *
+ * @throws {Error} if the resolved path lies outside `worktree`.
+ */
+export function resolveFilePath(filePath: string, worktree: string): string {
+  const root = resolve(worktree);
+  const candidate = isAbsolute(filePath) ? resolve(filePath) : resolve(root, filePath);
+  const rel = relative(root, candidate);
+  if (rel === "") return root;
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(
+      `Path "${filePath}" escapes worktree root "${root}" — access denied.`
+    );
+  }
+  return candidate;
+}
 
 interface SkeletonConfig {
   grammarName: string;
@@ -57,10 +78,6 @@ const REGEX_SKELETON: Record<string, RegExp[]> = {
 function getExtension(filePath: string): string {
   const dot = filePath.lastIndexOf(".");
   return dot >= 0 ? filePath.slice(dot).toLowerCase() : "";
-}
-
-function resolveFilePath(filePath: string, worktree: string): string {
-  return resolveWorkspacePath(worktree, filePath);
 }
 
 async function extractSkeleton(

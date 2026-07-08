@@ -62,9 +62,8 @@ describe("retrieve", () => {
 
     const results = await retrieve("test query", embedder, store);
     assert.equal(results.length, 1);
-    // Normalized RRF for single vector result at rank 0: (1-0.4)*(60+1)/(60+0+1) = 0.6
-    const expectedScore = (1 - 0.4);
-    assert.ok(Math.abs(results[0]!.score - expectedScore) < 1e-10);
+    // Raw vector score from store (no keyword results — no RRF applied)
+    assert.ok(Math.abs(results[0]!.score - 0.95) < 1e-10);
     assert.equal(results[0]!.chunk.id, "chunk-1");
   });
 
@@ -152,8 +151,8 @@ describe("retrieve", () => {
 
     const results = await retrieve("query", embedder, store, { minScore: 0.59 });
     assert.equal(results.length, 2);
-    // Normalized RRF: rank 0 → 0.6*61/61 = 0.6, rank 1 → 0.6*61/62
-    const expectedScores = [(1 - 0.4), (1 - 0.4) * 61 / (60 + 1 + 1)];
+    // Raw vector scores from store (no keyword results — no RRF applied)
+    const expectedScores = [0.9, 0.7];
     assert.ok(Math.abs(results[0]!.score - expectedScores[0]!) < 1e-10);
     assert.ok(Math.abs(results[1]!.score - expectedScores[1]!) < 1e-10);
   });
@@ -322,11 +321,9 @@ describe("retrieve", () => {
       assert.equal(exp!.scoreBreakdown.rawKeywordScore, 0);
       assert.equal(exp!.scoreBreakdown.keywordWeight, 0.4);
       assert.equal(exp!.matchedTerms, undefined);
-      assert.equal(exp!.scoreBreakdown.vectorRank, 0);
-      assert.equal(exp!.scoreBreakdown.keywordRank, undefined);
-      // Normalized RRF: (1-0.4)*(60+1)/(60+0+1) = 0.6
-      const expectedVScore = (1 - 0.4);
-      assert.ok(Math.abs(exp!.scoreBreakdown.vectorScore - expectedVScore) < 1e-10);
+      // Raw vector score from store (no keyword results — no RRF applied)
+      assert.equal(exp!.scoreBreakdown.vectorScore, 0.8);
+      // vectorRank omitted in no-keyword path (only set in hybrid path)
     });
 
     it("populates explanation with keyword scores when keywordIndex provided", async () => {

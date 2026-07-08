@@ -80,6 +80,8 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
 
   writeWatcherStatus(storePath, { running: false, lastRunAt: undefined });
 
+  const ac = new AbortController();
+
   const updateStatus = (partial: Partial<WatcherStatus>) => {
     writeWatcherStatus(storePath, { running: false, lastRunAt: undefined, ...partial });
   };
@@ -96,6 +98,7 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
         keywordIndex,
         descriptionProvider,
         filterPaths,
+        abortSignal: ac.signal,
         logger: {
           info: (message) => appendDebugLog(logFilePath, { scope: "autoIndex", message }, logLevel),
           warn: (message) => appendDebugLog(logFilePath, { scope: "autoIndex", message }, logLevel),
@@ -173,6 +176,7 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
   return {
     async close(): Promise<void> {
       if (periodicTimer) clearInterval(periodicTimer);
+      ac.abort();
       scheduler.close();
       await scheduler.waitForIdle();
       await watcher.close();

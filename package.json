@@ -1,6 +1,6 @@
 {
   "name": "opencode-rag-plugin",
-  "version": "1.15.2",
+  "version": "1.16.0",
   "description": "OpenCode plugin for local-first RAG-based semantic code search",
   "type": "module",
   "main": "./dist/plugin-entry.js",
@@ -100,7 +100,6 @@
     "web-tree-sitter": "^0.26.9",
     "word-extractor": "^1.0.4"
   },
-
   "devDependencies": {
     "@opencode-ai/plugin": "1.15.5",
     "@opentui/core": "^0.4.0",

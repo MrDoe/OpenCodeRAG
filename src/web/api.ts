@@ -299,7 +299,7 @@ async function handleCompare(
 /** Resolve a user-supplied file path against the workspace root, preventing directory traversal outside `cwd`. Returns `null` when the path escapes the workspace. */
 function resolvePath(cwd: string, filePath: string): string | null {
   const resolved = resolvePathModule(cwd, filePath);
-  const normalizedCwd = cwd.replace(/\\/g, "/");
+  const normalizedCwd = cwd.replace(/\\/g, "/").replace(/\/$/, "") + "/";
   const normalizedResolved = resolved.replace(/\\/g, "/");
   if (!normalizedResolved.startsWith(normalizedCwd)) return null;
   return resolved;
@@ -440,10 +440,19 @@ export function handleEvalProjectSavings(body: unknown): ApiResponse {
 }
 
 /** Collect the full request body as a Buffer and parse it as JSON. Returns `{}` on empty or invalid input. */
+const MAX_BODY_BYTES = 1_048_576; // 1 MB
+
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let totalSize = 0;
   for await (const chunk of req) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    totalSize += buf.length;
+    if (totalSize > MAX_BODY_BYTES) {
+      req.destroy(new Error("Request body too large"));
+      throw new Error(`Request body exceeds ${MAX_BODY_BYTES} byte limit`);
+    }
+    chunks.push(buf);
   }
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw) return {};
