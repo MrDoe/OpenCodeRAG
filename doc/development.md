@@ -21,6 +21,19 @@ opencode-rag init --force
 | `npm run build` | Build TypeScript to `dist/` |
 | `npm run release:patch` | Bump version, build, publish |
 
+## Development Workflow
+
+After making source changes, sync them to the global runtime:
+
+```bash
+npm run build                 # compile src/ → dist/
+npm link                      # link local package as global npm package
+opencode-rag setup --force    # sync symlink at ~/.opencode/ to your local build
+opencode-rag init              # (optional) update workspace AGENTS.md + skill
+```
+
+> **Note:** `npm i -g opencode-rag-plugin` installs from the npm registry, not your local source. Always use `npm run build && npm link && opencode-rag setup --force` to test local changes. Re-run `opencode-rag init` in target workspaces to pick up AGENTS.md changes.
+
 ## Testing
 
 **Framework:** Node.js built-in test runner (`node:test`), no Jest/Mocha/Vitest.

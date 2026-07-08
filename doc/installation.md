@@ -46,6 +46,27 @@ opencode-rag init
 
 Tree-sitter grammars ship as pre-built WASM files (bundled in `wasm/` and `@vscode/tree-sitter-wasm`). Native dependencies (`sharp`, `@lancedb/lancedb`) use pre-built platform binaries. The plugin is workspace-local — OpenCode loads it from `.opencode/plugins/`. Data (vector store, manifest) lives in the workspace.
 
+### Updating
+
+The global CLI (`~/.local/bin/opencode-rag`) is a thin wrapper that runs `node ~/.opencode/node_modules/opencode-rag-plugin/dist/cli.js`. To update:
+
+**From npm (published release):**
+```bash
+npm update -g opencode-rag-plugin
+opencode-rag setup               # sync the runtime symlink
+opencode-rag init                 # update workspace files (AGENTS.md, skill, config)
+```
+
+**From source (local development):**
+```bash
+cd /path/to/OpenCodeRAG
+npm run build                      # compile src/ → dist/
+npm link                           # link local package globally
+opencode-rag setup --force         # sync runtime
+```
+
+> `npm i -g opencode-rag-plugin` installs the **latest published npm version**. After making local source changes in this repo, run `npm run build && npm link && opencode-rag setup --force` instead. Running `npm i -g` from the repo directory replaces the local symlink with the published version.
+
 ### Installing without network (air-gapped)
 
 Download the package tarball from the [GitHub Releases](https://github.com/MrDoe/OpenCodeRAG/releases) page and run:
@@ -94,7 +115,10 @@ This creates:
 - `.opencode/package.json` — Workspace dependencies (links to the globally-installed plugin)
 - `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
 - `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`
+- `AGENTS.md` — Always-loaded tool-usage directive (merged into existing content, never overwrites)
 - Runs `npm install` to install workspace dependencies
+
+The `AGENTS.md` directive is wrapped in sentinel markers (`<!-- BEGIN opencode-rag -->` / `<!-- END opencode-rag -->`) so re-running `init` replaces the section in-place without duplicating it. Existing content outside the markers is always preserved.
 
 Use `--skip-install` to skip the npm install step. Use `--force` to overwrite existing files. Use `--skip-health-check` to skip provider validation (useful in offline environments).
 
@@ -149,4 +173,4 @@ Once installed, OpenCodeRAG provides three tools for AI agents to retrieve and e
 | `get_file_skeleton` | Get structural overview of a file (functions, classes, interfaces) |
 | `find_usages` | Find all references to a symbol across the codebase |
 
-For detailed usage instructions, parameters, and examples, see [AGENTS.md](../AGENTS.md#opencoderag-plugin).
+For detailed usage instructions, parameters, and examples, see the `## Code Navigation` section of the workspace's `AGENTS.md` (created by `opencode-rag init`) or the [AGENTS.md](../AGENTS.md) file in the project root.

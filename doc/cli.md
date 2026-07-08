@@ -35,6 +35,8 @@ opencode-rag init [options]
 - `.opencode/package.json` — workspace dependencies
 - `opencode-rag.json` — runtime configuration
 - `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`
+- `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
+- `AGENTS.md` — always-loaded tool-usage directive (merged into existing content via sentinel markers)
 - Runs `npm install` to install workspace dependencies
 
 **Health check:**
@@ -203,7 +205,9 @@ opencode-rag setup [options]
 
 No `npm install` into `~/.opencode/` is needed — the junction-links resolve transparently through Node.js.
 
-**Updating:** After `npm update -g opencode-rag-plugin`, run `opencode-rag setup` to sync the runtime.
+**Updating from npm:** After `npm update -g opencode-rag-plugin`, run `opencode-rag setup` to sync the runtime.
+
+**Updating from source (local development):** After `npm run build && npm link`, run `opencode-rag setup --force` to sync. The `--force` flag is required because the version marker (`opencode-rag setup --check`) won't change during local development. `npm i -g opencode-rag-plugin` installs from the **npm registry**, not local source — use `npm link` to point the global install at your local repo instead.
 
 **Examples:**
 ```bash
