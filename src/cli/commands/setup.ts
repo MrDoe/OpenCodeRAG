@@ -27,7 +27,7 @@ function removeIfExists(targetPath: string): void {
 
 function checkOpenCodeRunning(): void {
   try {
-    const pids = execSync("pgrep -x opencode 2>/dev/null || (Get-Process -Name opencode -ErrorAction SilentlyContinue 2>$null | ForEach-Object { $_.Id })", {
+    const pids = execSync("pgrep -x opencode 2>/dev/null || (Get-Process -Name opencode -ErrorAction SilentlyContinue 2>nul | ForEach-Object { $_.Id })", {
       encoding: "utf-8",
       timeout: 3_000,
     }).trim();
