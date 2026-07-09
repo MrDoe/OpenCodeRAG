@@ -6,65 +6,69 @@ import { tmpdir } from "node:os";
 
 import { handleFileSkeleton, resolveFilePath } from "../../mcp/handlers.js";
 
+// Use platform-resolved paths so tests work on both Unix and Windows
+const root1 = path.resolve("/home/user/project");
+const root2 = path.resolve("/root");
+
 // ─── Unit: resolveFilePath ──────────────────────────────────────────────
 
 describe("resolveFilePath — path traversal prevention", () => {
   it("resolves a normal relative path inside the worktree", () => {
-    const result = resolveFilePath("src/index.ts", "/home/user/project");
-    assert.equal(result, "/home/user/project/src/index.ts");
+    const result = resolveFilePath("src/index.ts", root1);
+    assert.equal(result, path.resolve(root1, "src/index.ts"));
   });
 
   it("resolves a path without leading ./", () => {
-    const result = resolveFilePath("foo/bar.ts", "/root");
-    assert.equal(result, "/root/foo/bar.ts");
+    const result = resolveFilePath("foo/bar.ts", root2);
+    assert.equal(result, path.resolve(root2, "foo/bar.ts"));
   });
 
   it("returns the root itself for empty relative", () => {
-    const result = resolveFilePath("", "/root");
-    assert.equal(result, "/root");
+    const result = resolveFilePath("", root2);
+    assert.equal(result, root2);
   });
 
   it("throws when .. escapes above worktree", () => {
     assert.throws(
-      () => resolveFilePath("../../etc/passwd", "/home/user/project"),
+      () => resolveFilePath("../../etc/passwd", root1),
       /escapes worktree/i
     );
   });
 
   it("throws when deeply nested .. escapes", () => {
     assert.throws(
-      () => resolveFilePath("src/../../../../etc/passwd", "/home/user/project"),
+      () => resolveFilePath("src/../../../../etc/passwd", root1),
       /escapes worktree/i
     );
   });
 
   it("accepts an absolute path within the worktree", () => {
-    const result = resolveFilePath("/home/user/project/src/index.ts", "/home/user/project");
-    assert.equal(result, "/home/user/project/src/index.ts");
+    const result = resolveFilePath(path.resolve(root1, "src/index.ts"), root1);
+    assert.equal(result, path.resolve(root1, "src/index.ts"));
   });
 
   it("throws an absolute path outside the worktree", () => {
     assert.throws(
-      () => resolveFilePath("/etc/passwd", "/home/user/project"),
+      () => resolveFilePath("/etc/passwd", root1),
       /escapes worktree/i
     );
   });
 
   it("throws when the absolute path starts with .. relative escape", () => {
     assert.throws(
-      () => resolveFilePath("../other/src/index.ts", "/home/user/project"),
+      () => resolveFilePath("../other/src/index.ts", root1),
       /escapes worktree/i
     );
   });
 
   it("accepts a symlink-resolvable path deeper than the worktree root", () => {
-    const result = resolveFilePath("node_modules/foo/index.ts", "/home/user/project");
-    assert.equal(result, "/home/user/project/node_modules/foo/index.ts");
+    const result = resolveFilePath("node_modules/foo/index.ts", root1);
+    assert.equal(result, path.resolve(root1, "node_modules/foo/index.ts"));
   });
 
   it("rejects a path with null byte injection", () => {
     assert.throws(
-      () => resolveFilePath("../../etc/passwd%00", "/home/user/project"),
+      () => resolveFilePath("../../etc/passwd%00", root1),
       /escapes worktree/i
     );
   });
