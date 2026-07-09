@@ -3,7 +3,7 @@
  * all sub-config interfaces, DEFAULT_CONFIG, validateConfig, and loadConfig.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { env } from "node:process";
 import type { EmbeddingProvider, Chunker, VectorStore } from "./interfaces.js";
@@ -182,6 +182,8 @@ export interface RagConfig {
     documentPrefix?: string;
     /** Prefix prepended to queries before embedding (e.g. "search_query:"). */
     queryPrefix?: string;
+    /** Cached embedding vector dimension. Probed once on first startup, then persisted to config. */
+    vectorDimension?: number;
   };
   /** Indexing pipeline controls: what to index, concurrency, batch sizes. */
   indexing: {
@@ -752,4 +754,30 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
   }
 
   return cfg;
+}
+
+/**
+ * Persist a probed embedding vector dimension into the config JSON file.
+ * Sets `embedding.vectorDimension` so subsequent startups skip the probe.
+ * This is a best-effort operation — failures are silently ignored.
+ *
+ * @param configPath - Absolute path to the config JSON file.
+ * @param dimension - The vector dimension to persist.
+ */
+export function persistProbedDimension(configPath: string, dimension: number): void {
+  let raw: string;
+  try {
+    raw = readFileSync(configPath, "utf-8");
+  } catch {
+    return;
+  }
+  try {
+    const obj = JSON.parse(raw) as Record<string, unknown>;
+    const embedding = (obj.embedding ??= {}) as Record<string, unknown>;
+    if (embedding.vectorDimension === dimension) return; // already set
+    embedding.vectorDimension = dimension;
+    writeFileSync(configPath, JSON.stringify(obj, null, 2), "utf-8");
+  } catch {
+    // best-effort
+  }
 }

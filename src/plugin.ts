@@ -7,7 +7,7 @@
 import type { Plugin, PluginInput, Hooks, ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
 import type { EmbeddingProvider, DescriptionProvider, KeywordIndex, VectorStore, SearchResult } from "./core/interfaces.js";
-import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, type RagConfig } from "./core/config.js";
+import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
 import { createEmbedder } from "./embedder/factory.js";
 import { createDescriptionProvider } from "./describer/factory.js";
 import { createVectorStore } from "./vectorstore/factory.js";
@@ -1318,24 +1318,37 @@ export const ragPlugin: Plugin = async (
     message: `OpenCode plugin enabled for ${input.directory}`,
   }, logLevel);
 
-  // Probe vector dimension and create store with correct dimension
+  // Use cached dimension from config if available (avoids blocking startup with an API call)
+  // If not set, probe the embedding provider once and persist the result.
   const embedder = createEmbedder(effectiveCfg);
-  let vectorDimension = 384;
-  try {
-    const probe = await embedder.embed(["dimension-probe"], "query");
-    if (probe && probe[0] && probe[0].length > 0 && typeof probe[0][0] === "number") {
-      vectorDimension = (probe[0] as number[]).length;
+  let vectorDimension = effectiveCfg.embedding.vectorDimension;
+  if (vectorDimension && vectorDimension > 0) {
+    appendDebugLog(logFilePath, {
+      scope: "plugin",
+      message: `Vector dimension: ${vectorDimension} (cached in config)`,
+    }, logLevel);
+  } else {
+    vectorDimension = 384;
+    try {
+      const probe = await embedder.embed(["dimension-probe"], "query");
+      if (probe && probe[0] && probe[0].length > 0 && typeof probe[0][0] === "number") {
+        vectorDimension = (probe[0] as number[]).length;
+        const configPath = findConfigFile(input.directory);
+        if (configPath) {
+          try { persistProbedDimension(configPath, vectorDimension); } catch { /* best-effort */ }
+        }
+      }
+      appendDebugLog(logFilePath, {
+        scope: "plugin",
+        message: `Vector dimension: ${vectorDimension}`,
+      }, logLevel);
+    } catch (err) {
+      appendDebugLog(logFilePath, {
+        scope: "plugin",
+        message: `Dimension probe failed, falling back to ${vectorDimension}`,
+        error: err,
+      }, logLevel);
     }
-    appendDebugLog(logFilePath, {
-      scope: "plugin",
-      message: `Vector dimension: ${vectorDimension}`,
-    }, logLevel);
-  } catch (err) {
-    appendDebugLog(logFilePath, {
-      scope: "plugin",
-      message: `Dimension probe failed, falling back to ${vectorDimension}`,
-      error: err,
-    }, logLevel);
   }
 
   const store = createVectorStore(effectiveCfg, storePath, vectorDimension);
