@@ -1,5 +1,6 @@
 ﻿{
   "$schema": "https://opencode.ai/config.json",
+  "snapshot": false,
   "lsp": {
     "typescript": {
       "command": ["npx", "-y", "typescript-language-server", "--stdio"],

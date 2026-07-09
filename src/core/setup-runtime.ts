@@ -184,11 +184,16 @@ export async function setupRuntime(options?: {
     }
   } else {
     mkdirSync(runtimeSdkDir, { recursive: true });
-    execSync(`npm install @opencode-ai/plugin --prefix "${runtimeDir}" --no-save`, {
-      cwd: runtimeDir,
-      stdio: "pipe",
-      timeout: 60_000,
-    });
+    try {
+      execSync(`npm install @opencode-ai/plugin --no-save`, {
+        cwd: runtimeDir,
+        stdio: "pipe",
+        timeout: 60_000,
+      });
+    } catch (cause) {
+      errors.push(`Failed to install @opencode-ai/plugin SDK: ${(cause as Error).message}`);
+      return { success: false, errors };
+    }
   }
 
   writeFileSync(versionFile, pluginVersion, "utf-8");
