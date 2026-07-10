@@ -122,6 +122,7 @@
     "web-tree-sitter": "$web-tree-sitter"
   },
   "allowScripts": {
+    "opencode-rag-plugin": true,
     "esbuild": true,
     "msgpackr-extract": true,
     "tree-sitter-cli": true
