@@ -13,6 +13,11 @@ export abstract class TreeSitterChunker implements Chunker {
   abstract readonly grammarName: string;
   abstract readonly nodeTypes: Set<string>;
 
+  /**
+   * Optional path to a custom WebAssembly file for the tree-sitter grammar.
+   * If not provided, the default grammar will be loaded.
+   * @default undefined
+   */
   readonly wasmFilePath?: string;
 
   /**
@@ -23,6 +28,11 @@ export abstract class TreeSitterChunker implements Chunker {
    */
   maxContentBytes = 0;
 
+  /**
+   * Create a new chunker that only includes nodes of the specified types.
+   * @param types - The set of node types to include in the chunking process.
+   * @returns A new Chunker instance that filters nodes by the specified types.
+   */
   withNodeTypes(types: Set<string>): Chunker {
     const original = this;
     return {
@@ -54,6 +64,11 @@ export abstract class TreeSitterChunker implements Chunker {
     };
   }
 
+  /**
+   * Creates a new Tree-sitter parser for the chunker's language.
+   * @returns  A Promise that resolves to a Parser instance configured for the chunker's language.
+   * @private 
+   */
   private async _createParser(): Promise<Parser> {
     const lang = this.wasmFilePath
       ? await loadLanguageFromPath(this.grammarName, this.wasmFilePath)
@@ -63,6 +78,12 @@ export abstract class TreeSitterChunker implements Chunker {
     return parser;
   }
 
+  /**
+   * Chunks the given content into an array of {@link Chunk} objects based on the specified node types.
+   * @param filePath - The path of the file being chunked, used for metadata.
+   * @param content - The content of the file to be chunked.
+   * @returns A Promise that resolves to an array of {@link Chunk} objects.
+   */
   async chunk(filePath: string, content: string): Promise<Chunk[]> {
     if (content.trim().length === 0) return [];
 
