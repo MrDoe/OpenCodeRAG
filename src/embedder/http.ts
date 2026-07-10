@@ -79,6 +79,7 @@ function releaseConnection(socket: net.Socket | tls.TLSSocket, host: string, por
   socket.removeAllListeners("data");
   socket.removeAllListeners("end");
   socket.removeAllListeners("drain");
+  socket.removeAllListeners("error");
   socket.on("error", () => socket.destroy());
   pool.push({ socket, idleTimer });
 }
