@@ -390,6 +390,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     ),
   );
 
+  const aborted = (): boolean => options.abortSignal?.aborted ?? false;
+
   if (deferDescriptions) {
     const deferredPreps = prepared.filter((p) => p.chunks && p.chunks.length > 0 && p.relPath !== undefined);
     if (deferredPreps.length > 0) {
@@ -438,26 +440,54 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           }
         }
 
+        // Build chunkId → prep map for tracking description failures per-file
+        const chunkToPrep = new Map<string, (typeof deferredPreps)[number]>();
+        for (const prep of deferredPreps) {
+          for (const chunk of prep.chunks ?? []) {
+            chunkToPrep.set(chunk.id, prep);
+          }
+        }
+
+        // Process cache misses in sub-batches so descriptions are persisted
+        // incrementally.  If the process is interrupted (Ctrl+C, crash), only
+        // the current in-flight sub-batch is lost — prior sub-batches are
+        // already saved to the description cache and will be reused on resume.
         if (cacheMisses.length > 0) {
-          try {
-            const batchResult = await options.descriptionProvider!.generateBatchDescriptions(cacheMisses, logger);
-            const newCacheEntries: Array<[string, string]> = [];
-            for (const chunk of cacheMisses) {
-              const desc = batchResult.get(chunk.id);
-              if (desc && desc.trim().length > 0) {
-                chunk.description = desc;
-                const cacheKey = DescriptionCache.codeKey(chunk.content, descHash);
-                newCacheEntries.push([cacheKey, desc]);
+          const totalMisses = cacheMisses.length;
+          const SUB_BATCH = 10;
+          let describedCount = 0;
+
+          for (let i = 0; i < totalMisses; i += SUB_BATCH) {
+            if (aborted()) {
+              logger.debug(`Description generation aborted at ${i}/${totalMisses}`);
+              break;
+            }
+
+            const subBatch = cacheMisses.slice(i, i + SUB_BATCH);
+            try {
+              const batchResult = await options.descriptionProvider!.generateBatchDescriptions(subBatch, logger);
+              const newCacheEntries: Array<[string, string]> = [];
+              for (const chunk of subBatch) {
+                const desc = batchResult.get(chunk.id);
+                if (desc && desc.trim().length > 0) {
+                  chunk.description = desc;
+                  newCacheEntries.push([DescriptionCache.codeKey(chunk.content, descHash), desc]);
+                  describedCount++;
+                }
               }
-            }
-            if (newCacheEntries.length > 0) {
-              descCache.setMany(newCacheEntries);
-              await descCache.save();
-            }
-          } catch (err) {
-            logger.warn(`  Global description generation failed: ${(err as Error).message}`);
-            for (const prep of deferredPreps) {
-              if (prep.chunks!.some((c) => c.metadata.contentType !== "image")) {
+              if (newCacheEntries.length > 0) {
+                descCache.setMany(newCacheEntries);
+                await descCache.save();
+              }
+              logger.debug(`Descriptions checkpoint: ${describedCount}/${totalMisses}`);
+            } catch (err) {
+              logger.warn(`  Description sub-batch failed (${i}-${i + SUB_BATCH}): ${(err as Error).message}`);
+              const failedPreps = new Set<(typeof deferredPreps)[number]>();
+              for (const chunk of subBatch) {
+                const prep = chunkToPrep.get(chunk.id);
+                if (prep) failedPreps.add(prep);
+              }
+              for (const prep of failedPreps) {
                 prep.descriptionFailed = true;
               }
             }
@@ -519,8 +549,6 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       }),
     );
   }
-
-  const aborted = (): boolean => options.abortSignal?.aborted ?? false;
 
   const embedStoreLimit = pLimit(options.config.indexing.concurrency);
   const workerResults = await Promise.all(
