@@ -99,7 +99,7 @@
     "enabled": true
   },
   "autoUpdate": {
-    "enabled": false
+    "enabled": true
   },
   "ui": {
     "port": 3210,

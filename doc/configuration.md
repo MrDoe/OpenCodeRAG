@@ -371,19 +371,21 @@ Both keybindings read the current prompt text combined with the previous assista
 
 ### `autoUpdate`
 
-Controls automatic update checking for OpenCodeRAG.
+Controls automatic update checking for OpenCodeRAG. When enabled, the plugin
+checks GitHub for a newer release on startup and, if one is found, asks the
+agent to inform you and offer to install it via `opencode-rag update`.
 
 ```json
 {
   "autoUpdate": {
-    "enabled": false
+    "enabled": true
   }
 }
 ```
 
 | Option | Default | Description |
 |---|---|---|
-| `enabled` | `false` | Enable automatic update check on plugin startup |
+| `enabled` | `true` | Check for updates on plugin startup and prompt to install |
 
 When enabled, the plugin checks GitHub Releases API for new versions on startup. If an update is available, a notification is added to the system prompt. You can then run `npm update -g opencode-rag-plugin && opencode-rag setup` to install the update.
 

@@ -13,5 +13,6 @@ export { registerInitCommand } from "./init.js";
 export { registerUiCommand } from "./ui.js";
 export { registerMcpCommand } from "./mcp.js";
 export { registerSetupCommand } from "./setup.js";
+export { registerUpdateCommand } from "./update.js";
 export { registerEvalSessionsCommand, registerEvalAnalyzeCommand, registerEvalCompareCommand } from "./eval.js";
 export { registerDescribeImageCommand } from "./describe-image.js";

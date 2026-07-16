@@ -29,7 +29,7 @@ import { loadDocProgress, markSubdirectoryDocumented } from "./core/doc-progress
 import { loadManifest } from "./core/manifest.js";
 import { createSessionLogger, type SessionLogger } from "./eval/session-logger.js";
 import { countTokens } from "./eval/token-counter.js";
-import { checkForUpdate, type UpdateInfo } from "./core/version-check.js";
+import { checkForUpdate, getCurrentVersion, type UpdateInfo } from "./core/version-check.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -48,6 +48,8 @@ const backgroundIndexers = new Map<string, { close: () => Promise<void> }>();
 const mcpServers = new Map<string, { close: () => Promise<void> }>();
 /** Pending update notifications keyed by workspace directory. */
 const pendingUpdateInfo = new Map<string, UpdateInfo>();
+/** Workspace directories that have already been prompted about an update this session. */
+const notifiedUpdateDirs = new Set<string>();
 
 /** Guard flag to prevent re-entrant shutdown. */
 let shutdownRegistered = false;
@@ -64,6 +66,7 @@ async function shutdownPluginResources(): Promise<void> {
   }
   configCache.clear();
   pendingUpdateInfo.clear();
+  notifiedUpdateDirs.clear();
   destroyAllPooledConnections();
 }
 
@@ -849,12 +852,17 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         output.system.unshift(guidance.join("\n"));
       }
 
-      // Inject update notification if available
+      // Inject a one-time update prompt so the agent asks the user to install.
+      // Fires only once per workspace per session to avoid nagging on every turn.
       const updateInfo = pendingUpdateInfo.get(options.worktree);
-      if (updateInfo) {
+      if (updateInfo && !notifiedUpdateDirs.has(options.worktree)) {
+        notifiedUpdateDirs.add(options.worktree);
+        pendingUpdateInfo.delete(options.worktree);
         output.system.unshift(
-          `OpenCodeRAG update available: ${updateInfo.currentVersion} → ${updateInfo.latestVersion}. ` +
-          `Run \`npm update -g opencode-rag-plugin && opencode-rag setup\` to install.`,
+          `A newer OpenCodeRAG version is available: ${updateInfo.currentVersion} → ${updateInfo.latestVersion}. ` +
+          `At the very start of your next response, briefly tell the user a new version is available and ask whether ` +
+          `they would like you to install it. If they agree, run \`opencode-rag update\` via the bash tool, then tell ` +
+          `them to restart OpenCode to load the new version. Do not mention this notice again.`,
         );
       }
 
@@ -1414,6 +1422,7 @@ export const ragPlugin: Plugin = async (
   // Clean up stale config cache and pending update info for this directory
   configCache.delete(input.directory);
   pendingUpdateInfo.delete(input.directory);
+  notifiedUpdateDirs.delete(input.directory);
   // Clean up idle HTTP sockets from previous provider connections
   destroyAllPooledConnections();
 
@@ -1513,17 +1522,13 @@ export const ragPlugin: Plugin = async (
     mcpServers.set(input.directory, mcpInstance);
   }
 
-  // Auto-update check (non-blocking, best-effort)
+  // Auto-update check (non-blocking, best-effort). On by default; can be
+  // disabled via `autoUpdate.enabled: false` in opencode-rag.json. When a newer
+  // release is found it is stored and surfaced as a one-time install prompt via
+  // the system transform hook (see createRagHooks).
   const autoUpdateCfg = effectiveCfg.autoUpdate;
   if (autoUpdateCfg?.enabled) {
-    const currentVersion = (() => {
-      try {
-        const pkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json");
-        return JSON.parse(readFileSync(pkgPath, "utf-8") as string).version as string;
-      } catch {
-        return "0.0.0";
-      }
-    })();
+    const currentVersion = getCurrentVersion();
     checkForUpdate(currentVersion)
       .then((info: UpdateInfo) => {
         if (info.updateAvailable) {

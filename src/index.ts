@@ -28,6 +28,10 @@ export type { ContextOptimizationConfig, ContextOptimizationOptions } from "./re
 export { search, indexWorkspace, getContext, validateConfig, scanWorkspace, getIndexStatusSummary } from "./api.js";
 export type { SearchOptions, IndexOptions, ContextResult, ConfigValidationResult, WorkspaceFile, IndexRunStats } from "./api.js";
 
+/** Version check and self-update API. */
+export { checkForUpdate, getCurrentVersion, installLatestUpdate, compareVersions } from "./core/version-check.js";
+export type { UpdateInfo, InstallUpdateResult } from "./core/version-check.js";
+
 /** Plugin entry — only importable inside OpenCode's runtime. */
 import { ragPlugin } from "./plugin.js";
 

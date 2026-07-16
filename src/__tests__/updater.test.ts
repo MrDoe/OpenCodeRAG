@@ -1,6 +1,14 @@
-import { describe, it, afterEach } from "node:test";
+﻿import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { checkForUpdate } from "../core/version-check.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import {
+  checkForUpdate,
+  compareVersions,
+  getCurrentVersion,
+  installLatestUpdate,
+} from "../core/version-check.js";
 
 describe("checkForUpdate", () => {
     const originalFetch = globalThis.fetch;
@@ -83,3 +91,86 @@ describe("checkForUpdate", () => {
       assert.equal(info.latestVersion, "3.2.1");
     });
   });
+
+describe("compareVersions", () => {
+  it("returns 0 for equal versions", () => {
+    assert.equal(compareVersions("1.2.3", "1.2.3"), 0);
+  });
+
+  it("returns 1 when a is greater", () => {
+    assert.equal(compareVersions("2.0.0", "1.9.9"), 1);
+  });
+
+  it("returns -1 when a is less", () => {
+    assert.equal(compareVersions("1.0.0", "1.0.1"), -1);
+  });
+
+  it("pads missing segments with zero", () => {
+    assert.equal(compareVersions("1.0", "1.0.0"), 0);
+    assert.equal(compareVersions("1.1", "1.0.1"), 1);
+  });
+});
+
+describe("getCurrentVersion", () => {
+  it("returns the version from package.json", () => {
+    const pkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
+    const expected = (JSON.parse(readFileSync(pkgPath, "utf-8")) as { version: string }).version;
+    assert.equal(getCurrentVersion(), expected);
+  });
+
+  it("returns a non-empty semver-ish string", () => {
+    assert.match(getCurrentVersion(), /^\d+\.\d+\.\d+/);
+  });
+});
+
+describe("installLatestUpdate", () => {
+  it("reports failure when npm install throws", async () => {
+    const result = await installLatestUpdate({
+      _execSync: () => {
+        throw new Error("npm down");
+      },
+      _getCurrentVersion: () => "1.0.0",
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.fromVersion, "1.0.0");
+    assert.match(result.message, /npm install failed/);
+    assert.match(result.message, /npm down/);
+  });
+
+  it("reports failure when runtime sync fails", async () => {
+    const result = await installLatestUpdate({
+      _execSync: () => "",
+      _getCurrentVersion: () => "2.0.0",
+      _setupRuntime: async () => ({ success: false, errors: ["junction broken"] }),
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.toVersion, "2.0.0");
+    assert.match(result.message, /runtime sync failed/);
+    assert.match(result.message, /junction broken/);
+  });
+
+  it("reports already up-to-date when version did not change", async () => {
+    const result = await installLatestUpdate({
+      _execSync: () => "",
+      _getCurrentVersion: () => "1.5.0",
+      _setupRuntime: async () => ({ success: true, errors: [] }),
+    });
+    assert.equal(result.success, true);
+    assert.equal(result.fromVersion, "1.5.0");
+    assert.equal(result.toVersion, "1.5.0");
+    assert.match(result.message, /Already up-to-date/);
+  });
+
+  it("reports success with from/to when version increased", async () => {
+    let calls = 0;
+    const result = await installLatestUpdate({
+      _execSync: () => "",
+      _getCurrentVersion: () => (calls++ === 0 ? "1.5.0" : "1.6.0"),
+      _setupRuntime: async () => ({ success: true, errors: [] }),
+    });
+    assert.equal(result.success, true);
+    assert.equal(result.fromVersion, "1.5.0");
+    assert.equal(result.toVersion, "1.6.0");
+    assert.match(result.message, /Updated v1\.5\.0 .+ v1\.6\.0/);
+  });
+});

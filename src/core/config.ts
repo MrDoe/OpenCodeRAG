@@ -152,7 +152,7 @@ export interface McpConfig {
 
 /** Configuration for automatic self-updates. */
 export interface AutoUpdateConfig {
-  /** Whether auto-update checking is enabled. */
+  /** Whether update checking is enabled (defaults to true). */
   enabled: boolean;
 }
 
@@ -548,7 +548,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     enabled: true,
   },
   autoUpdate: {
-    enabled: false,
+    enabled: true,
   },
   ui: {
     port: 3210,
