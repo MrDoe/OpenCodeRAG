@@ -9,8 +9,10 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 - AST-based code chunking for 17 languages
 - Regex/document chunking for Markdown, Razor, .sln, LaTeX
 - Document text extraction for PDF, DOCX, DOC, Excel
+- Image indexing via vision LLM (descriptions stored as searchable vector chunks)
 - Line-based fallback chunking
 - Pluggable chunkers via config
+- Per-language chunking config (`chunking.nodeTypes`)
 - Incremental indexing (file-hash-based, manifest-backed)
 - File watching and background re-indexing
 - Enhanced chunk descriptions with relative paths and line numbers
@@ -19,10 +21,11 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 
 - Embedding providers: Ollama, OpenAI, Cohere
 - Proxy-aware embedding transport with raw socket localhost bypass
-- Dimension probing at startup
+- Dimension probing at startup (persisted to config to reduce startup time)
 - LanceDB vector storage with `memory://` test mode
-- Batch embedding
+- Batch embedding with progress reporting
 - Auto-detection of LanceDB schema for seamless upgrades
+- Persistent image description cache (reused across sessions)
 
 ### Retrieval
 
@@ -31,6 +34,7 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 - Session-level retrieval cache
 - Auto-context injection on `chat.message`
 - Configurable auto-inject settings
+- Context window optimization (per-file chunk limits, adjacent merge, Jaccard dedup)
 
 ### OpenCode Plugin
 
@@ -41,11 +45,18 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 - OpenCode v1.17.0 compatible PluginModule export
 - Background auto-indexing with watcher status
 - API key auto-resolution from OpenCode provider config
+- Documentation mode (`/doc` slash command, per-subdirectory progress tracking)
+- Wiki mode (`/wiki` slash command, AI-maintained knowledge wiki at `.opencode/wiki/`)
+- Hotkey-activated context injection (Ctrl+Enter / Ctrl+Alt+Enter)
 
 ### CLI & Distribution
 
-- Full CLI: `init`, `index`, `query`, `clear`, `status`, `list`, `show`, `dump`
+- Full CLI: `init`, `index`, `query`, `clear`, `status`, `list`, `show`, `dump`, `describe-image`, `ui`, `mcp`, `setup`
+- Evaluation CLI: `eval:sessions`, `eval:analyze`, `eval:compare`
 - `init` command lifecycle with plugin generation, gitignore, npm install
+- `AGENTS.md` creation/merge via sentinel markers
+- MCP server (`opencode-rag mcp`) exposing semantic search tools over stdio
+- Web dashboard UI (`opencode-rag ui`)
 - Install scripts (`.sh` / `.ps1`) with uninstall support
 - Release automation script
 - Published npm package: `opencode-rag-plugin`
@@ -56,6 +67,8 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 - Runtime overrides system for live TUI changes
 - Configurable file logging
 - Manifest schema versioning with corruption detection
+- Persisted embedding vector dimension (probed once, cached in config)
+- Path traversal protection in file resolution
 - 589+ automated tests
 
 ## Short Term
@@ -65,7 +78,6 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 | LLM-based re-ranking | Cross-encoder or lightweight model after vector search |
 | Query rewriting | Multi-variant expansion for ambiguous queries |
 | Persistent query cache | Disk-based cache so repeated queries across restarts are instant |
-| Per-language chunking config | Per-extension overrides for `nodeTypes`, `chunkSize`, `overlap` |
 | Concurrent chunking | Parallel file scanning/chunking for large repos |
 
 ## Mid Term
@@ -99,4 +111,4 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 2. **Code graph integration** for structural code understanding
 3. **Query rewriting** for ambiguous query expansion
 4. **Persistent session memory** across coding sessions
-5. **Per-language chunking config** for finer chunking control
+5. **Concurrent chunking** for faster indexing of large repos

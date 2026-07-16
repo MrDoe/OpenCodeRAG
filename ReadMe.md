@@ -41,10 +41,14 @@ opencode-rag query "authentication middleware"
 | **OpenCode plugin** | Auto-inject context, read-tool override, TUI settings, Ctrl+Enter to add RAG context, MCP registration on `init` |
 | **Incremental indexing** | File-hash manifest, background watcher, auto-rebuild on corruption |
 | **Privacy-first** | All processing stays local (when using Ollama) |
-| **CLI Tools** | `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `init`, `ui`, `mcp` |
+| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `ui`, `mcp`, `setup`, `eval:sessions`, `eval:analyze`, `eval:compare` |
 | **Proxy-aware** | Corporate proxy support with raw-socket localhost bypass |
 | **OpenAI / Anthropic / Cohere** | Use alternate embedding providers with API key auto-resolution |
 | **Evaluation** | Session-level token tracking, RAG-on vs RAG-off comparison, tiktoken BPE counting |
+| **Documentation mode** | `/doc` slash command: agent adds JSDoc/TSDoc to undocumented files, progress tracked per subdirectory |
+| **Wiki mode** | `/wiki` slash command: agent maintains a persistent knowledge wiki at `.opencode/wiki/` (ingest, query, lint, seed) |
+| **Context optimization** | Post-retrieval dedup, per-file chunk limits, adjacent-merge to fit the context window |
+| **AGENTS.md directive** | `opencode-rag init` merges a tool-usage directive into `AGENTS.md` via sentinel markers |
 
 ## Web UI
 
@@ -79,6 +83,47 @@ OpenCodeRAG can index image files (PNG, JPEG, WebP, etc.) by sending them to a v
 **Supported providers:** Ollama, OpenAI, Anthropic, Google Gemini compatible providers.
 
 **Disabled by default** — enable in `opencode-rag.json` to opt in (recommended for dedicated GPUs).
+
+## Documentation Mode
+
+When `documentationMode.enabled` is `true`, the OpenCode plugin exposes a `/doc` slash command that drives the agent to add JSDoc/TSDoc comments to undocumented source files. No agent tools are registered — documentation is driven entirely through the slash command and the documentation system prompt.
+
+```json
+{
+  "documentationMode": {
+    "enabled": true,
+    "batchSize": 5
+  }
+}
+```
+
+**Workflow:** Type `/doc` to list all undocumented files grouped by subdirectory. The agent picks a subdirectory, documents every public symbol (preserving existing comments and implementation code), then types `/doc src/auth/` to mark that subdirectory complete. Progress is persisted in `.opencode/rag_db/doc-mode-progress.json` so subsequent sessions resume where you left off.
+
+See [Plugin documentation](doc/plugin.md#5-documentation-mode--slash-command-doc) for details.
+
+## Wiki Mode
+
+When `wikiMode.enabled` is `true`, the OpenCode plugin injects a wiki-maintainer system prompt that instructs the agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/` — a structured, interlinked collection of markdown pages synthesizing knowledge from the codebase, docs, and conversations.
+
+```json
+{
+  "wikiMode": {
+    "enabled": true
+  }
+}
+```
+
+**Slash commands:**
+
+| Command | Action |
+|---|---|
+| `/wiki` | Show wiki status (page count, subdirectories, index/log presence, latest log entry) |
+| `/wiki seed` | Generate the initial wiki from README, file structure, and code patterns |
+| `/wiki lint` | Health-check for orphan pages, stale source refs, contradictions, missing cross-links |
+
+The agent maintains all wiki pages during normal coding sessions (ingest on learning). The user never writes wiki pages directly. The wiki is git-trackable in `.opencode/` so every edit is a diff.
+
+See [Plugin documentation](doc/plugin.md#6-wiki-mode--slash-command-wiki) for the full protocol.
 
 ## MCP Server
 

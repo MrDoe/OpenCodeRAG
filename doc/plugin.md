@@ -28,7 +28,6 @@ For autonomous agent workflows, the plugin also registers smaller, focused tools
 | Tool | Purpose | Args |
 |------|---------|------|
 | `get_file_skeleton` | Structural file overview via tree-sitter AST | `filePath` (req) |
-| `get_file_skeleton` | Structural file overview via tree-sitter AST | `filePath` (req) |
 | `find_usages` | Find all references to a symbol | `symbolName` (req), `pathHint?`, `topK?` |
 | `describe_image` | Retrieve stored description of an indexed image | `filePath` (req) |
 

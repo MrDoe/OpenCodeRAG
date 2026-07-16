@@ -264,6 +264,110 @@ Controls the OpenCode plugin integration.
 | `autoIndex.debounceMs` | `2000` | Debounce delay for file change events |
 | `autoIndex.intervalMs` | `300000` | Periodic full-index interval, only used by git backend (ignored with chokidar) |
 | `autoIndex.watcher` | `"chokidar"` | File-change detection backend: `"chokidar"` (real-time FS events) or `"git"` (poll-based diff) |
+| `readNoResultsBehavior` | `"hint"` | Behavior when read returns no results: `"hint"` (suggest related files), `"empty"`, or `"error"` |
+| `injectSystemPrompt` | `true` | Inject RAG tool guidance into the system prompt (disable to save tokens once agents know the tools) |
+
+### `documentationMode`
+
+Controls the automated documentation mode that drives the agent to add JSDoc/TSDoc comments to undocumented source files via the `/doc` slash command. Disabled by default. No agent tools are registered — documentation is driven entirely through the slash command and the injected system prompt.
+
+```json
+{
+  "documentationMode": {
+    "enabled": false,
+    "autoStart": true,
+    "batchSize": 5,
+    "systemPrompt": "You are a code documentation expert..."
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Enable the `/doc` slash command and documentation system prompt |
+| `autoStart` | `true` | Start documentation mode automatically on launch |
+| `batchSize` | `5` | Number of files to process per batch |
+| `systemPrompt` | *(built-in)* | System prompt for the documentation agent. Explains how to document public symbols, preserve existing comments, and avoid restating the obvious. |
+
+Progress is persisted in `.opencode/rag_db/doc-mode-progress.json` so subsequent sessions resume where you left off. See [Plugin documentation](plugin.md#5-documentation-mode--slash-command-doc).
+
+### `wikiMode`
+
+Controls the wiki mode that instructs the AI agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. Disabled by default. No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
+
+```json
+{
+  "wikiMode": {
+    "enabled": false,
+    "systemPrompt": "You are a wiki maintainer for this codebase..."
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Enable the `/wiki` slash command and wiki maintainer system prompt |
+| `systemPrompt` | *(built-in)* | System prompt defining the wiki layout, frontmatter conventions, and the Ingest/Query/Lint/Seed operations |
+
+The built-in system prompt defines the wiki layout (`.opencode/wiki/index.md`, `log.md`, `entities/`, `concepts/`, `sources/`), page frontmatter (`title`, `tags`, `sourceRefs`, `lastReviewed`), and cross-references via `[[wiki/page-name]]` links. See [Plugin documentation](plugin.md#6-wiki-mode--slash-command-wiki).
+
+### `mcp`
+
+Controls the standalone MCP (Model Context Protocol) server.
+
+```json
+{
+  "mcp": {
+    "enabled": true
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Whether the MCP server is available (started via `opencode-rag mcp`) |
+
+See the [MCP Server](../ReadMe.md#mcp-server) section in the README and [CLI Reference](cli.md#mcp).
+
+### `ui`
+
+Controls the web dashboard UI server.
+
+```json
+{
+  "ui": {
+    "port": 3210,
+    "openBrowser": true
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `port` | `3210` | HTTP port for the UI server |
+| `openBrowser` | `true` | Automatically open the browser on startup |
+
+Launch with `opencode-rag ui`. See [Web UI documentation](webui.md).
+
+### `tui`
+
+Controls the terminal UI (TUI) keybindings for RAG context injection.
+
+```json
+{
+  "tui": {
+    "fileListKeybinding": "ctrl+enter",
+    "chunksKeybinding": "ctrl+alt+enter"
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `fileListKeybinding` | `"ctrl+enter"` | Hotkey to append a relevant file list to the prompt |
+| `chunksKeybinding` | `"ctrl+alt+enter"` | Hotkey to append full code chunks to the prompt |
+
+Both keybindings read the current prompt text combined with the previous assistant response (if any) as the search query. Configurable in the TUI settings menu under "Keybindings" (open with `Ctrl+Shift+R`).
 
 ### `autoUpdate`
 

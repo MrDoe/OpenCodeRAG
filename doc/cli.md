@@ -181,6 +181,51 @@ opencode-rag clear [options]
 
 Uses `store.dropDatabase()` for a clean slate, also clears the keyword index and manifest.
 
+### `describe-image`
+
+Describe an image file using the configured vision model. Useful for testing image description settings without running a full index pass.
+
+```bash
+opencode-rag describe-image <filePath> [options]
+```
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `-c, --config <path>` | auto-detected | Path to config file |
+
+**Requirements:** `imageDescription.enabled` must be `true` in config. The image is resized (per `resizeMaxDimension`), base64-encoded, and sent to the configured vision provider, which returns a natural-language description.
+
+### `ui`
+
+Start the web dashboard UI for exploring the indexed vector database.
+
+```bash
+opencode-rag ui [options]
+```
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `-c, --config <path>` | auto-detected | Path to config file |
+
+Launches a local HTTP server (default port `3210`, configurable via `ui.port`). Opens the browser automatically unless `ui.openBrowser` is `false`. See [Web UI documentation](webui.md).
+
+### `mcp`
+
+Start the MCP (Model Context Protocol) server over stdio, exposing semantic code tools to any MCP-compatible client.
+
+```bash
+opencode-rag mcp [options]
+```
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `-c, --config <path>` | auto-detected | Path to config file |
+
+Exposes `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools. Clients can configure the server manually, or `opencode-rag init` auto-registers it. Requires `mcp.enabled` to be `true`. See the [MCP Server](../ReadMe.md#mcp-server) section in the README.
+
 ### `setup`
 
 Set up the OpenCodeRAG runtime at `~/.opencode/` so OpenCode can discover the plugin.
@@ -260,6 +305,15 @@ opencode-rag dump --limit 50
 
 # Clear all data
 opencode-rag clear
+
+# Describe an image file (requires imageDescription.enabled)
+opencode-rag describe-image ./docs/architecture.png
+
+# Launch the web dashboard
+opencode-rag ui
+
+# Start the MCP server
+opencode-rag mcp
 
 # Use a custom config
 opencode-rag index --config ./config/my-rag-config.json
