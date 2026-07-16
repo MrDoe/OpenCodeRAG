@@ -23,7 +23,7 @@ function inferProviderName(baseUrl: string): string {
  * @param baseUrl - API base URL (e.g. https://api.openai.com/v1)
  * @param model - Model name to use for embedding
  * @param apiKey - API key for authentication
- * @param timeoutMs - Request timeout in milliseconds (default 30000)
+ * @param timeoutMs - Request timeout in milliseconds (default 120000)
  * @param proxy - Optional proxy configuration
  */
 export class OpenAIProvider implements EmbeddingProvider {
@@ -36,7 +36,7 @@ export class OpenAIProvider implements EmbeddingProvider {
   private proxy?: ProxyConfig;
   private readonly provider: string;
 
-  constructor(baseUrl: string, model: string, apiKey: string, timeoutMs: number = 30000, proxy?: ProxyConfig) {
+  constructor(baseUrl: string, model: string, apiKey: string, timeoutMs: number = 120000, proxy?: ProxyConfig) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.model = model;
     this.apiKey = apiKey;

@@ -13,7 +13,7 @@ import { appendDebugLog } from "../core/fileLogger.js";
  * @param baseUrl - Ollama server base URL (e.g. http://localhost:11434)
  * @param model - Model name to use for embedding
  * @param apiKey - Optional API key for authenticated endpoints
- * @param timeoutMs - Request timeout in milliseconds (default 30000)
+   * @param timeoutMs - Request timeout in milliseconds (default 120000)
  * @param proxy - Optional proxy configuration
  * @param logLevel - Optional logging level for debug output
  */
@@ -27,7 +27,7 @@ export class OllamaProvider implements EmbeddingProvider {
   private proxy?: ProxyConfig;
   private readonly logLevel?: string;
 
-  constructor(baseUrl: string, model: string, apiKey?: string, timeoutMs: number = 30000, proxy?: ProxyConfig, logLevel?: string) {
+  constructor(baseUrl: string, model: string, apiKey?: string, timeoutMs: number = 120000, proxy?: ProxyConfig, logLevel?: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.model = model;
     this.apiKey = apiKey;

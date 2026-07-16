@@ -56,7 +56,7 @@ type NpmRunner = (command: string, options: { stdio: "inherit" | "pipe"; timeout
  */
 export function getCurrentVersion(): string {
   try {
-    const pkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    const pkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8") as string) as { version?: string };
     return pkg.version ?? "0.0.0";
   } catch {

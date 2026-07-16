@@ -30,17 +30,30 @@ Both should be `"function"`.
 
 ### Embedding Timeouts
 
-**Symptom:** Indexing fails with timeout errors.
+**Symptom:** Indexing fails with `Global embedding failed: Request timed out after Nms`. All files show as "Removed".
 
-**Fix:** Increase `embedding.timeoutMs` in `opencode-rag.json`. The default is 30000ms. Cold-start model loading can take longer for large models.
+**Cause:** The embedding provider (typically Ollama running a local model) takes longer than the configured timeout to process a batch of texts.
+
+**Default values (v1.18+):**
+- `embedding.timeoutMs`: `120000` (120s, was 30s)
+- `indexing.ollamaMaxBatchSize`: `500` (was 4000) — smaller batches mean each individual call completes faster
+
+**Fix:** If you still hit timeouts, increase further in `opencode-rag.json`:
 
 ```json
 {
   "embedding": {
-    "timeoutMs": 60000
+    "timeoutMs": 180000
+  },
+  "indexing": {
+    "ollamaMaxBatchSize": 200
   }
 }
 ```
+
+Lowering `ollamaMaxBatchSize` sends smaller sub-batches to Ollama, so each request completes faster. Raising `timeoutMs` gives each request more time. Combine both for slow models or constrained hardware.
+
+**Note:** If your config file explicitly sets `embedding.timeoutMs`, it overrides the default. Check `opencode-rag.json` for any explicit value.
 
 ### LanceDB Connection Issues
 

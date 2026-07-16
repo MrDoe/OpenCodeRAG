@@ -24,7 +24,7 @@ export interface HealthCheckResult {
  * Returns one result per configured model (embedding + description + image_description if enabled).
  */
 export async function checkProviderHealth(config: RagConfig): Promise<HealthCheckResult[]> {
-  const timeoutMs = config.embedding.timeoutMs ?? 30000;
+  const timeoutMs = config.embedding.timeoutMs ?? 120000;
 
   const checks: Promise<HealthCheckResult>[] = [
     checkEmbeddingModel(config, timeoutMs),

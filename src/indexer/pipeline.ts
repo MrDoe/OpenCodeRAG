@@ -667,7 +667,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
   // ── Phase 2: Embed all texts in a single batched call ──────────────────
   const batchSize = isOllama
-    ? Math.min(options.config.indexing.ollamaMaxBatchSize ?? 4000, defaultBatchSize)
+    ? Math.min(options.config.indexing.ollamaMaxBatchSize ?? 500, defaultBatchSize)
     : defaultBatchSize;
 
   let embeddedDone = 0;

@@ -307,7 +307,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     provider: "ollama",
     baseUrl: "http://127.0.0.1:11434/api",
     model: "qwen3-embedding:0.6b",
-    timeoutMs: 30000,
+    timeoutMs: 120000,
   },
   indexing: {
     includeExtensions: [
@@ -401,7 +401,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     concurrency: 8,
     embedBatchSize: 100,
     embedConcurrency: 6,
-    ollamaMaxBatchSize: 4000,
+    ollamaMaxBatchSize: 500,
     descriptionConcurrency: 4,
     maxSvgSizeBytes: 1_048_576,
   },

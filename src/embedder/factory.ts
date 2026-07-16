@@ -22,7 +22,7 @@ import pLimit from "p-limit";
  */
 export function createEmbedder(config: RagConfig): EmbeddingProvider {
   const { provider, baseUrl, model, apiKey, proxy, timeoutMs } = config.embedding;
-  const effectiveTimeoutMs = timeoutMs ?? 30000;
+  const effectiveTimeoutMs = timeoutMs ?? 120000;
 
   if (provider === "ollama") {
     return new OllamaProvider(baseUrl, model, apiKey, effectiveTimeoutMs, proxy, config.logging.level);
