@@ -273,7 +273,9 @@ function getConfigPath(worktree: string): string | undefined {
 /** Read and parse a JSON file, returning undefined on failure. */
 function readJsonFile<T = Record<string, unknown>>(filePath: string): T | undefined {
   try {
-    return JSON.parse(readFileSync(filePath, "utf-8")) as T;
+    const raw = readFileSync(filePath, "utf-8");
+    const stripped = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+    return JSON.parse(stripped) as T;
   } catch {
     return undefined;
   }
@@ -445,6 +447,9 @@ function buildSettingCategories(
   const docModeCfg = (cfg.documentationMode ?? {}) as Record<string, unknown>;
   const docModeRo = (ro.documentationMode ?? {}) as Record<string, unknown>;
 
+  const wikiModeCfg = (cfg.wikiMode ?? {}) as Record<string, unknown>;
+  const wikiModeRo = (ro.wikiMode ?? {}) as Record<string, unknown>;
+
   const embeddingCfg = (cfg.embedding ?? {}) as Record<string, unknown>;
   const embeddingRo = (ro.embedding ?? {}) as Record<string, unknown>;
 
@@ -576,6 +581,19 @@ function buildSettingCategories(
           label: "Files per batch",
           type: "number",
           currentValue: (docModeRo.batchSize as number) ?? (docModeCfg.batchSize as number) ?? 5,
+        },
+      ],
+    },
+    {
+      id: "wiki",
+      label: "Wiki Mode",
+      description: "Configure the AI-maintained knowledge wiki that synthesizes codebase knowledge over time",
+      entries: [
+        {
+          path: ["wikiMode", "enabled"],
+          label: "Wiki mode",
+          type: "boolean",
+          currentValue: (wikiModeRo.enabled as boolean) ?? (wikiModeCfg.enabled as boolean) ?? false,
         },
       ],
     },

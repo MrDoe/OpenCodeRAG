@@ -167,7 +167,50 @@ Agent:    picks next subdirectory, repeats
 }
 ```
 
-### 6. Read Tool Override
+### 6. Wiki Mode — Slash Command (`/wiki`)
+
+When `wikiMode.enabled` is `true`, the plugin injects a system prompt that instructs the host agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
+
+**Configuration:**
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Enable wiki mode |
+| `systemPrompt` | *(built-in)* | System prompt for the wiki maintainer agent |
+
+**How it works:**
+
+1. **System prompt injection** — When wiki mode is enabled, the plugin injects the wiki maintenance protocol into the system prompt at session start. The protocol defines the wiki layout (`.opencode/wiki/index.md`, `log.md`, `entities/`, `concepts/`), page frontmatter conventions, and the three operations: **Ingest** (extract and synthesize new knowledge), **Query** (route through the index first, fall back to `search_semantic`), and **Lint** (health-check for orphans, stale pages, contradictions).
+
+2. **Agent writes the wiki** — The host agent creates and maintains all wiki pages during coding sessions, following the injected protocol. The user never writes wiki pages directly.
+
+3. **`/wiki` status** — Shows the current state of `.opencode/wiki/`: page count, subdirectories, whether `index.md` and `log.md` exist, and the latest log entry.
+
+4. **`/wiki lint`** — Instructs the agent to health-check the wiki for orphan pages, stale entries (source drift), contradictions, and missing cross-references. Findings are appended to `log.md`.
+
+5. **`/wiki seed`** — Instructs the agent to generate the initial wiki from existing sources: README, file structure via `get_file_skeleton`, common conventions from code patterns. Creates `index.md`, `log.md`, and initial entity/concept pages.
+
+**Workflow:**
+```
+User:     /wiki seed
+Agent:   scans README, file tree, code patterns → creates initial wiki pages
+User:     /wiki
+Plugin:  shows wiki status (pages, index, log, last entry)
+Agent:   maintains wiki during normal coding sessions (ingest on learning)
+User:     /wiki lint
+Agent:   health-checks wiki → appends findings to log.md
+```
+
+**Config example:**
+```json
+{
+  "wikiMode": {
+    "enabled": true
+  }
+}
+```
+
+### 7. Read Tool Override
 
 When `openCode.readOverride` is `true`:
 
@@ -177,7 +220,7 @@ When `openCode.readOverride` is `true`:
 - If retrieval fails, the file is still returned without RAG context
 - If no relevant chunks are found but the file has indexed chunks, related files are suggested
 
-### 7. Session Logging & Evaluation
+### 8. Session Logging & Evaluation
 
 The plugin automatically captures session events for token usage analysis:
 

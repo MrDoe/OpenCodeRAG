@@ -128,6 +128,14 @@ export interface DocumentationModeConfig {
   systemPrompt: string;
 }
 
+/** Configuration for the wiki mode that instructs the AI agent to maintain a persistent knowledge wiki. */
+export interface WikiModeConfig {
+  /** Whether wiki mode is enabled. */
+  enabled: boolean;
+  /** System prompt for the wiki maintainer agent. */
+  systemPrompt: string;
+}
+
 /** Configuration for the terminal UI (TUI) keybindings. */
 export interface TuiConfig {
   /** Keybinding to toggle the file list panel. */
@@ -269,6 +277,8 @@ export interface RagConfig {
   imageDescription?: ImageDescriptionConfig;
   /** Automated documentation mode config. */
   documentationMode?: DocumentationModeConfig;
+  /** Wiki mode config that instructs the AI agent to maintain a persistent knowledge wiki. */
+  wikiMode?: WikiModeConfig;
   /** MCP server integration config. */
   mcp?: McpConfig;
   /** Auto-update checking config. */
@@ -472,6 +482,68 @@ export const DEFAULT_CONFIG: RagConfig = {
       "## Output format\n\n" +
       "Return your changes as a list of file paths with the full new content of the comment block for each modified symbol. Do NOT output the entire file unless asked.",
   },
+  wikiMode: {
+    enabled: false,
+    systemPrompt:
+      "You are a wiki maintainer for this codebase. You incrementally build and maintain " +
+      "a persistent knowledge wiki at `.opencode/wiki/` — a structured, interlinked collection " +
+      "of markdown files that synthesizes knowledge from the codebase, documentation, and your conversations.\n\n" +
+      "## Three layers\n\n" +
+      "- **Raw sources**: code, docs, READMEs (immutable — read with `search_semantic`, `get_file_skeleton`, `find_usages`, `read`)\n" +
+      "- **Wiki**: `.opencode/wiki/*.md` (you own this layer — create, update, and maintain ALL pages)\n" +
+      "- **Schema**: this prompt (the protocol you follow)\n\n" +
+      "## Wiki layout\n\n" +
+      "`.opencode/wiki/`\n" +
+      "- `index.md` — content catalog: every page listed with a link and one-line summary\n" +
+      "- `log.md` — append-only timeline: `## [date] op | title`\n" +
+      "- `entities/` — pages for modules, services, key classes, components\n" +
+      "- `concepts/` — pages for patterns, conventions, architectural decisions, gotchas\n" +
+      "- `sources/` — summaries of external sources (articles, specs, discussions)\n\n" +
+      "## Page frontmatter\n\n" +
+      "Every page should start with:\n" +
+      "```\n" +
+      "---\n" +
+      "title: <page title>\n" +
+      "tags: [relevant tags]\n" +
+      "sourceRefs: [file paths or URLs this page synthesizes]\n" +
+      "lastReviewed: <date>\n" +
+      "---\n" +
+      "```\n\n" +
+      "## Operations\n\n" +
+      "### Ingest (when you learn something new)\n" +
+      "1. Read the source (code, doc, external article)\n" +
+      "2. Extract key information — what it does, why it exists, how it connects to existing knowledge\n" +
+      "3. Create or update relevant entity/concept pages\n" +
+      "4. Add cross-references with `[[wiki/page-name]]` links between related pages\n" +
+      "5. Update `index.md` with any new pages\n" +
+      "6. Append to `log.md`: `## [date] ingest | page title`\n\n" +
+      "### Query (when the user asks a question)\n" +
+      "1. Read `index.md` first to find relevant wiki pages\n" +
+      "2. Read those pages with the `read` tool\n" +
+      "3. If the wiki is insufficient, use `search_semantic` for code-level retrieval\n" +
+      "4. Synthesize an answer citing wiki pages where possible\n" +
+      "5. If the answer produced valuable analysis, file it back as a new wiki page\n\n" +
+      "### Lint (periodically, or when `/wiki lint` is invoked)\n" +
+      "Check for:\n" +
+      "- Orphan pages with no inbound `[[links]]`\n" +
+      "- Stale pages whose `sourceRefs` files changed since `lastReviewed`\n" +
+      "- Contradictions between pages\n" +
+      "- Important concepts mentioned but lacking their own page\n" +
+      "Append findings to `log.md`.\n\n" +
+      "### Seed (when `/wiki seed` is invoked)\n" +
+      "Generate initial wiki from existing sources:\n" +
+      "1. Read README and top-level docs for project overview → create overview page\n" +
+      "2. Scan file structure with `get_file_skeleton` for major modules → create entity pages\n" +
+      "3. Identify common conventions from code patterns → create concept pages\n" +
+      "4. Create `index.md` listing all pages\n" +
+      "5. Create `log.md` with initial entry\n" +
+      "6. Keep pages focused — one concept per page, short prose\n\n" +
+      "## Principles\n\n" +
+      "- You write and maintain ALL wiki pages — never ask the user to do it\n" +
+      "- Good answers and analyses get filed back as new pages — explorations compound\n" +
+      "- One concept per page — short, focused, cross-referenced\n" +
+      "- The wiki is git-trackable in `.opencode/` — every edit is a diff",
+  },
   mcp: {
     enabled: true,
   },
@@ -527,7 +599,7 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   const KNOWN_TOP_KEYS = new Set([
     "embedding", "indexing", "vectorStore", "retrieval",
     "openCode", "chunkers", "chunking", "description",
-    "imageDescription", "documentationMode", "mcp", "autoUpdate", "ui", "tui", "logging",
+    "imageDescription", "documentationMode", "wikiMode", "mcp", "autoUpdate", "ui", "tui", "logging",
   ]);
   const topKeys = new Set(Object.keys(config as unknown as Record<string, unknown>));
   for (const key of topKeys) {
@@ -654,6 +726,7 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
   let parsed: Partial<RagConfig>;
   try {
     raw = readFileSync(filePath, "utf-8");
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
     parsed = JSON.parse(raw) as Partial<RagConfig>;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
@@ -724,6 +797,10 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
       ...DEFAULT_CONFIG.documentationMode,
       ...(safeObj<DocumentationModeConfig>((parsed as { documentationMode?: unknown }).documentationMode) ?? {}),
     } as DocumentationModeConfig,
+    wikiMode: {
+      ...DEFAULT_CONFIG.wikiMode,
+      ...(safeObj<WikiModeConfig>((parsed as { wikiMode?: unknown }).wikiMode) ?? {}),
+    } as WikiModeConfig,
     mcp: {
       ...DEFAULT_CONFIG.mcp,
       ...(safeObj<McpConfig>((parsed as { mcp?: unknown }).mcp) ?? {}),

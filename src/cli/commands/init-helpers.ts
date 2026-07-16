@@ -519,6 +519,9 @@ export function generateDefaultConfigJson(): string {
         timeoutMs: DEFAULT_CONFIG.description!.timeoutMs,
         maxContentChars: DEFAULT_CONFIG.description!.maxContentChars,
       },
+      wikiMode: {
+        enabled: DEFAULT_CONFIG.wikiMode!.enabled,
+      },
       mcp: {
         enabled: DEFAULT_CONFIG.mcp!.enabled,
       },

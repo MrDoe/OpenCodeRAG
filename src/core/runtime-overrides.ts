@@ -58,7 +58,9 @@ export function loadRuntimeOverrides(storePath: string): RuntimeOverrides {
   const overridePath = join(storePath, "runtime-overrides.json");
   if (!existsSync(overridePath)) return {};
   try {
-    return JSON.parse(readFileSync(overridePath, "utf-8")) as RuntimeOverrides;
+    const raw = readFileSync(overridePath, "utf-8");
+    const stripped = raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw;
+    return JSON.parse(stripped) as RuntimeOverrides;
   } catch {
     return {};
   }

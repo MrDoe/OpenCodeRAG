@@ -7,6 +7,7 @@ import {
   writeFileSync,
   readFileSync,
   symlinkSync,
+  lstatSync,
 } from "node:fs";
 import { execSync } from "node:child_process";
 
@@ -164,36 +165,82 @@ export async function setupRuntime(options?: {
   }
 
   removeIfExists(runtimePluginDir);
+  // Ensure stale directory is fully gone before creating junction
+  let retries = 3;
+  while (retries > 0 && existsSync(runtimePluginDir)) {
+    try { rmSync(runtimePluginDir, { recursive: true, force: true }); } catch { /* retry */ }
+    retries--;
+  }
   mkdirSync(path.dirname(runtimePluginDir), { recursive: true });
 
+  let junctionOk = false;
   try {
     createJunction(globalPluginDir, runtimePluginDir);
+    junctionOk = process.platform !== "win32";
+    if (process.platform === "win32") {
+      const stat = lstatSync(runtimePluginDir);
+      junctionOk = stat.isSymbolicLink();
+    }
   } catch {
+    // fall through to cpSync
+  }
+
+  if (!junctionOk) {
+    if (!options?.silent) {
+      console.error("  [warn] Junction not supported, falling back to copy...");
+    }
     const { cpSync } = await import("node:fs") as typeof import("node:fs");
     cpSync(globalPluginDir, runtimePluginDir, { recursive: true });
   }
 
-  if (existsSync(globalSdkPluginDir)) {
-    removeIfExists(runtimeSdkPluginDir);
-    mkdirSync(runtimeSdkDir, { recursive: true });
+  // Ensure the @opencode-ai/plugin SDK is available globally.
+  // We must NOT run `npm install` inside the runtime dir because npm
+  // re-resolves all of node_modules/ and replaces the plugin junction
+  // with the published npm version (corrupting the local link).
+  if (!existsSync(globalSdkPluginDir)) {
     try {
-      createJunction(globalSdkPluginDir, runtimeSdkPluginDir);
-    } catch {
-      const { cpSync } = await import("node:fs") as typeof import("node:fs");
-      cpSync(globalSdkPluginDir, runtimeSdkPluginDir, { recursive: true });
-    }
-  } else {
-    mkdirSync(runtimeSdkDir, { recursive: true });
-    try {
-      execSync(`npm install @opencode-ai/plugin --no-save`, {
-        cwd: runtimeDir,
+      execSync(`npm install -g @opencode-ai/plugin`, {
         stdio: "pipe",
         timeout: 60_000,
       });
     } catch (cause) {
-      errors.push(`Failed to install @opencode-ai/plugin SDK: ${(cause as Error).message}`);
+      errors.push(`Failed to install @opencode-ai/plugin SDK globally: ${(cause as Error).message}`);
       return { success: false, errors };
     }
+  }
+
+  // Create junction from global SDK to runtime (same pattern as plugin above)
+  if (existsSync(globalSdkPluginDir)) {
+    removeIfExists(runtimeSdkPluginDir);
+    retries = 3;
+    while (retries > 0 && existsSync(runtimeSdkPluginDir)) {
+      try { rmSync(runtimeSdkPluginDir, { recursive: true, force: true }); } catch { /* retry */ }
+      retries--;
+    }
+    mkdirSync(runtimeSdkDir, { recursive: true });
+
+    let sdkJunctionOk = false;
+    try {
+      createJunction(globalSdkPluginDir, runtimeSdkPluginDir);
+      sdkJunctionOk = process.platform !== "win32";
+      if (process.platform === "win32") {
+        const stat = lstatSync(runtimeSdkPluginDir);
+        sdkJunctionOk = stat.isSymbolicLink();
+      }
+    } catch {
+      // fall through to cpSync
+    }
+
+    if (!sdkJunctionOk) {
+      if (!options?.silent) {
+        console.error("  [warn] SDK junction not supported, falling back to copy...");
+      }
+      const { cpSync } = await import("node:fs") as typeof import("node:fs");
+      cpSync(globalSdkPluginDir, runtimeSdkPluginDir, { recursive: true });
+    }
+  } else {
+    errors.push(`@opencode-ai/plugin SDK not available after global install`);
+    return { success: false, errors };
   }
 
   writeFileSync(versionFile, pluginVersion, "utf-8");

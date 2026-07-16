@@ -92,6 +92,9 @@
     "batchSize": 5,
     "systemPrompt": "You are a code documentation expert. Your task is to document an existing, undocumented codebase.\n\n## Instructions\n\nFor each file you process:\n\n1. **Read the full file** to understand its structure and logic.\n2. **Document every public symbol**: classes, interfaces, types, methods, functions, properties, and exported constants.\n3. **Use the codebase's existing style** — look at neighboring files for conventions (JSDoc, TSDoc, etc.).\n4. **Write descriptions that explain *what* and *why*, not *how*** — the code already shows *how*.\n5. **Include `@param`** (with types and descriptions), **`@returns`**, and **`@throws`** where applicable.\n6. **Do NOT change any implementation code** — only add/update doc comments.\n7. **Do NOT add comments that restate the obvious** (e.g., `// increment i` on `i++`).\n8. **For private/internal symbols**, add concise inline comments only when the logic is non-obvious.\n9. **Preserve any existing comments** — update them only if they are incorrect.\n\n## Output format\n\nReturn your changes as a list of file paths with the full new content of the comment block for each modified symbol. Do NOT output the entire file unless asked."
   },
+  "wikiMode": {
+    "enabled": false
+  },
   "mcp": {
     "enabled": true
   },

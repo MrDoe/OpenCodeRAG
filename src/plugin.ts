@@ -31,7 +31,7 @@ import { createSessionLogger, type SessionLogger } from "./eval/session-logger.j
 import { countTokens } from "./eval/token-counter.js";
 import { checkForUpdate, type UpdateInfo } from "./core/version-check.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, execSync } from "node:child_process";
@@ -863,6 +863,12 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       if (docMode?.enabled && docMode.systemPrompt) {
         output.system.unshift(docMode.systemPrompt);
       }
+
+      // Inject wiki mode system prompt if enabled
+      const wikiMode = getEffectiveCfg().wikiMode;
+      if (wikiMode?.enabled && wikiMode.systemPrompt) {
+        output.system.unshift(wikiMode.systemPrompt);
+      }
     },
     async "chat.message"(input, output) {
       try {
@@ -968,6 +974,104 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               if (typeof first.text === "string") {
                 parts[0] = { ...first, text: "Failed to start documentation. Ensure the workspace is indexed." } as typeof parts[0];
               }
+            }
+          }
+          return;
+        }
+
+        // Handle /wiki slash command
+        if (text.startsWith("/wiki")) {
+          const wikiMode = getEffectiveCfg().wikiMode;
+          if (!wikiMode?.enabled) {
+            const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
+            if (Array.isArray(parts) && parts.length > 0) {
+              const first = parts[0] as Record<string, unknown>;
+              if (typeof first.text === "string") {
+                parts[0] = { ...first, text: "Wiki mode is not enabled. Set `wikiMode.enabled` to `true` in opencode-rag.json." } as typeof parts[0];
+              }
+            }
+            return;
+          }
+
+          const arg = text.slice(5).trim().toLowerCase();
+          const wikiDir = path.join(options.worktree, ".opencode", "wiki");
+          const lines: string[] = [];
+
+          if (arg === "lint") {
+            lines.push(
+              "## Wiki Lint",
+              "",
+              "Run a health check on the wiki. Check for:",
+              "- Orphan pages with no inbound [[links]]",
+              "- Stale pages whose sourceRefs files changed since lastReviewed",
+              "- Contradictions between pages",
+              "- Important concepts mentioned but lacking their own page",
+              "",
+              "Append findings to .opencode/wiki/log.md and fix any issues found.",
+            );
+          } else if (arg === "seed") {
+            lines.push(
+              "## Wiki Seed",
+              "",
+              "Generate the initial wiki from existing sources:",
+              "1. Read README and top-level docs for project overview → create overview page",
+              "2. Scan file structure with get_file_skeleton for major modules → create entity pages",
+              "3. Identify common conventions from code patterns → create concept pages",
+              "4. Create .opencode/wiki/index.md listing all pages",
+              "5. Create .opencode/wiki/log.md with initial entry",
+              "6. Keep pages focused — one concept per page, short prose, cross-referenced with [[links]]",
+            );
+          } else {
+            if (existsSync(wikiDir)) {
+              const entries = readdirSync(wikiDir);
+              const pages = entries.filter((e) => e.endsWith(".md") && e !== "log.md").length;
+              const hasIndex = entries.includes("index.md");
+              const hasLog = entries.includes("log.md");
+              const dirs = entries.filter((e) => !e.includes(".")).length;
+              let lastLogEntry = "";
+              const logPath = path.join(wikiDir, "log.md");
+              if (hasLog && existsSync(logPath)) {
+                const logContent = readFileSync(logPath, "utf-8");
+                const logLines = logContent.trim().split("\n").filter((l) => l.startsWith("## ["));
+                if (logLines.length > 0) {
+                  lastLogEntry = logLines[logLines.length - 1] ?? "";
+                }
+              }
+
+              lines.push(
+                "## Wiki Status",
+                "",
+                `Wiki: \`.opencode/wiki/\``,
+                `Pages: ~${pages} (.md files)`,
+                `Subdirectories: \`${dirs}\``,
+                `Index: ${hasIndex ? "yes" : "no"} | Log: ${hasLog ? "yes" : "no"}`,
+              );
+              if (lastLogEntry) {
+                lines.push(`Latest log: \`${lastLogEntry}\``);
+              }
+              lines.push(
+                "",
+                "Commands:",
+                "- `/wiki` — show this status",
+                "- `/wiki lint` — health-check the wiki",
+                "- `/wiki seed` — generate initial wiki pages from the codebase",
+              );
+            } else {
+              lines.push(
+                "## Wiki Status",
+                "",
+                "No wiki yet at `.opencode/wiki/`.",
+                "Use `/wiki seed` to generate the initial wiki from existing sources.",
+              );
+            }
+          }
+
+          const wikiMsg = lines.join("\n");
+          const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
+          if (Array.isArray(parts) && parts.length > 0) {
+            const first = parts[0] as Record<string, unknown>;
+            if (typeof first.text === "string") {
+              parts[0] = { ...first, text: wikiMsg } as typeof parts[0];
             }
           }
           return;
