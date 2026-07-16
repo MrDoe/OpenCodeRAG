@@ -715,6 +715,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   }
 
   // ── Phase 3: Store + manifest update per file (parallel) ──────────────
+  const filesToStore = prepared.filter((p) => !earlyWorkerResults.has(prepared.indexOf(p)) && p.chunks && (p.textToEmbed?.length ?? 0) > 0).length;
+  let storedFiles = 0;
   const storeLimit = pLimit(options.config.indexing.concurrency);
   const storeResults = await Promise.all(
     prepared.map((prep, fi) =>
@@ -793,6 +795,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         }
 
         options.progress?.finishFile(prep.fileLabel);
+        storedFiles++;
+        logChunkProgress("Storing", prep.fileLabel, storedFiles, filesToStore, storedFiles, filesToStore);
         return result;
       }),
     ),
