@@ -249,7 +249,39 @@ describe("indexer", () => {
       config: testConfig(),
       store,
       embedder,
+      dimension: 4,
     });
+
+    await fs.unlink(path.join(storeDir, "manifest.json"));
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+      dimension: 4,
+    });
+
+    assert.equal(stats.rebuildPerformed, true);
+    assert.equal(stats.newFiles, 1);
+    assert.equal(await store.count(), 1);
+  });
+
+  it("aborts rebuild without dimension to protect existing data", async () => {
+    const filePath = path.join(workspaceDir, "src", "a.ts");
+    await writeFile(filePath, "function alpha() { return 1; }\n");
+
+    await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+      dimension: 4,
+    });
+
+    const countBefore = await store.count();
+    assert.equal(countBefore, 1);
 
     await fs.unlink(path.join(storeDir, "manifest.json"));
     const stats = await runIndexPass({
@@ -260,8 +292,7 @@ describe("indexer", () => {
       embedder,
     });
 
-    assert.equal(stats.rebuildPerformed, true);
-    assert.equal(stats.newFiles, 1);
+    assert.equal(stats.rebuildPerformed, false);
     assert.equal(await store.count(), 1);
   });
 

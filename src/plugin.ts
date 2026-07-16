@@ -1491,6 +1491,7 @@ export const ragPlugin: Plugin = async (
       logLevel,
       keywordIndex,
       descriptionProvider,
+      dimension: vectorDimension,
     });
 
     backgroundIndexers.set(input.directory, indexer);

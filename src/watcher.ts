@@ -43,6 +43,8 @@ export interface CreateBackgroundIndexerOptions {
   keywordIndex?: KeywordIndex;
   /** Optional provider for generating LLM-based chunk descriptions. */
   descriptionProvider?: DescriptionProvider;
+  /** Embedding vector dimension — enables atomic rebuilds instead of destructive clear. */
+  dimension?: number;
 }
 
 /** The current operational status of the background indexer watcher. */
@@ -76,7 +78,7 @@ function writeWatcherStatus(storePath: string, status: WatcherStatus): void {
  * @returns A BackgroundIndexer handle with a close() method for shutdown.
  */
 export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions): BackgroundIndexer {
-  const { cwd, storePath, config, store, embedder, logFilePath, logLevel, keywordIndex, descriptionProvider } = options;
+  const { cwd, storePath, config, store, embedder, logFilePath, logLevel, keywordIndex, descriptionProvider, dimension } = options;
 
   writeWatcherStatus(storePath, { running: false, lastRunAt: undefined });
 
@@ -97,6 +99,7 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
         embedder,
         keywordIndex,
         descriptionProvider,
+        dimension,
         filterPaths,
         abortSignal: ac.signal,
         logger: {

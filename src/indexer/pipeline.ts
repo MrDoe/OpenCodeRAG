@@ -293,10 +293,18 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       try { await fs.rm(tempStorePath, { recursive: true, force: true }); } catch { /* may not exist */ }
       effectiveStore = createVectorStore(options.config, tempStorePath, options.dimension);
       logger.debug(`Rebuilding index in temporary store at ${tempStorePath}`);
+    } else if (existingCount > 0) {
+      // NEVER destroy existing data when we can't do an atomic rebuild.
+      // Abort and ask the user to run 'opencode-rag index --force' manually.
+      logger.warn(
+        "Cannot rebuild safely without embedding dimension — aborting to protect existing data. " +
+        "Run 'opencode-rag index --force' manually to rebuild."
+      );
+      // Restore manifest entries we just deleted so the next pass can retry incrementally
+      return createIndexStats(workspaceFiles.length, manifestStatus);
     } else {
-      // Fallback — in-memory store or no dimension: clear in place.
-      logger.warn("No embedding dimension available; falling back to in-place clear.");
-      await options.store.clear();
+      // No existing data — safe to proceed with in-place indexing (no clear needed)
+      logger.debug("No existing data; indexing from scratch.");
     }
   }
 
