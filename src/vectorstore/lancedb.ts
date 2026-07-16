@@ -90,6 +90,7 @@ export class LanceDbStore implements VectorStore {
   private db: Connection | null = null;
   private table: Table | null = null;
   private tableInit: Promise<Table> | null = null;
+  private writeLock = Promise.resolve<void>(void 0);
 
   /**
    * @param dbPath - Filesystem path to the LanceDB database directory.
@@ -208,11 +209,16 @@ export class LanceDbStore implements VectorStore {
    */
   async addChunks(chunks: Chunk[]): Promise<void> {
     if (chunks.length === 0) return;
+    const done = this.writeLock.then(() => this.addChunksInternal(chunks));
+    this.writeLock = done.catch(() => {});
     try {
-      await this.addChunksInternal(chunks);
+      await done;
     } catch (err) {
+      this.writeLock = Promise.resolve();
       if (isCorruptionError(err) && await this.tryRepair()) {
-        await this.addChunksInternal(chunks);
+        const retry = this.addChunksInternal(chunks);
+        this.writeLock = retry.catch(() => {});
+        await retry;
         return;
       }
       throw err;
