@@ -2,7 +2,7 @@
  * @fileoverview Dump all chunk descriptions from a LanceDB index to a JSON file.
  * Used to copy descriptions from one branch to another for fair comparison.
  *
- * Usage: node --import tsx src/eval/dump-descriptions.ts --output doc/chunk-descriptions.json
+ * Usage: node --import tsx src/eval/dump-descriptions.ts --output .opencode/rag_db/chunk-descriptions.json
  */
 
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -13,7 +13,7 @@ const STORE_PATH = path.join(WORKTREE, ".opencode", "rag_db");
 
 async function main() {
   const args = process.argv.slice(2);
-  let outputPath = path.join(WORKTREE, "doc", "chunk-descriptions.json");
+  let outputPath = path.join(WORKTREE, ".opencode", "rag_db", "chunk-descriptions.json");
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--output" && args[i + 1]) {
       outputPath = path.resolve(WORKTREE, args[i + 1]!);

@@ -357,6 +357,36 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
     }
   });
 
+  it("invokes onProgress once per chunk with running count and total", async () => {
+    const { baseUrl, close } = await startMockServer((_body) => ({
+      status: 200,
+      body: { message: { content: "Desc." } },
+    }));
+
+    try {
+      const provider = new LlmDescriptionProvider(makeConfig({ baseUrl: `${baseUrl}/api` }));
+      const chunks = [
+        makeChunk({ id: "c0", metadata: { filePath: "src/a.ts", startLine: 1, endLine: 2, language: "typescript" } }),
+        makeChunk({ id: "c1", metadata: { filePath: "src/a.ts", startLine: 4, endLine: 5, language: "typescript" } }),
+        makeChunk({ id: "c2", metadata: { filePath: "src/b.ts", startLine: 1, endLine: 2, language: "typescript" } }),
+      ];
+      const calls: Array<{ id: string; completed: number; total: number }> = [];
+      await provider.generateBatchDescriptions(chunks, undefined, {
+        total: 3,
+        onProgress: (chunk, completed, total) => {
+          calls.push({ id: chunk.id, completed, total });
+        },
+      });
+
+      assert.equal(calls.length, 3);
+      assert.deepEqual(calls[0], { id: "c0", completed: 1, total: 3 });
+      assert.deepEqual(calls[1], { id: "c1", completed: 2, total: 3 });
+      assert.deepEqual(calls[2], { id: "c2", completed: 3, total: 3 });
+    } finally {
+      await close();
+    }
+  });
+
   it("collects descriptions despite individual failures", async () => {
     let callIndex = 0;
     const { baseUrl, close } = await startMockServer(() => {

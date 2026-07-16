@@ -2,7 +2,7 @@
  * @fileoverview Branch comparison benchmark — runs N queries against the indexed codebase
  * and outputs per-query results as JSON for later comparison.
  *
- * Usage: node --import tsx src/eval/run-branch-compare.ts --output doc/eval-results-branch.json
+ * Usage: node --import tsx src/eval/run-branch-compare.ts --output .opencode/rag_db/eval-results/branch.json
  */
 
 import { writeFileSync } from "node:fs";
@@ -198,7 +198,7 @@ function thresholdAnalysis(
 
 function parseArgs(): { output: string } {
   const args = process.argv.slice(2);
-  let output = path.join(WORKTREE, "doc", "eval-results-branch.json");
+  let output = path.join(WORKTREE, ".opencode", "rag_db", "eval-results", "branch.json");
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--output" && args[i + 1]) {
       output = path.resolve(WORKTREE, args[i + 1]!);

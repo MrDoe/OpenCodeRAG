@@ -98,4 +98,18 @@ describe("embedBatch", () => {
     // Verify last batch content: last item gets call=2 embedding
     assert.deepStrictEqual(result[3], [200]);
   });
+
+  it("invokes onProgress after each batch with running completed count and total", async () => {
+    const m = mockEmbedder();
+    const progress: Array<{ completed: number; total: number }> = [];
+    const result = await embedBatch(m, ["a", "b", "c", "d", "e"], 2, "document", 1, (completed, total) => {
+      progress.push({ completed, total });
+    });
+    assert.equal(result.length, 5);
+    assert.deepStrictEqual(progress, [
+      { completed: 2, total: 5 },
+      { completed: 4, total: 5 },
+      { completed: 5, total: 5 },
+    ]);
+  });
 });

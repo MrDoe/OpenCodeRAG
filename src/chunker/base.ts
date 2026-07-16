@@ -6,6 +6,13 @@ import { loadLanguage, loadLanguageFromPath, walkTree, type AstNode } from "./gr
 import type { Chunker, Chunk } from "../core/interfaces.js";
 import { uuid } from "./uuid.js";
 
+/** Module-level parser pool shared across all TreeSitterChunker instances. */
+const parserPool = new Map<string, Parser>();
+
+function poolKey(grammarName: string, wasmFilePath?: string): string {
+  return wasmFilePath ? `${grammarName}::${wasmFilePath}` : grammarName;
+}
+
 /** Abstract base for tree-sitter based language chunkers. */
 export abstract class TreeSitterChunker implements Chunker {
   abstract readonly language: string;
@@ -45,10 +52,9 @@ export abstract class TreeSitterChunker implements Chunker {
         }
         const parser = await original._createParser();
         const tree = parser.parse(content);
-        if (!tree) { parser.delete(); return []; }
+        if (!tree) { return []; }
         const nodes = walkTree(tree.rootNode, types, content);
         tree.delete();
-        parser.delete();
         return nodes.map((node: AstNode) => ({
           id: uuid(),
           content: node.text,
@@ -65,17 +71,35 @@ export abstract class TreeSitterChunker implements Chunker {
   }
 
   /**
-   * Creates a new Tree-sitter parser for the chunker's language.
-   * @returns  A Promise that resolves to a Parser instance configured for the chunker's language.
-   * @private 
+   * Returns a cached Tree-sitter parser for the chunker's language.
+   * Parsers are created once per grammar and reused across chunk() calls.
+   * @returns A Promise that resolves to a Parser instance.
    */
   private async _createParser(): Promise<Parser> {
+    const key = poolKey(this.grammarName, this.wasmFilePath);
+    const cached = parserPool.get(key);
+    if (cached) return cached;
+
     const lang = this.wasmFilePath
       ? await loadLanguageFromPath(this.grammarName, this.wasmFilePath)
       : await loadLanguage(this.grammarName);
     const parser = new Parser();
     parser.setLanguage(lang);
+    parserPool.set(key, parser);
     return parser;
+  }
+
+  /**
+   * Release all cached parsers for this chunker's language.
+   * Call when the chunker is no longer needed.
+   */
+  dispose(): void {
+    const key = poolKey(this.grammarName, this.wasmFilePath);
+    const parser = parserPool.get(key);
+    if (parser) {
+      parser.delete();
+      parserPool.delete(key);
+    }
   }
 
   /**
@@ -93,11 +117,10 @@ export abstract class TreeSitterChunker implements Chunker {
 
     const parser = await this._createParser();
     const tree = parser.parse(content);
-    if (!tree) { parser.delete(); return []; }
+    if (!tree) { return []; }
 
     const nodes = walkTree(tree.rootNode, this.nodeTypes, content);
     tree.delete();
-    parser.delete();
     return nodes.map((node: AstNode) => ({
       id: uuid(),
       content: node.text,

@@ -1,7 +1,7 @@
 /**
  * @fileoverview Anthropic Messages API description provider for generating natural-language descriptions of code chunks.
  */
-import type { Chunk, DescriptionProvider, DescriptionLogger } from "../core/interfaces.js";
+import type { BatchDescriptionOptions, Chunk, DescriptionProvider, DescriptionLogger } from "../core/interfaces.js";
 import type { DescriptionConfig } from "../core/config.js";
 import { postJson } from "../embedder/http.js";
 import { buildUserMessage, sleep } from "./shared.js";
@@ -45,11 +45,11 @@ export class AnthropicDescriptionProvider implements DescriptionProvider {
   }
 
   /** @inheritdoc */
-  async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger): Promise<Map<string, string>> {
+  async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger, opts?: BatchDescriptionOptions): Promise<Map<string, string>> {
     const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => process.stderr.write(`${msg}\n`), debug: (msg: string) => process.stderr.write(`${msg}\n`) };
     const concurrency = this.config.batchConcurrency ?? 3;
     const total = chunks.length;
-    log.info(`[describer] Generating descriptions for ${total} chunks (concurrency: ${concurrency})`);
+    log.debug(`[describer] Generating descriptions for ${total} chunks (concurrency: ${concurrency})`);
 
     const result = new Map<string, string>();
     const limit = pLimit(concurrency);
@@ -68,14 +68,12 @@ export class AnthropicDescriptionProvider implements DescriptionProvider {
             log.warn(`[describer] Failed to describe chunk ${chunk.id} (${chunk.metadata.filePath}:${chunk.metadata.startLine}): ${err instanceof Error ? err.message : String(err)}`);
           }
           completed++;
-          if (completed % 25 === 0 || completed === total) {
-            log.info(`[describer] Progress: ${completed}/${total}`);
-          }
+          opts?.onProgress?.(chunk, completed, opts.total ?? total);
         }),
       ),
     );
 
-    log.info(`[describer] Descriptions generated: ${result.size}/${total}`);
+    log.debug(`[describer] Descriptions generated: ${result.size}/${total}`);
     return result;
   }
 

@@ -21,7 +21,7 @@ import { embedBatch } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { swapStoreDirectories } from "../vectorstore/lancedb.js";
 import { createIndexStats, type IndexRunStats, type IndexStatusSummary } from "./stats.js";
-import { prepareFile, buildTextsToEmbed, storeFileChunks, type WorkerResult } from "./worker.js";
+import { prepareFile, buildTextsToEmbed, type WorkerResult } from "./worker.js";
 import { buildFallbackDescription } from "./description-stage.js";
 import { getCurrentCommit, getChangedFilesSince, getUntrackedFiles, getRepoRoot } from "./git-diff.js";
 
@@ -392,6 +392,20 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
   const aborted = (): boolean => options.abortSignal?.aborted ?? false;
 
+  // Shared progress logger: "stage <file> (chunk i/n) — X/total remaining (P%)".
+  const logChunkProgress = (
+    stage: string,
+    fileLabel: string,
+    index: number,
+    count: number,
+    completed: number,
+    total: number,
+  ): void => {
+    const remaining = total - completed;
+    const pct = total > 0 ? ((remaining / total) * 100).toFixed(1) : "0.0";
+    logger.info(`${stage} ${fileLabel} (chunk ${index}/${count}) — ${remaining}/${total} remaining (${pct}%)`);
+  };
+
   if (deferDescriptions) {
     const deferredPreps = prepared.filter((p) => p.chunks && p.chunks.length > 0 && p.relPath !== undefined);
     if (deferredPreps.length > 0) {
@@ -412,6 +426,32 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
       for (const chunk of oversizedChunks) {
         chunk.description = buildFallbackDescription(chunk);
+      }
+
+      // Per-file chunk index + label for clear progress reporting, plus a shared
+      // progress logger emitting "stage <file> (chunk i/n) — X/total remaining (P%)".
+      const chunkToFileLabel = new Map<string, string>();
+      for (const prep of deferredPreps) {
+        for (const chunk of prep.chunks ?? []) {
+          chunkToFileLabel.set(chunk.id, prep.fileLabel);
+        }
+      }
+      const chunkMeta = new Map<string, { fileLabel: string; index: number; count: number }>();
+      {
+        const perFileCount = new Map<string, number>();
+        for (const chunk of allChunks) {
+          perFileCount.set(chunk.metadata.filePath, (perFileCount.get(chunk.metadata.filePath) ?? 0) + 1);
+        }
+        const perFileSeen = new Map<string, number>();
+        for (const chunk of allChunks) {
+          const seen = perFileSeen.get(chunk.metadata.filePath) ?? 0;
+          perFileSeen.set(chunk.metadata.filePath, seen + 1);
+          chunkMeta.set(chunk.id, {
+            fileLabel: chunkToFileLabel.get(chunk.id) ?? chunk.metadata.filePath,
+            index: seen + 1,
+            count: perFileCount.get(chunk.metadata.filePath) ?? 1,
+          });
+        }
       }
 
       // Advance progress to Description stage before descriptions start
@@ -448,55 +488,85 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           }
         }
 
-        // Process cache misses in sub-batches so descriptions are persisted
-        // incrementally.  If the process is interrupted (Ctrl+C, crash), only
-        // the current in-flight sub-batch is lost — prior sub-batches are
-        // already saved to the description cache and will be reused on resume.
+        // Process cache misses in parallel waves with throttled cache saves.
+        // Parallel sub-batches reduce serial LLM turnaround time.
+        // Cache saves are throttled to avoid O(n^2) full-JSON serialization I/O.
         if (cacheMisses.length > 0) {
           const totalMisses = cacheMisses.length;
+          const descConcurrency = options.config.indexing.descriptionConcurrency ?? 4;
           const SUB_BATCH = 10;
-          let describedCount = 0;
+          let describedDone = 0;
+          let describedSinceLastSave = 0;
+          const SAVE_INTERVAL = 200;
 
+          const descLimit = pLimit(descConcurrency);
+          const subBatchTasks: Array<{ i: number; chunks: Chunk[] }> = [];
           for (let i = 0; i < totalMisses; i += SUB_BATCH) {
-            if (aborted()) {
-              logger.debug(`Description generation aborted at ${i}/${totalMisses}`);
-              break;
-            }
-
-            const subBatch = cacheMisses.slice(i, i + SUB_BATCH);
-            try {
-              const batchResult = await options.descriptionProvider!.generateBatchDescriptions(subBatch, logger);
-              const newCacheEntries: Array<[string, string]> = [];
-              for (const chunk of subBatch) {
-                const desc = batchResult.get(chunk.id);
-                if (desc && desc.trim().length > 0) {
-                  chunk.description = desc;
-                  newCacheEntries.push([DescriptionCache.codeKey(chunk.content, descHash), desc]);
-                  describedCount++;
-                }
-              }
-              if (newCacheEntries.length > 0) {
-                descCache.setMany(newCacheEntries);
-                await descCache.save();
-              }
-              logger.debug(`Descriptions checkpoint: ${describedCount}/${totalMisses}`);
-            } catch (err) {
-              logger.warn(`  Description sub-batch failed (${i}-${i + SUB_BATCH}): ${(err as Error).message}`);
-              const failedPreps = new Set<(typeof deferredPreps)[number]>();
-              for (const chunk of subBatch) {
-                const prep = chunkToPrep.get(chunk.id);
-                if (prep) failedPreps.add(prep);
-              }
-              for (const prep of failedPreps) {
-                prep.descriptionFailed = true;
-              }
-            }
+            subBatchTasks.push({ i, chunks: cacheMisses.slice(i, i + SUB_BATCH) });
           }
+
+          await Promise.all(
+            subBatchTasks.map(({ i, chunks: subBatch }) =>
+              descLimit(async () => {
+                if (aborted()) return;
+
+                try {
+                  const batchResult = await options.descriptionProvider!.generateBatchDescriptions(subBatch, logger, {
+                    total: totalMisses,
+                    onProgress: (chunk) => {
+                      describedDone++;
+                      const meta = chunkMeta.get(chunk.id);
+                      if (meta) logChunkProgress("Describing", meta.fileLabel, meta.index, meta.count, describedDone, totalMisses);
+                    },
+                  });
+                  const newCacheEntries: Array<[string, string]> = [];
+                  for (const chunk of subBatch) {
+                    const desc = batchResult.get(chunk.id);
+                    if (desc && desc.trim().length > 0) {
+                      chunk.description = desc;
+                      newCacheEntries.push([DescriptionCache.codeKey(chunk.content, descHash), desc]);
+                    }
+                  }
+                  if (newCacheEntries.length > 0) {
+                    descCache.setMany(newCacheEntries);
+                    describedSinceLastSave += newCacheEntries.length;
+                    if (describedSinceLastSave >= SAVE_INTERVAL) {
+                      await descCache.save();
+                      describedSinceLastSave = 0;
+                    }
+                  }
+                } catch (err) {
+                  logger.warn(`  Description sub-batch failed (${i}-${i + subBatch.length}): ${(err as Error).message}`);
+                  const failedPreps = new Set<(typeof deferredPreps)[number]>();
+                  for (const chunk of subBatch) {
+                    const prep = chunkToPrep.get(chunk.id);
+                    if (prep) failedPreps.add(prep);
+                  }
+                  for (const prep of failedPreps) {
+                    prep.descriptionFailed = true;
+                  }
+                }
+              }),
+            ),
+          );
+
+          if (describedSinceLastSave > 0) {
+            await descCache.save();
+          }
+          logger.debug(`Descriptions generated for ${totalMisses} chunks (concurrency: ${descConcurrency})`);
         }
       } else if (allChunks.length > 0) {
         // No descHash available (no description provider) — still generate descriptions
+        let describedDone = 0;
         try {
-          const batchResult = await options.descriptionProvider!.generateBatchDescriptions(allChunks, logger);
+          const batchResult = await options.descriptionProvider!.generateBatchDescriptions(allChunks, logger, {
+            total: allChunks.length,
+            onProgress: (chunk) => {
+              describedDone++;
+              const meta = chunkMeta.get(chunk.id);
+              if (meta) logChunkProgress("Describing", meta.fileLabel, meta.index, meta.count, describedDone, allChunks.length);
+            },
+          });
           for (const chunk of allChunks) {
             const desc = batchResult.get(chunk.id);
             if (desc && desc.trim().length > 0) {
@@ -525,10 +595,9 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     }
   }
 
-  // Deletions for modified/re-removed files happen per-worker, right before
-  // embedding, so that an abort mid-embed doesn't orphan old entries.
+  // Cross-file embedding batch: collect all texts into a single queue,
+  // embed in one batched call (with concurrency), then distribute back.
   const isOllama = options.embedder.name === "ollama";
-  const ollamaMaxBatch = options.config.indexing.ollamaMaxBatchSize ?? 4000;
   const defaultBatchSize = options.config.indexing.embedBatchSize;
   const defaultConcurrency = options.config.indexing.embedConcurrency ?? 1;
 
@@ -550,26 +619,108 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     );
   }
 
-  const embedStoreLimit = pLimit(options.config.indexing.concurrency);
-  const workerResults = await Promise.all(
-    prepared.map((prep) =>
-      embedStoreLimit(async () => {
+  // ── Phase 1: Collect embed queue + handle early results ────────────────
+  const embedQueue: Array<{ fileIdx: number; chunkIdx: number; text: string }> = [];
+  let totalEmbedChunks = 0;
+  const earlyWorkerResults = new Map<number, WorkerResult>();
+
+  for (let fi = 0; fi < prepared.length; fi++) {
+    const prep = prepared[fi]!;
+
+    if (prep.earlyResult) {
+      if (prep.earlyResult.isRemoved) {
+        await effectiveStore.deleteByFilePath(prep.normalizedPath);
+        options.keywordIndex?.removeByFilePath(prep.normalizedPath);
+        delete manifest.files[prep.normalizedPath];
+        enqueueManifestSave();
+      }
+      earlyWorkerResults.set(fi, prep.earlyResult);
+      continue;
+    }
+
+    if (!prep.chunks || !prep.textToEmbed || prep.textToEmbed.length === 0) {
+      options.progress?.finishFile(prep.fileLabel);
+      earlyWorkerResults.set(fi, {
+        normalizedPath: prep.normalizedPath, hash: prep.hash, chunkCount: 0,
+        fileLabel: prep.fileLabel,
+        isNew: false, isModified: false, isUnchanged: false, isEmpty: false,
+        isTooSmall: false, isRemoved: true, hadChunks: false,
+        descriptionFailed: prep.descriptionFailed,
+      });
+      continue;
+    }
+
+    options.progress?.finishStage(prep.fileLabel);
+    for (let ci = 0; ci < prep.textToEmbed.length; ci++) {
+      embedQueue.push({ fileIdx: fi, chunkIdx: ci, text: prep.textToEmbed[ci]! });
+    }
+    totalEmbedChunks += prep.textToEmbed.length;
+  }
+
+  // ── Phase 2: Embed all texts in a single batched call ──────────────────
+  const batchSize = isOllama
+    ? Math.min(options.config.indexing.ollamaMaxBatchSize ?? 4000, defaultBatchSize)
+    : defaultBatchSize;
+
+  let embeddedDone = 0;
+  const allTexts = embedQueue.map(item => item.text);
+  let allEmbeddings: number[][] = [];
+
+  if (allTexts.length > 0) {
+    try {
+      allEmbeddings = await embedBatch(
+        options.embedder,
+        allTexts,
+        batchSize,
+        "document",
+        defaultConcurrency,
+        (completed, total) => {
+          embeddedDone = completed;
+          logChunkProgress("Embedding", "", completed, total, embeddedDone, totalEmbedChunks);
+        },
+      );
+    } catch (err) {
+      logger.warn(`  Global embedding failed: ${(err as Error).message}`);
+      for (const { fileIdx } of embedQueue) {
+        options.progress?.failFile(prepared[fileIdx]!.fileLabel);
+        earlyWorkerResults.set(fileIdx, {
+          normalizedPath: prepared[fileIdx]!.normalizedPath,
+          hash: prepared[fileIdx]!.hash,
+          chunkCount: 0, fileLabel: prepared[fileIdx]!.fileLabel,
+          isNew: false, isModified: false, isUnchanged: false, isEmpty: false,
+          isTooSmall: false, isRemoved: true, hadChunks: false,
+          descriptionFailed: prepared[fileIdx]!.descriptionFailed,
+        });
+      }
+      embedQueue.length = 0; // prevent double-processing in store phase
+    }
+  }
+
+  // ── Distribute embeddings back to per-file chunks ─────────────────────
+  for (let i = 0; i < embedQueue.length; i++) {
+    const { fileIdx, chunkIdx } = embedQueue[i]!;
+    const emb = allEmbeddings[i];
+    const prep = prepared[fileIdx]!;
+    if (prep.chunks && prep.chunks[chunkIdx] && Array.isArray(emb) && emb.length > 0 && typeof emb[0] === "number") {
+      prep.chunks[chunkIdx]!.embedding = emb as number[];
+    }
+  }
+
+  // ── Phase 3: Store + manifest update per file (parallel) ──────────────
+  const storeLimit = pLimit(options.config.indexing.concurrency);
+  const storeResults = await Promise.all(
+    prepared.map((prep, fi) =>
+      storeLimit(async () => {
         if (aborted()) {
           return { normalizedPath: prep.normalizedPath, skipped: true as const } as const;
         }
 
-        if (prep.earlyResult) {
-          // Remove stale manifest/store entries for files that no longer produce chunks
-          if (prep.earlyResult.isRemoved) {
-            await effectiveStore.deleteByFilePath(prep.normalizedPath);
-            options.keywordIndex?.removeByFilePath(prep.normalizedPath);
-            delete manifest.files[prep.normalizedPath];
-            enqueueManifestSave();
-          }
-          return prep.earlyResult;
-        }
+        // Return early results from phase 1
+        const earlyResult = earlyWorkerResults.get(fi);
+        if (earlyResult) return earlyResult;
 
-        if (!prep.chunks || !prep.textToEmbed || prep.textToEmbed.length === 0) {
+        // No-embed path (shouldn't reach here but guard anyway)
+        if (!prep.chunks || prep.textToEmbed?.length === 0) {
           options.progress?.finishFile(prep.fileLabel);
           return {
             normalizedPath: prep.normalizedPath, hash: prep.hash, chunkCount: 0,
@@ -580,38 +731,31 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           };
         }
 
-        const batchSize = isOllama
-          ? Math.min(prep.textToEmbed.length, ollamaMaxBatch)
-          : defaultBatchSize;
-        const concurrency = isOllama ? 1 : defaultConcurrency;
-
-        options.progress?.finishStage(prep.fileLabel);
-
-        let embeddings: number[][];
-        try {
-          embeddings = await embedBatch(
-            options.embedder,
-            prep.textToEmbed,
-            batchSize,
-            "document",
-            concurrency,
-          );
-        } catch (err) {
-          logger.warn(`  ${prep.fileLabel} (embedding failed: ${(err as Error).message})`);
-          options.progress?.failFile(prep.fileLabel);
-          return {
-            normalizedPath: prep.normalizedPath, hash: prep.hash, chunkCount: 0,
-            fileLabel: prep.fileLabel,
-            isNew: false, isModified: false, isUnchanged: false, isEmpty: false,
-            isTooSmall: false, isRemoved: true, hadChunks: false,
-            descriptionFailed: prep.descriptionFailed,
-          };
+        // Store chunks with pre-attached embeddings
+        const validChunks = (prep.chunks ?? []).filter(
+          (c) => c.embedding && c.embedding.length > 0,
+        );
+        if (validChunks.length > 0) {
+          await effectiveStore.addChunks(validChunks);
         }
 
-        // ── Store (new data first; orphan cleanup is handled inside the store) ──
-        const result = await storeFileChunks(prep, embeddings, effectiveStore, logger);
+        const result: WorkerResult = {
+          normalizedPath: prep.normalizedPath,
+          hash: prep.hash,
+          chunkCount: prep.chunks?.length ?? 0,
+          fileLabel: prep.fileLabel,
+          isNew: !prep.isModified,
+          isModified: prep.isModified,
+          isUnchanged: false,
+          isEmpty: false,
+          isTooSmall: false,
+          isRemoved: validChunks.length === 0,
+          hadChunks: (prep.chunks?.length ?? 0) > 0,
+          descriptionFailed: prep.descriptionFailed,
+          descHash: prep.descHash,
+        };
 
-        // ── Update manifest in-memory and enqueue an atomic save ──
+        // Update manifest
         if (result.chunkCount > 0 && !result.isRemoved) {
           const meta = fileMeta.get(result.normalizedPath);
           const entry: {
@@ -646,6 +790,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     ),
   );
 
+  const workerResults = storeResults;
   const finalResults: WorkerResult[] = [];
   for (const r of workerResults) {
     if ((r as { skipped?: boolean }).skipped) break;

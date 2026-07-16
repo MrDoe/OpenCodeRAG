@@ -29,7 +29,6 @@ import {
   logIndexSummary,
   formatDuration,
 } from "../format.js";
-import { LineProgressReporter } from "../progress.js";
 import type { CliOptions } from "../types.js";
 
 /**
@@ -120,7 +119,6 @@ export function registerIndexCommand(program: Command): void {
         }
 
         logCliInfo(logFilePath, "index", `${c.label("Scanning:")} ${c.file(cwd)}`);
-        const progress = new LineProgressReporter(process.stdout);
         const runPass = async (
           watchTriggered: boolean = false,
           abortSignal?: AbortSignal,
@@ -135,7 +133,6 @@ export function registerIndexCommand(program: Command): void {
             embedder,
             keywordIndex,
             descriptionProvider,
-            progress,
             force: !!(options.force && !watchTriggered),
             abortSignal,
             dimension,
@@ -143,7 +140,6 @@ export function registerIndexCommand(program: Command): void {
             logger: watchAwareLogger(logFilePath, watchTriggered ? "watch" : "index", watchTriggered),
           });
 
-          progress.done();
           if (!watchTriggered) {
             logIndexSummary(logFilePath, stats);
             logCliInfo(

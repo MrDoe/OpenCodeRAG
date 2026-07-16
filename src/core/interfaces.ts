@@ -25,12 +25,28 @@ export interface DescriptionLogger {
   debug(message: string): void;
 }
 
+/** Progress callback invoked after each chunk is described during batch generation. */
+export type ChunkProgressFn = (chunk: Chunk, completed: number, total: number) => void;
+
+/** Optional progress reporting for batch description generation. */
+export interface BatchDescriptionOptions {
+  /** Total number of chunks across the whole run (may exceed `chunks.length` when called per sub-batch). */
+  total?: number;
+  /** Called once per completed chunk with the chunk, the running completed count, and `total`. */
+  onProgress?: ChunkProgressFn;
+}
+
 /** Generates natural-language descriptions for code chunks using an LLM. */
 export interface DescriptionProvider {
   /** Generate a description for a single chunk. */
   generateDescription(chunk: Chunk): Promise<string>;
-  /** Generate descriptions for multiple chunks concurrently. Returns a Map of chunk ID to description. */
-  generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger): Promise<Map<string, string>>;
+  /**
+   * Generate descriptions for multiple chunks concurrently. Returns a Map of chunk ID to description.
+   * @param chunks - Chunks to describe.
+   * @param logger - Optional logger for diagnostic messages.
+   * @param opts - Optional progress reporting options.
+   */
+  generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger, opts?: BatchDescriptionOptions): Promise<Map<string, string>>;
 }
 
 /** Explains how a search result score was computed, including vector and keyword contributions. */

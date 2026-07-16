@@ -57,6 +57,8 @@ export function createEmbedder(config: RagConfig): EmbeddingProvider {
  * @param batchSize - Number of texts per batch (default 10)
  * @param purpose - Optional hint for query vs. document embedding
  * @param concurrency - Maximum number of concurrent batch requests (default 1)
+ * @param onProgress - Optional callback invoked after each batch with the running
+ *   completed count and total; per-text granularity when `concurrency <= 1`.
  * @returns A promise resolving to a flat array of embedding vectors (one per input text)
  */
 export async function embedBatch(
@@ -64,7 +66,8 @@ export async function embedBatch(
   texts: string[],
   batchSize: number = 10,
   purpose?: "query" | "document",
-  concurrency: number = 1
+  concurrency: number = 1,
+  onProgress?: (completed: number, total: number) => void,
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
 
@@ -78,15 +81,19 @@ export async function embedBatch(
     for (const batch of batches) {
       const embeddings = await embedder.embed(batch.texts, purpose);
       results.push(...embeddings);
+      onProgress?.(results.length, texts.length);
     }
     return results;
   }
 
   const limit = pLimit(concurrency);
+  let completedCount = 0;
   const batchResults = await Promise.all(
     batches.map((batch) =>
       limit(async () => {
         const embeddings = await embedder.embed(batch.texts, purpose);
+        completedCount += embeddings.length;
+        onProgress?.(completedCount, texts.length);
         return { index: batch.index, embeddings };
       }),
     ),

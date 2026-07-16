@@ -3,9 +3,9 @@
  * analysis report (console table + markdown file).
  *
  * Usage: node --import tsx src/eval/compare-merge.ts
- *   --main doc/eval-results-main.json
- *   --branch doc/eval-results-t1-cosine-l2.json
- *   --output doc/eval-branch-compare-report.md
+ *   --main .opencode/rag_db/eval-results/main.json
+ *   --branch .opencode/rag_db/eval-results/t1-cosine-l2.json
+ *   --output .opencode/rag_db/eval-results/branch-compare-report.md
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -67,7 +67,7 @@ function parseArgs(): { main: string; branch: string; output: string } {
   const args = process.argv.slice(2);
   let main = "";
   let branch = "";
-  let output = "doc/eval-branch-compare-report.md";
+  let output = ".opencode/rag_db/eval-results/branch-compare-report.md";
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--main" && args[i + 1]) {

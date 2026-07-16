@@ -3,9 +3,9 @@
  * Focuses on rank agreement rather than absolute scores.
  *
  * Usage: node --import tsx src/eval/compare-rankings.ts
- *   --main doc/eval-results-main.json
- *   --branch doc/eval-results-t1-cosine-l2.json
- *   --output doc/eval-ranking-report.md
+ *   --main .opencode/rag_db/eval-results/main.json
+ *   --branch .opencode/rag_db/eval-results/t1-cosine-l2.json
+ *   --output .opencode/rag_db/eval-results/ranking-report.md
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -50,7 +50,7 @@ interface BenchmarkOutput {
 
 function parseArgs() {
   const args = process.argv.slice(2);
-  let main = "", branch = "", output = "doc/eval-ranking-report.md";
+  let main = "", branch = "", output = ".opencode/rag_db/eval-results/ranking-report.md";
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--main" && args[i + 1]) { main = path.resolve(args[i + 1]!); i++; }
     else if (args[i] === "--branch" && args[i + 1]) { branch = path.resolve(args[i + 1]!); i++; }

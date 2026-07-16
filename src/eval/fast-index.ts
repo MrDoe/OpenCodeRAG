@@ -3,7 +3,7 @@
  * Indexes only files unchanged between the current branch and main.
  * Run on the main branch after copying chunk-descriptions.json from t1-cosine-l2.
  *
- * Usage: node --import tsx src/eval/fast-index.ts --descriptions doc/chunk-descriptions.json
+ * Usage: node --import tsx src/eval/fast-index.ts --descriptions .opencode/rag_db/chunk-descriptions.json
  */
 
 import { readFileSync, readdirSync } from "node:fs";
@@ -102,7 +102,7 @@ function walkFiles(dir: string): string[] {
 
 function parseArgs(): { descriptionsPath: string; force: boolean } {
   const args = process.argv.slice(2);
-  let descriptionsPath = path.join(WORKTREE, "doc", "chunk-descriptions.json");
+  let descriptionsPath = path.join(WORKTREE, ".opencode", "rag_db", "chunk-descriptions.json");
   let force = false;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--descriptions" && args[i + 1]) {

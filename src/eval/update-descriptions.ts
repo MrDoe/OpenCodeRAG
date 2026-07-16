@@ -2,7 +2,7 @@
  * @fileoverview Update a LanceDB index's chunk descriptions from a JSON dump file.
  * Run AFTER normal indexing to replace descriptions with ones from another branch.
  *
- * Usage: node --import tsx src/eval/update-descriptions.ts --input doc/chunk-descriptions.json
+ * Usage: node --import tsx src/eval/update-descriptions.ts --input .opencode/rag_db/chunk-descriptions.json
  */
 
 import { readFileSync } from "node:fs";
