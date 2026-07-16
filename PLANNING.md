@@ -37,13 +37,15 @@
 - [x] Cohere embedding provider with health check
 - [x] Config validation at startup — validate `opencode-rag.json` schema with clear error messages
 - [x] Better ranking/diversity for `chat.message` file suggestions
+- [x] Git-aware incremental indexing — `git diff --name-only` since last indexed commit, skips unchanged tracked files (`src/indexer/git-diff.ts`, `manifest.lastGitCommit`)
+- [x] Context window optimization — adjacent chunk merging, Jaccard similarity dedup, per-file diversity cap (`src/retriever/context-optimizer.ts`)
 
 ## Short Term
-- [ ] Git-aware incremental indexing — `git diff --name-only` since last indexed commit, skips unchanged tracked files
 - [ ] LLM-based re-ranking layer (cross-encoder or lightweight model after vector search)
 - [ ] Query rewriting / multi-variant expansion
-- [ ] Context window optimization (dedup, merge adjacent chunks)
-- [ ] Persistent query cache (disk-based, not just in-memory)
+- [ ] Persistent query cache (disk-based, survives restarts)
+- [ ] Per-language chunking config — per-extension overrides for `nodeTypes`, `chunkSize`, `overlap` (e.g. Python gets smaller AST nodes than Java)
+- [ ] Concurrent chunking — parallel file scanning/chunking for large repos (bottleneck is sequential chunking in `runIndexPass`)
 
 ## Mid Term
 
@@ -53,6 +55,8 @@
 - [ ] IDE context awareness (current file, cursor position)
 - [ ] Prompt template customization
 - [ ] Memory / persistent context across sessions
+- [ ] Auto-generated codebase summaries — LLM produces directory-level summaries from indexed chunks for onboarding and context injection
+- [ ] Chunk quality heuristics — score chunks during indexing for size, coherence, boundary quality; flag poorly-chunked files
 
 ## Long Term
 
@@ -63,83 +67,4 @@
 - [ ] Access control (per-folder permissions, sensitive file exclusion)
 - [ ] Index export/import — serialize the index for CI/CD, team sharing, or backup/restore
 - [ ] Performance benchmark suite — measure index time, query latency, memory usage across repo sizes
-
----
-
-# 💡 Brainstorming: Future Enhancements
-
-## Query Enhancement
-
-Improve retrieval quality by expanding shorthand queries into multiple semantic variants before searching.
-
-## Code Graph Awareness
-
-Build a structural understanding of the codebase: function call graphs, import dependencies, class hierarchies. Enables "where is this function used?" and "what depends on this module?" queries.
-
-## Re-ranking Layer
-
-After vector search, use a cross-encoder or lightweight LLM to re-rank results. Drastically improves precision for ambiguous queries.
-
-## Context Window Optimization
-
-Prevent token overload by deduplicating similar chunks, merging adjacent chunks, and ranking by diversity. Currently `maxContextChunks` limits the count, but no quality filtering is applied.
-
-## IDE/Editor Context Awareness
-
-Integrate with the editor's current context: active file, cursor position, and selected code. Boost retrieval relevance by weighting results near the user's current focus.
-
-## Access Control
-
-Per-folder permissions and sensitive file exclusion for enterprise or multi-user environments.
-
-## Persistent Query Cache
-
-Persist query→results on disk (not just in-memory session cache) so repeated queries across restarts are instant.
-
-## Non-Code / Multimodal Retrieval
-
-Initial document support already in place via extracted text for PDF, DOCX, DOC, and Excel. Future work: diagrams, JSON schemas, API specs, YAML configs.
-
-## Prompt Templates
-
-Allow users to customize how retrieved context is formatted and injected into LLM prompts. Currently uses a fixed pattern.
-
-## Memory & Storage Optimization
-
-Quantized embeddings to reduce storage, pruning stale entries, garbage collection on unused chunks.
-
-## Persistent Session Memory
-
-Retain coding patterns, project conventions, and past decisions across sessions. Inspired by [opencode-mem](https://github.com/tickernelz/opencode-mem): store structured memories in a local vector DB, auto-capture insights, inject relevant memories into future prompts.
-
-## Multi-Workspace Awareness
-
-Support indexing and searching across multiple repositories. Enable cross-project queries for monorepo setups or microservice architectures. Could use per-workspace vector shards with a unified query layer.
-
-## Index Export / Import
-
-Serialize the full index (vectors + metadata + keyword index) to a portable format. Enables: CI/CD pipelines that pre-index and ship the index, team sharing of a common index, and backup/restore across machines.
-
-## Performance Benchmark Suite
-
-Automated suite measuring: index time by repo size, query latency p50/p95/p99, memory/disk usage. Track regressions across releases. Essential before optimizing chunking or storage.
-
-## Config Validation at Startup
-
-Validate `opencode-rag.json` against a JSON schema on load. Surface clear, actionable error messages for invalid or missing fields instead of silent fallback to defaults.
-
-## Per-Language Chunking Config
-
-Allow per-extension overrides for `nodeTypes`, `chunkSize`, `overlap` in config. E.g., Python gets smaller AST nodes than Java; Go gets different function boundaries.
-
-## Concurrent Chunking
-
-Parallel file scanning and chunking for large repos. LanceDB already handles concurrent writes via promise guard; the bottleneck is sequential chunking in `runIndexPass`.
-
-## Auto-Generated Codebase Summaries
-
-LLM produces directory-level summaries from indexed chunks. Useful for onboarding, project overview retrieval ("what does the auth module do?"), and context injection.
-
-## Chunk Quality Heuristics
-
-Score chunks during indexing for size, coherence, and boundary quality. Flag poorly-chunked files for improvement. Could guide chunker selection or parameter tuning.
+- [ ] Memory & storage optimization — quantized embeddings to reduce storage, pruning stale entries, garbage collection on unused chunks

@@ -64,9 +64,9 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 |---|---|
 | LLM-based re-ranking | Cross-encoder or lightweight model after vector search |
 | Query rewriting | Multi-variant expansion for ambiguous queries |
-| Context window optimization | Dedup, merge adjacent chunks, diversity ranking |
-| Better file suggestions | Improved ranking/diversity for `chat.message` file lists |
-| Debug/retrieval surfaces | Explain why files or chunks were returned |
+| Persistent query cache | Disk-based cache so repeated queries across restarts are instant |
+| Per-language chunking config | Per-extension overrides for `nodeTypes`, `chunkSize`, `overlap` |
+| Concurrent chunking | Parallel file scanning/chunking for large repos |
 
 ## Mid Term
 
@@ -76,26 +76,27 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 | Multi-repo search | Index and search across multiple workspaces |
 | IDE context awareness | Use current file, cursor position for relevance boosting |
 | Prompt customization | Customize how retrieved context is formatted |
-| Debugging tools | Inspect embeddings, vector distances, result explanations |
 | Persistent session memory | Retain coding patterns and decisions across sessions |
+| Auto-generated codebase summaries | LLM directory-level summaries from indexed chunks |
+| Chunk quality heuristics | Score chunks for size, coherence, boundary quality |
 
 ## Long Term
 
 | Feature | Description |
 |---|---|
-| Evaluation framework | Benchmark queries, precision@K, recall measurements |
 | Code execution-aware retrieval | Run code to understand its behavior for better retrieval |
 | Semantic refactoring assistant | Code transformations based on natural language |
 | Agent-based code navigation | Autonomous exploration of codebase structure |
 | Multimodal support | Diagrams, API specs, JSON schemas, YAML configs |
 | Access control | Per-folder permissions, sensitive file exclusion |
-| Web UI | Browser-based index inspection and search result browsing |
+| Index export/import | Serialize index for CI/CD, team sharing, backup/restore |
+| Performance benchmark suite | Measure index time, query latency, memory usage |
+| Memory & storage optimization | Quantized embeddings, pruning, garbage collection |
 
 ## Key Next Steps
 
 1. **LLM-based re-ranking** for retrieval precision
 2. **Code graph integration** for structural code understanding
-3. **Context window optimization** for better prompt packing
-4. **Query rewriting** and retrieval explainability
-5. **Persistent session memory** across coding sessions
-6. **Web UI** for index inspection and search result browsing
+3. **Query rewriting** for ambiguous query expansion
+4. **Persistent session memory** across coding sessions
+5. **Per-language chunking config** for finer chunking control
