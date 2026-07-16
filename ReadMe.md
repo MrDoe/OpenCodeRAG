@@ -169,10 +169,10 @@ OpenCodeRAG registers tools that agents can invoke directly. Agents discover the
 
 When using OpenCode, the plugin enhances your agent with three discovery mechanisms:
 
-### 1. Skill-Based Discovery (Recommended)
+### 1. Skill-Based Discovery
 `opencode-rag init` creates `.opencode/skills/opencode-rag/SKILL.md` - an OpenCode skill that teaches agents the tool workflow. Agents load it on demand via the `skill` tool, keeping token overhead minimal.
 
-### 2. System Prompt Guidance (Conditional)
+### 2. System Prompt Guidance
 When chunks are indexed, a brief tool list is prepended to the system prompt so agents know the tools exist. This is skipped when no chunks are indexed to save tokens.
 
 ### 3. On-Demand RAG Context (Ctrl+Enter / Ctrl+Alt+Enter)
