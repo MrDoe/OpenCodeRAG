@@ -378,7 +378,10 @@ agent to inform you and offer to install it via `opencode-rag update`.
 ```json
 {
   "autoUpdate": {
-    "enabled": true
+    "enabled": true,
+    "autoInstall": false,
+    "cooldownMs": 3600000,
+    "maxConsecutiveFailures": 3
   }
 }
 ```
@@ -386,8 +389,13 @@ agent to inform you and offer to install it via `opencode-rag update`.
 | Option | Default | Description |
 |---|---|---|
 | `enabled` | `true` | Check for updates on plugin startup and prompt to install |
+| `autoInstall` | `false` | Automatically install the update in the background instead of asking. When true, the plugin runs `npm install -g` and re-syncs the runtime on startup without prompting. A one-time "restart needed" notice is added to the system prompt. |
+| `cooldownMs` | `3600000` | Minimum time (ms) between auto-install attempts for the same version. Prevents re-installing on every plugin reload. |
+| `maxConsecutiveFailures` | `3` | Back off after this many consecutive auto-install failures within the cooldown window. Reset on success. |
 
-When enabled, the plugin checks GitHub Releases API for new versions on startup. If an update is available, a notification is added to the system prompt. You can then run `npm update -g opencode-rag-plugin && opencode-rag setup` to install the update.
+When `autoInstall` is `false` (default), the plugin checks GitHub Releases API for new versions on startup. If an update is available, a notification is added to the system prompt. You can then run `npm update -g opencode-rag-plugin && opencode-rag setup` to install the update.
+
+When `autoInstall` is `true`, the install runs silently in the background on startup. A cooldown file (`.auto-update-state.json`) in the store path prevents redundant attempts. After a successful install, a one-time "restart needed" prompt is added to the system transform hook.
 
 ### `logging`
 

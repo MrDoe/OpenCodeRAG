@@ -29,7 +29,8 @@ import { loadDocProgress, markSubdirectoryDocumented } from "./core/doc-progress
 import { loadManifest } from "./core/manifest.js";
 import { createSessionLogger, type SessionLogger } from "./eval/session-logger.js";
 import { countTokens } from "./eval/token-counter.js";
-import { checkForUpdate, getCurrentVersion, type UpdateInfo } from "./core/version-check.js";
+import { checkForUpdate, getCurrentVersion, installLatestUpdate, type UpdateInfo } from "./core/version-check.js";
+import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "./core/auto-update-state.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -50,6 +51,8 @@ const mcpServers = new Map<string, { close: () => Promise<void> }>();
 const pendingUpdateInfo = new Map<string, UpdateInfo>();
 /** Workspace directories that have already been prompted about an update this session. */
 const notifiedUpdateDirs = new Set<string>();
+/** Pending "restart needed" notice after a background auto-install. */
+const pendingRestartNotice = new Map<string, { fromVersion: string; toVersion: string }>();
 
 /** Guard flag to prevent re-entrant shutdown. */
 let shutdownRegistered = false;
@@ -66,6 +69,7 @@ async function shutdownPluginResources(): Promise<void> {
   }
   configCache.clear();
   pendingUpdateInfo.clear();
+  pendingRestartNotice.clear();
   notifiedUpdateDirs.clear();
   destroyAllPooledConnections();
 }
@@ -866,6 +870,19 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         );
       }
 
+      // Inject a one-time "restart needed" notice after a background auto-install.
+      // Fires only once per workspace per session, mirroring the notify-only pattern above.
+      const restartInfo = pendingRestartNotice.get(options.worktree);
+      if (restartInfo && !notifiedUpdateDirs.has(options.worktree + ":restart")) {
+        notifiedUpdateDirs.add(options.worktree + ":restart");
+        pendingRestartNotice.delete(options.worktree);
+        output.system.unshift(
+          `OpenCodeRAG was automatically updated from v${restartInfo.fromVersion} to v${restartInfo.toVersion} ` +
+          `in the background. At the very start of your next response, tell the user the update was installed ` +
+          `and ask them to restart OpenCode to load the new version. Do not mention this notice again.`,
+        );
+      }
+
       // Inject documentation mode system prompt if enabled
       const docMode = getEffectiveCfg().documentationMode;
       if (docMode?.enabled && docMode.systemPrompt) {
@@ -1422,6 +1439,7 @@ export const ragPlugin: Plugin = async (
   // Clean up stale config cache and pending update info for this directory
   configCache.delete(input.directory);
   pendingUpdateInfo.delete(input.directory);
+  pendingRestartNotice.delete(input.directory);
   notifiedUpdateDirs.delete(input.directory);
   // Clean up idle HTTP sockets from previous provider connections
   destroyAllPooledConnections();
@@ -1527,14 +1545,75 @@ export const ragPlugin: Plugin = async (
 
   // Auto-update check (non-blocking, best-effort). On by default; can be
   // disabled via `autoUpdate.enabled: false` in opencode-rag.json. When a newer
-  // release is found it is stored and surfaced as a one-time install prompt via
-  // the system transform hook (see createRagHooks).
+  // release is found it is either surfaced as a one-time install prompt via
+  // the system transform hook (default) or automatically installed in the
+  // background when `autoUpdate.autoInstall: true` is configured.
   const autoUpdateCfg = effectiveCfg.autoUpdate;
   if (autoUpdateCfg?.enabled) {
     const currentVersion = getCurrentVersion();
     checkForUpdate(currentVersion)
       .then((info: UpdateInfo) => {
-        if (info.updateAvailable) {
+        if (!info.updateAvailable) return;
+
+        if (autoUpdateCfg?.autoInstall) {
+          // Background auto-install branch (opt-in). Persist a cooldown file
+          // so we don't re-install on every plugin reload or after failures.
+          const cooldownMs = autoUpdateCfg.cooldownMs ?? 3_600_000;
+          const maxFailures = autoUpdateCfg.maxConsecutiveFailures ?? 3;
+          const state = loadAutoUpdateState(storePath);
+          const { attempt, reason } = shouldAttemptInstall(state, info.latestVersion, cooldownMs, maxFailures);
+          if (!attempt) {
+            appendDebugLog(logFilePath, {
+              scope: "updater",
+              message: `Auto-install skipped: ${reason}`,
+            }, logLevel);
+            return;
+          }
+
+          saveAutoUpdateState(storePath, {
+            lastAttemptAt: Date.now(),
+            lastAttemptedVersion: info.latestVersion,
+            lastResult: "failure",
+            consecutiveFailures: 1,
+          });
+
+          installLatestUpdate({ verbose: false })
+            .then((result: import("./core/version-check.js").InstallUpdateResult) => {
+              if (result.success && result.toVersion && result.toVersion !== currentVersion) {
+                pendingRestartNotice.set(input.directory, {
+                  fromVersion: currentVersion,
+                  toVersion: result.toVersion,
+                });
+                saveAutoUpdateState(storePath, {
+                  lastAttemptAt: Date.now(),
+                  lastAttemptedVersion: info.latestVersion,
+                  lastResult: "success",
+                  consecutiveFailures: 0,
+                });
+                appendDebugLog(logFilePath, {
+                  scope: "updater",
+                  message: `Auto-installed v${currentVersion} → v${result.toVersion}`,
+                }, logLevel);
+              } else {
+                saveAutoUpdateState(storePath, {
+                  lastAttemptAt: Date.now(),
+                  lastAttemptedVersion: info.latestVersion,
+                  lastResult: "success",
+                  consecutiveFailures: 0,
+                });
+              }
+            })
+            .catch(() => {
+              const existing = loadAutoUpdateState(storePath);
+              saveAutoUpdateState(storePath, {
+                lastAttemptAt: Date.now(),
+                lastAttemptedVersion: info.latestVersion,
+                lastResult: "failure",
+                consecutiveFailures: (existing?.consecutiveFailures ?? 0) + 1,
+              });
+            });
+        } else {
+          // Notify-only: surface as a one-time agent prompt
           pendingUpdateInfo.set(input.directory, info);
           appendDebugLog(logFilePath, {
             scope: "updater",

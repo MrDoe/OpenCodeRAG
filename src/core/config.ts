@@ -154,6 +154,12 @@ export interface McpConfig {
 export interface AutoUpdateConfig {
   /** Whether update checking is enabled (defaults to true). */
   enabled: boolean;
+  /** When true, automatically install a newer release on startup (default false). */
+  autoInstall?: boolean;
+  /** Cooldown window (ms) before re-attempting the same version (default 3 600 000 = 1h). */
+  cooldownMs?: number;
+  /** Back off after this many consecutive failures (default 3). */
+  maxConsecutiveFailures?: number;
 }
 
 /** Configuration for post-retrieval context window optimization (adjacent merge, similarity dedup, file diversity cap). */
@@ -549,6 +555,9 @@ export const DEFAULT_CONFIG: RagConfig = {
   },
   autoUpdate: {
     enabled: true,
+    autoInstall: false,
+    cooldownMs: 3_600_000,
+    maxConsecutiveFailures: 3,
   },
   ui: {
     port: 3210,

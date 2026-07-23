@@ -99,7 +99,10 @@
     "enabled": false
   },
   "autoUpdate": {
-    "enabled": true
+    "enabled": true,
+    "autoInstall": false,
+    "cooldownMs": 3600000,
+    "maxConsecutiveFailures": 3
   },
   "ui": {
     "port": 3210,
