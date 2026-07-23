@@ -126,6 +126,45 @@ The agent maintains all wiki pages during normal coding sessions (ingest on lear
 
 See [Plugin documentation](doc/plugin.md#6-wiki-mode--slash-command-wiki) for the full protocol.
 
+## Quirk Memory
+
+OpenCodeRAG gives your agent **persistent, cross-session memory** of non-obvious facts — gotchas, preferences, decisions, and environment constraints — that it can recall and extend over time. Quirks are embedded and stored in the same vector store as your code, then recalled via semantic search whenever they're relevant. This lets the agent avoid repeating mistakes and accumulate project knowledge across sessions.
+
+**Enabled by default.** Turn it on/off in `opencode-rag.json`:
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "autoInject": true,
+    "minConfidence": 0.5,
+    "recallMinScore": 0.3,
+    "decay": { "enabled": true, "halfLifeDays": 30 }
+  }
+}
+```
+
+**Agent tools:**
+
+| Tool | Use when |
+|------|----------|
+| `recall_quirks(query)` | You hit an error or need to remember a gotcha, preference, or decision from past sessions |
+| `add_quirk(content, { type, tags })` | You just discovered a non-obvious fact, workaround, or convention worth remembering |
+
+**CLI — manage quirks directly:**
+
+```bash
+opencode-rag quirk add "npm needs --legacy-peer-deps" --type gotcha --tag installation
+opencode-rag quirk list
+opencode-rag quirk lint            # flag low-confidence / stale / duplicate quirks
+opencode-rag quirk test "npm needs --legacy-peer-deps"
+# ✓ Quirk has been appended:
+#   [gotcha] npm needs --legacy-peer-deps (installation)
+#   99% confidence
+```
+
+When `memory.autoInject` is `true`, relevant quirks are automatically injected into the prompt during retrieval (via the `chat.message` hook). Every `add_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
+
 ## MCP Server (Optional)
 
 OpenCodeRAG ships a CLI-based [MCP (Model Context Protocol)](https://spec.modelcontextprotocol.io/) server that exposes semantic code tools to any MCP-compatible client (Claude Desktop, Cursor, etc.).
