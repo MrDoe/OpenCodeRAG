@@ -25,8 +25,12 @@ function makeStore(results: SearchResult[]): VectorStore {
     async search(_embedding: number[], _topK: number): Promise<SearchResult[]> {
       return results;
     },
-    async searchWithFilter(embedding: number[], topK: number, _filter?: any): Promise<SearchResult[]> {
-      return this.search(embedding, topK);
+    async searchWithFilter(_embedding: number[], topK: number, filter?: any): Promise<SearchResult[]> {
+      let filtered = results;
+      if (filter?.kinds?.length) {
+        filtered = filtered.filter((r) => filter.kinds.includes(r.chunk.metadata.kind ?? ""));
+      }
+      return filtered.slice(0, topK);
     },
     async count(): Promise<number> {
       return results.length;
@@ -410,6 +414,39 @@ describe("retrieve", () => {
       // With RRF, the combined score is the sum of RRF contributions
       const expectedCombined = exp.scoreBreakdown.vectorScore + exp.scoreBreakdown.keywordScore;
       assert.ok(Math.abs(r.score - expectedCombined) < 1e-10, `expected ${expectedCombined}, got ${r.score}`);
+    });
+  });
+
+  describe("kinds filter", () => {
+    it("filters by kind when passed in retrieve options", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "q1", content: "quirk content", metadata: { filePath: "q1", startLine: 0, endLine: 0, language: "quirk", kind: "quirk", quirkType: "gotcha", tags: ["test"] } } },
+        { score: 0.8, chunk: { id: "c1", content: "code content", metadata: { filePath: "c1.ts", startLine: 1, endLine: 5, language: "typescript" } } },
+      ]);
+      const ki = new KeywordIndex();
+      ki.addChunks([
+        { id: "q1", content: "quirk content", metadata: { filePath: "q1", startLine: 0, endLine: 0, language: "quirk", kind: "quirk" } },
+        { id: "c1", content: "code content", metadata: { filePath: "c1.ts", startLine: 1, endLine: 5, language: "typescript" } },
+      ]);
+      // Filter by kinds: only quirks
+      const results = await retrieve("content", embedder, store, {
+        keywordIndex: ki,
+        keywordWeight: 0.4,
+        minScore: 0,
+        filter: { kinds: ["quirk"] },
+      });
+      assert.equal(results.length, 1, "should return only the quirk chunk");
+      assert.equal(results[0]!.chunk.id, "q1");
+    });
+
+    it("returns empty when no chunks match the filter", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "c1", content: "code", metadata: { filePath: "c1.ts", startLine: 1, endLine: 5, language: "typescript" } } },
+      ]);
+      const results = await retrieve("code", embedder, store, { filter: { kinds: ["quirk"] } });
+      assert.equal(results.length, 0, "should return no results when filter excludes all");
     });
   });
 });

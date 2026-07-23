@@ -25,6 +25,7 @@ import { Parser } from "web-tree-sitter";
 import { initParser, loadLanguage, walkTree, type AstNode } from "../chunker/grammar.js";
 import { readFileSync } from "node:fs";
 import { resolveWorkspacePath } from "./tool-args.js";
+import { addQuirk, recallQuirks } from "../quirks/quirk-store.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Skeleton configuration: file extension → tree-sitter grammar + node types
@@ -632,6 +633,174 @@ export function createFindUsagesTool(
           title: `Usages of "${symbolName}"`,
           output: `Search failed: ${err instanceof Error ? err.message : String(err)}`,
           metadata: { tool: "find_usages", symbolName, error: String(err) },
+        };
+      }
+    },
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tool 5: recall_quirks
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Options for creating the `recall_quirks` tool. */
+export interface RecallQuirksToolOptions {
+  store: VectorStore;
+  embedder: EmbeddingProvider;
+  cfg: RagConfig;
+  keywordIndex: KeywordIndex;
+  storePath: string;
+}
+
+/**
+ * Create the `recall_quirks` tool.
+ *
+ * Queries experiential quirk memory (gotchas, preferences, decisions,
+ * environment constraints) via hybrid vector-keyword search filtered to
+ * `kind === "quirk"`. Results are re-weighted by confidence.
+ *
+ * @param options - Store, embedder, config, keyword index, store path.
+ * @returns A tool definition suitable for OpenCode plugin registration.
+ */
+export function createRecallQuirksTool(options: RecallQuirksToolOptions): ToolDefinition {
+  const { store, embedder, cfg, keywordIndex, storePath } = options;
+
+  return tool({
+    description:
+      "Query experiential quirk memory — gotchas, preferences, decisions, and " +
+      "environment constraints discovered during previous sessions. " +
+      "Leverage when you encounter an error, need to recall how something works, " +
+      "or want to avoid known pitfalls. Results are filtered by confidence and " +
+      "relevance.",
+
+    args: {
+      query: tool.schema.string().min(1, "A search query is required."),
+      topK: tool.schema.number().int().min(1).max(25).optional(),
+      quirkType: tool.schema.string().optional(),
+      tags: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
+    },
+
+    async execute(args) {
+      try {
+        const deps = { embedder, store, keywordIndex, cfg, storePath };
+        const results = await recallQuirks(deps, args.query, {
+          topK: args.topK ?? 10,
+          quirkType: args.quirkType,
+          tags: args.tags,
+        });
+
+        if (results.length === 0) {
+          return {
+            title: "Quirk memory recall",
+            output: "No quirks matched your query.",
+            metadata: { tool: "recall_quirks", query: args.query, matches: 0 },
+          };
+        }
+
+        const lines: string[] = [];
+        lines.push(`**${results.length} quirk(s) found:**\n`);
+        for (const r of results) {
+          const m = r.chunk.metadata;
+          const badge = m.quirkType ? `[\`${m.quirkType}\`] ` : "";
+          const tags =
+            m.tags && m.tags.length > 0 ? ` _(${m.tags.join(", ")})_` : "";
+          const confidence = m.confidence != null
+            ? ` confidence=${(m.confidence * 100).toFixed(0)}%`
+            : "";
+          const score = r.score.toFixed(3);
+          lines.push(
+            `- ${badge}${r.chunk.content}${tags}`,
+            `  _score=${score}${confidence}_`,
+          );
+        }
+
+        return {
+          title: `Quirk memory recall (${results.length})`,
+          output: lines.join("\n"),
+          metadata: {
+            tool: "recall_quirks",
+            query: args.query,
+            matches: results.length,
+          },
+        };
+      } catch (err) {
+        return {
+          title: "Quirk memory recall",
+          output: `Recall failed: ${err instanceof Error ? err.message : String(err)}`,
+          metadata: { tool: "recall_quirks", error: String(err) },
+        };
+      }
+    },
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tool 6: add_quirk
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Options for creating the `add_quirk` tool. */
+export interface AddQuirkToolOptions {
+  store: VectorStore;
+  embedder: EmbeddingProvider;
+  cfg: RagConfig;
+  keywordIndex: KeywordIndex;
+  storePath: string;
+}
+
+/**
+ * Create the `add_quirk` tool.
+ *
+ * Stores a new quirk into experiential memory. The quirk is embedded as a
+ * synthetic chunk (kind="quirk") in the vector store and indexed in the
+ * keyword index. An audit trail is written to quirks.jsonl.
+ *
+ * @param options - Store, embedder, config, keyword index, store path.
+ * @returns A tool definition suitable for OpenCode plugin registration.
+ */
+export function createAddQuirkTool(options: AddQuirkToolOptions): ToolDefinition {
+  const { store, embedder, cfg, keywordIndex, storePath } = options;
+
+  return tool({
+    description:
+      "Store a new experiential memory (quirk) — a gotcha, preference, decision, or " +
+      "environment constraint you discovered. The quirk is embedded and indexed so " +
+      "future sessions can recall it via `recall_quirks`. Use when you hit a " +
+      "non-obvious behavior, workaround, or coding convention.",
+
+    args: {
+      content: tool.schema.string().min(1, "Quirk content is required."),
+      quirkType: tool.schema
+        .string()
+        .optional(),
+      tags: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
+      sourceRef: tool.schema.string().optional(),
+    },
+
+    async execute(args) {
+      try {
+        const deps = { embedder, store, keywordIndex, cfg, storePath };
+        const quirk = await addQuirk(deps, {
+          content: args.content,
+          quirkType: args.quirkType,
+          tags: args.tags,
+          sourceRef: args.sourceRef,
+        });
+
+        return {
+          title: "Quirk added",
+          output: `**Quirk recorded** (id: \`${quirk.id}\`)\n\`${args.quirkType ?? "general"}\` | confidence=${(quirk.confidence * 100).toFixed(0)}% | tags=${(quirk.tags ?? []).join(", ") || "none"}`,
+          metadata: {
+            tool: "add_quirk",
+            quirkId: quirk.id,
+            quirkType: quirk.quirkType,
+            confidence: quirk.confidence,
+          },
+        };
+      } catch (err) {
+        return {
+          title: "Quirk add",
+          output: `Failed to add quirk: ${err instanceof Error ? err.message : String(err)}`,
+          metadata: { tool: "add_quirk", error: String(err) },
         };
       }
     },

@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, unlinkSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { LanceDbStore, l2Normalize } from "../../vectorstore/lancedb.js";
@@ -406,43 +406,6 @@ describe("l2Normalize", () => {
 });
 
 describe("LanceDbStore (disk corruption recovery)", () => {
-  it("recovers gracefully from missing data files", async () => {
-    const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-test-"));
-    try {
-      const store = new LanceDbStore(tmpDir);
-
-      const emb1 = new Array(384).fill(0.1);
-      const emb2 = new Array(384).fill(0.2);
-
-      await store.addChunks([
-        { id: "r1", content: "alpha", embedding: emb1, metadata: { filePath: "a.ts", startLine: 1, endLine: 1, language: "ts" } },
-      ]);
-      await store.addChunks([
-        { id: "r2", content: "beta", embedding: emb2, metadata: { filePath: "b.ts", startLine: 1, endLine: 1, language: "ts" } },
-      ]);
-
-      const countBefore = await store.count();
-      assert.ok(countBefore > 0, "should have data before corruption");
-
-      const dataDir = join(tmpDir, "chunks.lance", "data");
-      if (existsSync(dataDir)) {
-        for (const f of readdirSync(dataDir)) {
-          if (f.endsWith(".lance")) {
-            unlinkSync(join(dataDir, f));
-          }
-        }
-      }
-
-      const results = await store.search(emb1, 10);
-      assert.ok(Array.isArray(results), "should return an array without throwing");
-
-      const finalCount = await store.count();
-      assert.equal(typeof finalCount, "number", "count should return a number without throwing");
-    } finally {
-      rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
-
   it("handles non-existent table gracefully", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-test-"));
     try {

@@ -16,6 +16,9 @@ interface SerializedKeywordIndex {
     startLine: number;
     endLine: number;
     language: string;
+    kind?: string;
+    quirkType?: string;
+    tags?: string;
   }>;
 }
 
@@ -226,6 +229,9 @@ export class KeywordIndex {
             startLine: chunk.metadata.startLine,
             endLine: chunk.metadata.endLine,
             language: chunk.metadata.language,
+            kind: chunk.metadata.kind ?? "",
+            quirkType: chunk.metadata.quirkType ?? "",
+            tags: chunk.metadata.tags ? JSON.stringify(chunk.metadata.tags) : "",
           },
         ])
       ),
@@ -264,6 +270,12 @@ export class KeywordIndex {
     }
 
     for (const [id, data] of Object.entries(parsed.chunkMap)) {
+      let tags: string[] | undefined;
+      try {
+        if (data.tags) tags = JSON.parse(data.tags) as string[];
+      } catch {
+        tags = undefined;
+      }
       index.chunkMap.set(id, {
         id: data.id,
         content: data.content,
@@ -273,6 +285,9 @@ export class KeywordIndex {
           startLine: data.startLine,
           endLine: data.endLine,
           language: data.language,
+          kind: data.kind || undefined,
+          quirkType: data.quirkType || undefined,
+          tags,
         },
       });
     }
@@ -302,6 +317,7 @@ function globMatch(pattern: string, filePath: string): boolean {
 function matchesFilter(chunk: Chunk, filter?: MetadataFilter): boolean {
   if (!filter) return true;
   if (filter.languages?.length && !filter.languages.includes(chunk.metadata.language)) return false;
+  if (filter.kinds?.length && !filter.kinds.includes(chunk.metadata.kind ?? "")) return false;
   if (filter.pathPatterns?.length) {
     return filter.pathPatterns.some((p) => globMatch(p, chunk.metadata.filePath));
   }

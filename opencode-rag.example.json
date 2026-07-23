@@ -104,6 +104,16 @@
     "cooldownMs": 3600000,
     "maxConsecutiveFailures": 3
   },
+  "memory": {
+    "enabled": true,
+    "autoInject": false,
+    "minConfidence": 0.5,
+    "recallMinScore": 0.72,
+    "decay": {
+      "enabled": false,
+      "halfLifeDays": 30
+    }
+  },
   "ui": {
     "port": 3210,
     "openBrowser": true

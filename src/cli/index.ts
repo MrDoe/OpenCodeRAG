@@ -32,6 +32,7 @@ import {
   registerEvalAnalyzeCommand,
   registerEvalCompareCommand,
   registerDescribeImageCommand,
+  registerQuirkCommand,
 } from "./commands/index.js";
 
 /**
@@ -65,6 +66,7 @@ registerEvalSessionsCommand(program);
 registerEvalAnalyzeCommand(program);
 registerEvalCompareCommand(program);
 registerInitCommand(program);
+registerQuirkCommand(program);
 
 // ── Auto-run detection ──────────────────────────────────────────
 

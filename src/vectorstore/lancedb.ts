@@ -5,12 +5,12 @@ import * as lancedb from "@lancedb/lancedb";
 import type { Connection, Table, Version } from "@lancedb/lancedb";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { VectorStore, Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
+import type { VectorStore, Chunk, ChunkSummary, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
 
 const TABLE_NAME = "chunks";
 
-const QUERY_COLUMNS = ["id", "content", "description", "filePath", "startLine", "endLine", "language"];
+const QUERY_COLUMNS = ["id", "content", "description", "filePath", "startLine", "endLine", "language", "kind", "quirkType", "tags"];
 
 /**
  * L2-normalize a vector to unit length. Cosine models require unit vectors
@@ -77,6 +77,9 @@ interface ChunkRow {
   startLine: number;
   endLine: number;
   language: string;
+  kind: string;
+  quirkType: string;
+  tags: string;
 }
 
 /**
@@ -128,12 +131,14 @@ export class LanceDbStore implements VectorStore {
     if (tableNames.includes(TABLE_NAME)) {
       this.table = await db.openTable(TABLE_NAME);
       if (await this.tableHasDescriptionColumn()) {
+        await this.migrateNewColumns();
         return this.table;
       }
       // Schema missing 'description' column -- try to add it gracefully first.
       try {
         await this.table.addColumns([{ name: "description", valueSql: "''" }]);
         console.warn("[lancedb] Added missing 'description' column to existing table.");
+        await this.migrateNewColumns();
         return this.table;
       } catch {
         console.warn(
@@ -171,6 +176,9 @@ export class LanceDbStore implements VectorStore {
       startLine: 0,
       endLine: 0,
       language: "",
+      kind: "",
+      quirkType: "",
+      tags: "",
     };
 
     this.table = await db.createTable({
@@ -197,6 +205,61 @@ export class LanceDbStore implements VectorStore {
       return schema.fields.some((f: { name: string }) => f.name === "description");
     } catch {
       return false;
+    }
+  }
+
+  private async hasColumn(name: string): Promise<boolean> {
+    try {
+      const schema = await this.table!.schema();
+      return schema.fields.some((f: { name: string }) => f.name === name);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Add kind/quirkType/tags columns if missing from an existing table. */
+  private async migrateNewColumns(): Promise<void> {
+    const missing: { name: string; valueSql: string }[] = [];
+    for (const col of ["kind", "quirkType", "tags"]) {
+      if (!(await this.hasColumn(col))) {
+        missing.push({ name: col, valueSql: "''" });
+      }
+    }
+    if (missing.length > 0) {
+      try {
+        await this.table!.addColumns(missing);
+        console.warn(`[lancedb] Added missing columns: ${missing.map((c) => c.name).join(", ")}`);
+      } catch {
+        console.warn(
+          "[lancedb] Could not auto-add missing columns. " +
+          "Run 'opencode-rag index --force' to rebuild the index with the correct schema."
+        );
+        return;
+      }
+    }
+    await this.ensureColumnsNullable(["kind", "quirkType", "tags"]);
+  }
+
+  /**
+   * Ensure that kind/quirkType/tags columns are nullable so that queries
+   * with WHERE clauses on these columns do not panic on old fragments
+   * written before the columns existed.
+   */
+  private async ensureColumnsNullable(columns: string[]): Promise<void> {
+    for (const col of columns) {
+      if (!(await this.hasColumn(col))) continue;
+      try {
+        const schema = await this.table!.schema();
+        const field = schema.fields.find(
+          (f: { name: string; nullable?: boolean }) => f.name === col,
+        );
+        if (field && field.nullable === false) {
+          await this.table!.alterColumns([{ path: col, nullable: true }]);
+          console.warn(`[lancedb] Made column '${col}' nullable to avoid null-fragment panics.`);
+        }
+      } catch {
+        console.warn(`[lancedb] Could not alter nullability of column '${col}'.`);
+      }
     }
   }
 
@@ -238,6 +301,9 @@ export class LanceDbStore implements VectorStore {
         startLine: c.metadata.startLine,
         endLine: c.metadata.endLine,
         language: c.metadata.language,
+        kind: c.metadata.kind ?? "",
+        quirkType: c.metadata.quirkType ?? "",
+        tags: c.metadata.tags ? JSON.stringify(c.metadata.tags) : "",
       }));
 
     if (rows.length === 0) return;
@@ -326,6 +392,13 @@ export class LanceDbStore implements VectorStore {
   }
 
   private rowToSearchResult(row: Record<string, unknown>): SearchResult {
+    let tags: string[] | undefined;
+    try {
+      const raw = row.tags as string;
+      if (raw) tags = JSON.parse(raw) as string[];
+    } catch {
+      tags = undefined;
+    }
     return {
       score: Math.min(1, Math.max(0, 1 - ((row._distance as number) ?? 0) / 2)),
       chunk: {
@@ -337,6 +410,9 @@ export class LanceDbStore implements VectorStore {
           startLine: row.startLine as number,
           endLine: row.endLine as number,
           language: row.language as string,
+          kind: (row.kind as string) || undefined,
+          quirkType: (row.quirkType as string) || undefined,
+          tags,
         },
       },
     };
@@ -382,17 +458,29 @@ export class LanceDbStore implements VectorStore {
       .toArray();
 
     return rows
-      .map((row: Record<string, unknown>) => ({
-        id: row.id as string,
-        content: row.content as string,
-        description: (row.description as string) ?? "",
-        metadata: {
-          filePath: row.filePath as string,
-          startLine: row.startLine as number,
-          endLine: row.endLine as number,
-          language: row.language as string,
-        },
-      }))
+      .map((row: Record<string, unknown>) => {
+        let tags: string[] | undefined;
+        try {
+          const raw = row.tags as string;
+          if (raw) tags = JSON.parse(raw) as string[];
+        } catch {
+          tags = undefined;
+        }
+        return {
+          id: row.id as string,
+          content: row.content as string,
+          description: (row.description as string) ?? "",
+          metadata: {
+            filePath: row.filePath as string,
+            startLine: row.startLine as number,
+            endLine: row.endLine as number,
+            language: row.language as string,
+            kind: (row.kind as string) || undefined,
+            quirkType: (row.quirkType as string) || undefined,
+            tags,
+          },
+        };
+      })
       .sort((a, b) => a.metadata.startLine - b.metadata.startLine);
   }
 
@@ -402,7 +490,7 @@ export class LanceDbStore implements VectorStore {
    * @param limit - Maximum number of rows to return.
    * @returns An array of chunk summaries.
    */
-  async getChunks(offset: number, limit: number): Promise<{ id: string; filePath: string; language: string; startLine: number; endLine: number; content: string; description: string }[]> {
+  async getChunks(offset: number, limit: number): Promise<ChunkSummary[]> {
     const table = await this.getTable();
     const rows = await table.query()
       .select(QUERY_COLUMNS)
@@ -418,6 +506,9 @@ export class LanceDbStore implements VectorStore {
       endLine: row.endLine as number,
       content: row.content as string,
       description: (row.description as string) ?? "",
+      kind: (row.kind as string) ?? "",
+      quirkType: (row.quirkType as string) ?? "",
+      tags: (row.tags as string) ?? "",
     }));
   }
 
@@ -437,10 +528,25 @@ export class LanceDbStore implements VectorStore {
     const count = await table.countRows();
     if (count === 0) return [];
 
-    let query = table.vectorSearch(l2Normalize(embedding)).distanceType("cosine");
     const whereClause = buildWhereClause(filter);
-    if (whereClause) query = query.where(whereClause);
-    const results = await query.limit(topK).toArray() as Record<string, unknown>[];
+
+    let results: Record<string, unknown>[];
+    try {
+      let query = table.vectorSearch(l2Normalize(embedding)).distanceType("cosine");
+      if (whereClause) query = query.where(whereClause);
+      results = await query.limit(topK).toArray() as Record<string, unknown>[];
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("non-nullable") && filter) {
+        const fallbackQuery = table.vectorSearch(l2Normalize(embedding)).distanceType("cosine");
+        const rawResults = await fallbackQuery.limit(topK * 5).toArray() as Record<string, unknown>[];
+        return rawResults
+          .map((row: Record<string, unknown>) => this.rowToSearchResult(row))
+          .filter((r: SearchResult) => r.chunk.id !== "__seed__")
+          .filter((r: SearchResult) => matchesFilterLocal(r.chunk, filter))
+          .slice(0, topK);
+      }
+      throw err;
+    }
 
     return results
       .map((row: Record<string, unknown>) => this.rowToSearchResult(row))
@@ -685,6 +791,10 @@ function buildWhereClause(filter?: MetadataFilter): string | undefined {
     const langs = filter.languages.map((l) => `'${l.replace(/'/g, "''")}'`).join(",");
     parts.push(`language IN (${langs})`);
   }
+  if (filter.kinds?.length) {
+    const kinds = filter.kinds.map((k) => `'${k.replace(/'/g, "''")}'`).join(",");
+    parts.push(`kind IN (${kinds})`);
+  }
   if (filter.pathPatterns?.length) {
     const likes = filter.pathPatterns.map((p) => {
       const escaped = p.replace(/'/g, "''");
@@ -697,4 +807,25 @@ function buildWhereClause(filter?: MetadataFilter): string | undefined {
     parts.push(`(${likes.join(" OR ")})`);
   }
   return parts.length ? parts.join(" AND ") : undefined;
+}
+
+/** Client-side metadata filter for use as a fallback when LanceDB WHERE panics. */
+function matchesFilterLocal(chunk: Chunk, filter?: MetadataFilter): boolean {
+  if (!filter) return true;
+  if (filter.languages?.length && !filter.languages.includes(chunk.metadata.language)) return false;
+  if (filter.kinds?.length && !filter.kinds.includes(chunk.metadata.kind ?? "")) return false;
+  if (filter.pathPatterns?.length) {
+    return filter.pathPatterns.some((p) => globMatchLocal(p, chunk.metadata.filePath));
+  }
+  return true;
+}
+
+function globMatchLocal(pattern: string, filePath: string): boolean {
+  const GLOBSTAR = "\x00GS\x00";
+  let re = pattern.replace(/\*\*/g, GLOBSTAR);
+  re = re.replace(/([.+^${}()|[\]\\])/g, "\\$1");
+  re = re.replace(new RegExp(GLOBSTAR, "g"), ".*");
+  re = re.replace(/\*/g, "[^/]*");
+  re = re.replace(/\?/g, ".");
+  return new RegExp("^" + re + "$").test(filePath);
 }

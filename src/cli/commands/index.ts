@@ -16,3 +16,4 @@ export { registerSetupCommand } from "./setup.js";
 export { registerUpdateCommand } from "./update.js";
 export { registerEvalSessionsCommand, registerEvalAnalyzeCommand, registerEvalCompareCommand } from "./eval.js";
 export { registerDescribeImageCommand } from "./describe-image.js";
+export { registerQuirkCommand } from "./quirk.js";

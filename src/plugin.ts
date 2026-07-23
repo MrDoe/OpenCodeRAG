@@ -22,6 +22,8 @@ import {
   createFileSkeletonTool,
   createFindUsagesTool,
   createDescribeImageTool,
+  createRecallQuirksTool,
+  createAddQuirkTool,
 } from "./opencode/tools.js";
 import { resolveApiKey } from "./core/resolve-api-key.js";
 import { consumePendingRagInjection } from "./core/rag-injection-flag.js";
@@ -32,6 +34,7 @@ import { countTokens } from "./eval/token-counter.js";
 import { checkForUpdate, getCurrentVersion, installLatestUpdate, type UpdateInfo } from "./core/version-check.js";
 import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "./core/auto-update-state.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
+import { listQuirks, lintQuirks, recallQuirks } from "./quirks/quirk-store.js";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -746,6 +749,40 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     });
   }
 
+  try {
+    const recallQuirksTool = createRecallQuirksTool({
+      store,
+      embedder,
+      cfg: effectiveCfg,
+      keywordIndex: keywordIndex!,
+      storePath: options.storePath,
+    });
+    tools["recall_quirks"] = recallQuirksTool;
+  } catch (err) {
+    appendDebugLog(options.logFilePath, {
+      scope: "plugin",
+      message: "Failed to register recall_quirks tool",
+      error: err,
+    });
+  }
+
+  try {
+    const addQuirkTool = createAddQuirkTool({
+      store,
+      embedder,
+      cfg: effectiveCfg,
+      keywordIndex: keywordIndex!,
+      storePath: options.storePath,
+    });
+    tools["add_quirk"] = addQuirkTool;
+  } catch (err) {
+    appendDebugLog(options.logFilePath, {
+      scope: "plugin",
+      message: "Failed to register add_quirk tool",
+      error: err,
+    });
+  }
+
   if (readOverride) {
     const readTool = createRagReadTool({
       worktree: options.worktree,
@@ -829,6 +866,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           "- `get_file_skeleton(filePath)`: structural overview of a file. Call BEFORE reading any file.",
           "- `find_usages(symbolName)`: find all references. Call BEFORE editing any function, class, or variable.",
           "- `describe_image(filePath)`: describe an image file using a vision model. Call when user refers to a screenshot, diagram, or image.",
+          "- `recall_quirks(query)`: query experiential quirk memory (gotchas, preferences, decisions). Call when you hit an error or need to recall known pitfalls.",
+          "- `add_quirk(content)`: store a new experiential memory. Call when you discover a non-obvious fact, gotcha, or coding convention.",
           "",
           "Decision tree — ALWAYS follow this order:",
           "1. User mentions code behavior/architecture → `search_semantic(query)`",
@@ -836,6 +875,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           "3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`",
           "4. User asks a code question → `search_semantic` to gather context before answering",
           "5. User asks about an image or visual asset → `describe_image(filePath)` to retrieve its generated description, then optionally `search_semantic` for related code",
+          "6. You encounter an error or need to recall a known pitfall → `recall_quirks(query)`",
+          "7. You discover a non-obvious fact or workaround → `add_quirk(content)` to persist it for future sessions",
           "",
           "Proactive triggers — you MUST call these tools when:",
           "- User asks about code behavior, architecture, or implementation details",
@@ -1102,6 +1143,75 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           return;
         }
 
+        // Handle /quirk slash command
+        if (text.startsWith("/quirk")) {
+          const memoryCfg = getEffectiveCfg().memory;
+          if (!memoryCfg?.enabled) {
+            const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
+            if (Array.isArray(parts) && parts.length > 0) {
+              const first = parts[0] as Record<string, unknown>;
+              if (typeof first.text === "string") {
+                parts[0] = { ...first, text: "Quirk memory is not enabled. Set `memory.enabled` to `true` in opencode-rag.json." } as typeof parts[0];
+              }
+            }
+            return;
+          }
+
+          const arg = text.slice(6).trim().toLowerCase();
+          const lines: string[] = [];
+
+          if (arg === "lint") {
+            const deps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+            const issues = await lintQuirks(deps);
+            lines.push("## Quirk Lint", "");
+            if (issues.length === 0) {
+              lines.push("No issues found. All quirks look healthy.");
+            } else {
+              lines.push(`Found ${issues.length} issue(s):\n`);
+              for (const issue of issues) {
+                lines.push(`- ${issue}`);
+              }
+              lines.push("", "Fix the issues and consider updating or removing the flagged quirks.");
+            }
+          } else if (arg.startsWith("add ")) {
+            lines.push(
+              "## Add Quirk",
+              "",
+              "Use the `add_quirk` tool to store a new experiential memory entry. Example:",
+              "",
+              '`content`: "npm install needs --legacy-peer-deps due to LanceDB peer dep conflicts"',
+              '`quirkType`: "gotcha"',
+              "`tags`: [\"npm\", \"lancedb\", \"installation\"]",
+            );
+          } else {
+            // Status / list
+            const deps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+            const quirks = await listQuirks(deps);
+            lines.push("## Quirk Memory", "");
+            if (quirks.length === 0) {
+              lines.push("No quirks stored yet.");
+            } else {
+              lines.push(`${quirks.length} quirk(s) stored:\n`);
+              for (const q of quirks) {
+                const badge = q.quirkType ? `[\`${q.quirkType}\`] ` : "";
+                const tags = q.tags.length > 0 ? ` _(${q.tags.join(", ")})_` : "";
+                lines.push(`- ${badge}${q.content.slice(0, 100)}${tags}  `);
+              }
+              lines.push("", "Commands:", "- `/quirk` — show this status", "- `/quirk lint` — health-check quirks", "- `/quirk add <text>` — instructions to use the add_quirk tool");
+            }
+          }
+
+          const quirkMsg = lines.join("\n");
+          const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
+          if (Array.isArray(parts) && parts.length > 0) {
+            const first = parts[0] as Record<string, unknown>;
+            if (typeof first.text === "string") {
+              parts[0] = { ...first, text: quirkMsg } as typeof parts[0];
+            }
+          }
+          return;
+        }
+
         // Handle hotkey-triggered RAG injection (Ctrl+Enter / Ctrl+Alt+Enter)
         const pendingInjection = consumePendingRagInjection(options.storePath);
         if (pendingInjection) {
@@ -1167,6 +1277,40 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
                   scope: "chat.message",
                   message: `injected ${pendingInjection} context into parts[0].text (text.length=${ragContext.length})`,
                 });
+              }
+            }
+
+            // Auto-inject quirks when memory.autoInject is enabled
+            const memoryCfg = effectiveCfg.memory;
+            if (memoryCfg?.autoInject) {
+              try {
+                const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: effectiveCfg, storePath: options.storePath };
+                const quirkResults = await recallQuirks(quirkDeps, searchQuery, { topK: 3 });
+                if (quirkResults.length > 0) {
+                  const quirkLines: string[] = ["", "---", "⚠ **Quirk memory**", ""];
+                  for (const qr of quirkResults) {
+                    const m = qr.chunk.metadata;
+                    const badge = m.quirkType ? `[\`${m.quirkType}\`] ` : "";
+                    quirkLines.push(`- ${badge}${qr.chunk.content.slice(0, 200)}`);
+                  }
+                  const quirkBlock = quirkLines.join("\n");
+                  const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
+                  if (Array.isArray(parts) && parts.length > 0) {
+                    const first = parts[0] as Record<string, unknown>;
+                    if (typeof first.text === "string") {
+                      parts[0] = { ...first, text: first.text + "\n\n" + quirkBlock } as typeof parts[0];
+                    }
+                    const msgParts = (output?.message as Record<string, unknown>)?.parts;
+                    if (Array.isArray(msgParts) && msgParts !== parts) {
+                      const mfirst = msgParts[0] as Record<string, unknown>;
+                      if (typeof mfirst.text === "string") {
+                        msgParts[0] = { ...mfirst, text: mfirst.text + "\n\n" + quirkBlock } as typeof msgParts[0];
+                      }
+                    }
+                  }
+                }
+              } catch {
+                // Non-critical — must never throw
               }
             }
           }

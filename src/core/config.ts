@@ -136,6 +136,25 @@ export interface WikiModeConfig {
   systemPrompt: string;
 }
 
+/** Configuration for the quirk/experiential memory system. */
+export interface MemoryConfig {
+  /** Whether quirk memory is enabled. */
+  enabled: boolean;
+  /** Whether relevant quirks should be auto-injected into the prompt during retrieval. */
+  autoInject: boolean;
+  /** Minimum confidence (0-1) for a quirk to be returned. */
+  minConfidence: number;
+  /** Minimum query-relevance score (0-1) for a quirk to be recalled. */
+  recallMinScore: number;
+  /** Decay settings for aging quirks. */
+  decay: {
+    /** Whether confidence decays over time. */
+    enabled: boolean;
+    /** Number of days after which confidence halves. */
+    halfLifeDays: number;
+  };
+}
+
 /** Configuration for the terminal UI (TUI) keybindings. */
 export interface TuiConfig {
   /** Keybinding to toggle the file list panel. */
@@ -289,6 +308,8 @@ export interface RagConfig {
   mcp?: McpConfig;
   /** Auto-update checking config. */
   autoUpdate?: AutoUpdateConfig;
+  /** Quirk memory config for experiential agent memory. */
+  memory?: MemoryConfig;
   /** Web dashboard UI config. */
   ui?: UiConfig;
   /** Terminal UI keybinding config. */
@@ -559,6 +580,16 @@ export const DEFAULT_CONFIG: RagConfig = {
     cooldownMs: 3_600_000,
     maxConsecutiveFailures: 3,
   },
+  memory: {
+    enabled: true,
+    autoInject: false,
+    minConfidence: 0.5,
+    recallMinScore: 0.72,
+    decay: {
+      enabled: false,
+      halfLifeDays: 30,
+    },
+  },
   ui: {
     port: 3210,
     openBrowser: true,
@@ -608,7 +639,7 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   const KNOWN_TOP_KEYS = new Set([
     "embedding", "indexing", "vectorStore", "retrieval",
     "openCode", "chunkers", "chunking", "description",
-    "imageDescription", "documentationMode", "wikiMode", "mcp", "autoUpdate", "ui", "tui", "logging",
+    "imageDescription", "documentationMode", "wikiMode", "mcp", "autoUpdate", "memory", "ui", "tui", "logging",
   ]);
   const topKeys = new Set(Object.keys(config as unknown as Record<string, unknown>));
   for (const key of topKeys) {
@@ -658,6 +689,11 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     if (kw < 0 || kw > 1) {
       warnings.push("retrieval.hybridSearch.keywordWeight must be between 0 and 1");
     }
+  }
+
+  if (config.memory?.recallMinScore != null) {
+    const r = config.memory.recallMinScore;
+    if (r < 0 || r > 1) warnings.push("memory.recallMinScore must be between 0 and 1");
   }
 
   if (config.openCode.maxContextChunks <= 0) {
@@ -818,6 +854,10 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
       ...DEFAULT_CONFIG.autoUpdate,
       ...(safeObj<AutoUpdateConfig>((parsed as { autoUpdate?: unknown }).autoUpdate) ?? {}),
     } as AutoUpdateConfig,
+    memory: {
+      ...DEFAULT_CONFIG.memory,
+      ...(safeObj<MemoryConfig>((parsed as { memory?: unknown }).memory) ?? {}),
+    } as MemoryConfig,
     ui: {
       ...DEFAULT_CONFIG.ui,
       ...(safeObj<UiConfig>((parsed as { ui?: unknown }).ui) ?? {}),

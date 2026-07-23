@@ -62,6 +62,9 @@ export class InMemoryVectorStore implements VectorStore {
       endLine: c.metadata.endLine,
       content: c.content,
       description: c.description ?? "",
+      kind: c.metadata.kind ?? "",
+      quirkType: c.metadata.quirkType ?? "",
+      tags: c.metadata.tags ? JSON.stringify(c.metadata.tags) : "",
     }));
   }
 

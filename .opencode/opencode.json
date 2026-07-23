@@ -1,16 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "opencode-rag": {
-      "type": "local",
-      "command": [
-        "node",
-        ".opencode/node_modules/opencode-rag-plugin/dist/cli.js",
-        "mcp"
-      ],
-      "cwd": ".",
-      "enabled": true
-    },
     "lsp": {
       "enabled": true
     }

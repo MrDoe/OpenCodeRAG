@@ -15,6 +15,16 @@ export interface Chunk {
     endLine: number;
     language: string;
     contentType?: string;
+    /** Synthetic chunk kind — e.g. "quirk" for experiential memory entries. */
+    kind?: string;
+    /** Quirk sub-type when kind === "quirk": gotcha, preference, decision, environment-constraint. */
+    quirkType?: string;
+    /** Arbitrary tags for filtering/queries. */
+    tags?: string[];
+    /** Confidence score 0-1 (quirk memory). */
+    confidence?: number;
+    /** ISO timestamp of last confirmation (quirk memory). */
+    lastObserved?: string;
   };
 }
 
@@ -142,6 +152,9 @@ export interface ChunkSummary {
   endLine: number;
   content: string;
   description: string;
+  kind: string;
+  quirkType: string;
+  tags: string;
 }
 
 /** A file summary for list operations. */
@@ -179,12 +192,14 @@ export interface VectorStore {
   reopen?(newPath?: string): Promise<void>;
 }
 
-/** Filter criteria for narrowing search results by file path patterns or language. */
+/** Filter criteria for narrowing search results by file path, language, or kind. */
 export interface MetadataFilter {
   /** Glob-style path patterns (e.g. "src/**", "lib/auth/*"). */
   pathPatterns?: string[];
   /** Language identifiers (e.g. ["typescript", "tsx"]). */
   languages?: string[];
+  /** Synthetic kind filters (e.g. ["quirk"]). */
+  kinds?: string[];
 }
 
 /** Callback interface for reporting indexing progress to the UI or CLI. */
