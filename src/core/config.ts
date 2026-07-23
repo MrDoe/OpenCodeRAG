@@ -144,9 +144,9 @@ export interface TuiConfig {
   chunksKeybinding: string;
 }
 
-/** Configuration for MCP (Model Context Protocol) server integration. */
+/** Configuration for the standalone MCP (Model Context Protocol) server. */
 export interface McpConfig {
-  /** Whether the MCP server is enabled. */
+  /** Whether to auto-start the MCP server on plugin load. Default false — agent tools run in-process regardless. Set true only when an external MCP client needs to connect via `opencode-rag mcp`. */
   enabled: boolean;
 }
 
@@ -545,7 +545,7 @@ export const DEFAULT_CONFIG: RagConfig = {
       "- The wiki is git-trackable in `.opencode/` — every edit is a diff",
   },
   mcp: {
-    enabled: true,
+    enabled: false,
   },
   autoUpdate: {
     enabled: true,

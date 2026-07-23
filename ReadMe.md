@@ -125,13 +125,15 @@ The agent maintains all wiki pages during normal coding sessions (ingest on lear
 
 See [Plugin documentation](doc/plugin.md#6-wiki-mode--slash-command-wiki) for the full protocol.
 
-## MCP Server
+## MCP Server (Optional)
 
-OpenCodeRAG ships a CLI-based [MCP (Model Context Protocol)](https://spec.modelcontextprotocol.io/) server that exposes semantic code tools to any MCP-compatible client (Claude Desktop, OpenCode, Cursor, etc.).
+OpenCodeRAG ships a CLI-based [MCP (Model Context Protocol)](https://spec.modelcontextprotocol.io/) server that exposes semantic code tools to any MCP-compatible client (Claude Desktop, Cursor, etc.).
 
 ```bash
 opencode-rag mcp
 ```
+
+> **Note:** The MCP server is **optional**. When running as an OpenCode plugin, the four tools are registered **in-process** and work without the MCP server. The `chat.message` hook for hotkey injection also runs in-process. The MCP server is only needed when an **external** MCP client connects to OpenCodeRAG. The plugin auto-starts the server only if `mcp.enabled` is `true` in your config (default: `false`).
 
 ### MCP Tools
 

@@ -96,7 +96,7 @@
     "enabled": false
   },
   "mcp": {
-    "enabled": true
+    "enabled": false
   },
   "autoUpdate": {
     "enabled": true

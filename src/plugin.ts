@@ -1514,8 +1514,11 @@ export const ragPlugin: Plugin = async (
     }
   }
 
-  // Auto-start MCP server if enabled (skip in temp dirs / test environments)
-  const mcpCfg = effectiveCfg.mcp ?? { enabled: true };
+  // Auto-start standalone MCP server if enabled (default: off). Agent tools
+  // (search_semantic, get_file_skeleton, find_usages, describe_image) and the
+  // chat.message hook run in-process regardless. Enable only when an external
+  // MCP client connects to `opencode-rag mcp`.
+  const mcpCfg = effectiveCfg.mcp ?? { enabled: false };
   const isTempDir = path.resolve(input.directory).startsWith(tmpdir());
   if (mcpCfg.enabled && !isTempDir) {
     const mcpInstance = startMcpServerProcess(input.directory, logFilePath, logLevel);

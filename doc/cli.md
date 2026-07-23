@@ -224,7 +224,7 @@ opencode-rag mcp [options]
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
 
-Exposes `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools. Clients can configure the server manually, or `opencode-rag init` auto-registers it. Requires `mcp.enabled` to be `true`. See the [MCP Server](../ReadMe.md#mcp-server) section in the README.
+Exposes `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools. Clients can configure the server manually, or `opencode-rag init` auto-registers it. The plugin auto-starts the MCP server only when `mcp.enabled` is `true` (default: `false`). Running `opencode-rag mcp` manually always starts the server regardless of `mcp.enabled`. See the [MCP Server](../ReadMe.md#mcp-server) section in the README.
 
 ### `setup`
 

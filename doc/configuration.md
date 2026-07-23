@@ -318,14 +318,14 @@ Controls the standalone MCP (Model Context Protocol) server.
 ```json
 {
   "mcp": {
-    "enabled": true
+    "enabled": false
   }
 }
 ```
 
 | Option | Default | Description |
 |---|---|---|
-| `enabled` | `true` | Whether the MCP server is available (started via `opencode-rag mcp`) |
+| `enabled` | `false` | Auto-start the standalone MCP server on plugin load. Agent tools (`search_semantic`, `get_file_skeleton`, `find_usages`, `describe_image`) and the `chat.message` hook run in-process regardless. Set to `true` only when an external MCP client needs to connect via `opencode-rag mcp`. |
 
 See the [MCP Server](../ReadMe.md#mcp-server) section in the README and [CLI Reference](cli.md#mcp).
 
