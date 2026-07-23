@@ -48,6 +48,7 @@ opencode-rag query "authentication middleware"
 | **Documentation mode** | `/doc` slash command: agent adds JSDoc/TSDoc to undocumented files, progress tracked per subdirectory |
 | **Wiki mode** | `/wiki` slash command: agent maintains a persistent knowledge wiki at `.opencode/wiki/` (ingest, query, lint, seed) |
 | **Context optimization** | Post-retrieval dedup, per-file chunk limits, adjacent-merge to fit the context window |
+| **Quirk memory** | Persistent experiential memory — agents recall/persist gotchas, preferences, decisions across sessions (`add_quirk` / `recall_quirks`, `opencode-rag quirk`) |
 | **AGENTS.md directive** | `opencode-rag init` merges a tool-usage directive into `AGENTS.md` via sentinel markers |
 
 ## Web UI

@@ -311,6 +311,36 @@ Controls the wiki mode that instructs the AI agent to build and maintain a persi
 
 The built-in system prompt defines the wiki layout (`.opencode/wiki/index.md`, `log.md`, `entities/`, `concepts/`, `sources/`), page frontmatter (`title`, `tags`, `sourceRefs`, `lastReviewed`), and cross-references via `[[wiki/page-name]]` links. See [Plugin documentation](plugin.md#6-wiki-mode--slash-command-wiki).
 
+### `memory`
+
+Controls the quirk/experiential memory system — persistent storage of gotchas, preferences, decisions, and environment constraints that are recalled across sessions. Quirks are embedded and stored in the vector store alongside code chunks, then recalled via semantic search.
+
+```json
+{
+  "memory": {
+    "enabled": true,
+    "autoInject": true,
+    "minConfidence": 0.5,
+    "recallMinScore": 0.3,
+    "decay": {
+      "enabled": true,
+      "halfLifeDays": 30
+    }
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Enable quirk memory. When `false`, the `add_quirk` / `recall_quirks` tools are inert and quirks are not recalled. |
+| `autoInject` | `true` | Auto-inject relevant quirks into the prompt during retrieval (via the `chat.message` hook). |
+| `minConfidence` | `0.5` | Minimum confidence (0–1) for a quirk to be returned by recall. |
+| `recallMinScore` | `0.3` | Minimum query-relevance score (0–1) for a quirk to be recalled. |
+| `decay.enabled` | `true` | Enable confidence decay over time for aging quirks. |
+| `decay.halfLifeDays` | `30` | Number of days after which a quirk's confidence halves (only when decay is enabled). |
+
+Quirks can also be managed from the CLI — see [CLI Reference: `quirk`](cli.md#quirk). Every `addQuirk` call is vetted by an immutable trust monitor (`src/quirks/monitor.ts`) that rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`).
+
 ### `mcp`
 
 Controls the standalone MCP (Model Context Protocol) server.

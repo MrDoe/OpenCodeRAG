@@ -232,6 +232,40 @@ Events are stored as JSONL at `${storePath}/eval-sessions/${sessionID}.jsonl`.
 
 See [Evaluation documentation](evaluation.md) for CLI commands, analysis interpretation, and benchmarking.
 
+### 9. Quirk Memory (Experiential Memory)
+
+When `memory.enabled` is `true`, the plugin provides persistent, cross-session memory of non-obvious facts — gotchas, preferences, decisions, and environment constraints — that the agent can recall and extend over time. Quirks live in the same vector store as code chunks and are recalled via semantic search.
+
+**Tools exposed to the agent:**
+
+| Tool | Use when | Example |
+|------|----------|---------|
+| `recall_quirks` | You hit an error or need to remember a gotcha, preference, or decision from past sessions | `recall_quirks("lancedb type casting")` |
+| `add_quirk` | You just discovered a non-obvious fact, workaround, or convention worth remembering | `add_quirk("npm needs --legacy-peer-deps", { type: "gotcha", tags: ["installation"] })` |
+
+**How it works:**
+
+1. **Add a quirk** — `add_quirk(content)` embeds the text, stores it as a `quirk`-kind chunk in the vector store + keyword index, and appends an audit entry to `quirks.jsonl`. Before writing, an immutable trust monitor (`src/quirks/monitor.ts`) rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`, `disable lint`). Quirk types: `gotcha`, `preference`, `decision`, `environment-constraint`.
+
+2. **Recall a quirk** — `recall_quirks(query)` runs a hybrid (vector + keyword) search filtered to `quirk` chunks, then re-weights results by confidence and returns the top matches. Results respect `memory.minConfidence` and `memory.recallMinScore`. When `memory.autoInject` is `true`, relevant quirks are automatically injected into the prompt during retrieval (via the `chat.message` hook).
+
+3. **Decay & lint** — Optional confidence decay ages quirks over time (`memory.decay.halfLifeDays`). `opencode-rag quirk lint` flags low-confidence, stale, and near-duplicate quirks; `opencode-rag quirk test "<text>"` reports whether a similar quirk has already been appended.
+
+**Config example:**
+```json
+{
+  "memory": {
+    "enabled": true,
+    "autoInject": true,
+    "minConfidence": 0.5,
+    "recallMinScore": 0.3,
+    "decay": { "enabled": true, "halfLifeDays": 30 }
+  }
+}
+```
+
+See [Configuration: `memory`](configuration.md#memory) and [CLI Reference: `quirk`](cli.md#quirk).
+
 ## Plugin Architecture
 
 ```
