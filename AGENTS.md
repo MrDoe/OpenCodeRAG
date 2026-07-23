@@ -29,6 +29,7 @@ Full architecture: [doc/architecture.md](doc/architecture.md).
 - **Plugin types**: `@opencode-ai/plugin` lives in `.opencode/node_modules/`, declared locally in `src/types/opencode-plugin.d.ts`
 - **Config loading**: `loadConfig()` deep-merges per section (not recursive). CLI auto-detects `./opencode-rag.json` and `./.opencode/rag.json`
 - **Ollama responses**: may return `{ embedding: number[] }` or `{ embeddings: number[][] }` — both accepted
+- **Quirk test**: `opencode-rag quirk test <text>` checks if a quirk already exists in the store (semantic search). Returns match details or "not appended"
 
 ## Resource Lifecycle
 

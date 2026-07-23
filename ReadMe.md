@@ -41,7 +41,7 @@ opencode-rag query "authentication middleware"
 | **OpenCode plugin** | Auto-inject context, read-tool override, TUI settings, Ctrl+Enter to add RAG context, MCP registration on `init` |
 | **Incremental indexing** | File-hash manifest, background watcher, auto-rebuild on corruption |
 | **Privacy-first** | All processing stays local (when using Ollama) |
-| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `ui`, `mcp`, `setup`, `eval:sessions`, `eval:analyze`, `eval:compare` |
+| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `ui`, `mcp`, `setup`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare` |
 | **Proxy-aware** | Corporate proxy support with raw-socket localhost bypass |
 | **OpenAI / Anthropic / Cohere** | Use alternate embedding providers with API key auto-resolution |
 | **Evaluation** | Session-level token tracking, RAG-on vs RAG-off comparison, tiktoken BPE counting |

@@ -226,6 +226,113 @@ opencode-rag mcp [options]
 
 Exposes `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools. Clients can configure the server manually, or `opencode-rag init` auto-registers it. The plugin auto-starts the MCP server only when `mcp.enabled` is `true` (default: `false`). Running `opencode-rag mcp` manually always starts the server regardless of `mcp.enabled`. See the [MCP Server](../ReadMe.md#mcp-server) section in the README.
 
+### `quirk`
+
+Manage experiential quirk memory — gotchas, preferences, decisions, and environment constraints.
+
+```bash
+opencode-rag quirk <subcommand> [options]
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|---|---|
+| `add` | Add a new quirk |
+| `list` | List all quirks |
+| `rm` | Remove a quirk by ID |
+| `lint` | Health-check quirks (low confidence, stale, duplicates) |
+| `test` | Test whether a quirk with similar content already exists |
+
+#### `quirk add`
+
+```bash
+opencode-rag quirk add <content> [options]
+```
+
+**Arguments:**
+| Arg | Description |
+|---|---|
+| `<content>` | Quirk text |
+
+**Options:**
+| Flag | Description |
+|---|---|
+| `-t, --type <type>` | Quirk type: gotcha, preference, decision, environment-constraint |
+| `--tag <tags...>` | Tags for filtering |
+| `--source-ref <path>` | Source file path reference |
+
+#### `quirk list`
+
+```bash
+opencode-rag quirk list [options]
+```
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `-c, --config <path>` | auto-detected | Path to config file |
+
+#### `quirk rm`
+
+```bash
+opencode-rag quirk rm <id> [options]
+```
+
+**Arguments:**
+| Arg | Description |
+|---|---|
+| `<id>` | Quirk ID to remove |
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `-c, --config <path>` | auto-detected | Path to config file |
+
+#### `quirk lint`
+
+```bash
+opencode-rag quirk lint [options]
+```
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `-c, --config <path>` | auto-detected | Path to config file |
+
+#### `quirk test`
+
+Test whether a quirk with similar content already exists. Uses semantic search to find matching quirks and reports whether one has been appended before.
+
+```bash
+opencode-rag quirk test <content> [options]
+```
+
+**Arguments:**
+| Arg | Description |
+|---|---|
+| `<content>` | Quirk text to test |
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `-c, --config <path>` | auto-detected | Path to config file |
+
+**Output:**
+- If a matching quirk exists → shows quirk details (type, content preview, tags, confidence)
+- If no match → `No matching quirk found — quirk has not been appended`
+
+**Example:**
+```bash
+$ opencode-rag quirk test "npm needs --legacy-peer-deps"
+✓ Quirk has been appended:
+  [gotcha] npm needs --legacy-peer-deps (installation)
+  99% confidence
+
+$ opencode-rag quirk test "some brand new fact"
+✗ No matching quirk found — quirk has not been appended
+```
+
 ### `setup`
 
 Set up the OpenCodeRAG runtime at `~/.opencode/` so OpenCode can discover the plugin.
