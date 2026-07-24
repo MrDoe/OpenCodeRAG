@@ -170,13 +170,13 @@ Agent:    picks next subdirectory, repeats
 
 ### 6. Wiki Mode — Slash Command (`/wiki`)
 
-When `wikiMode.enabled` is `true`, the plugin injects a system prompt that instructs the host agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
+When `wikiMode.enabled` is `true` (default), the plugin injects a system prompt that instructs the host agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
 
 **Configuration:**
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `enabled` | `false` | Enable wiki mode |
+| `enabled` | `true` | Enable wiki mode |
 | `systemPrompt` | *(built-in)* | System prompt for the wiki maintainer agent |
 
 **How it works:**

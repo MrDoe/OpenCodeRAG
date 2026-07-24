@@ -520,7 +520,7 @@ export const DEFAULT_CONFIG: RagConfig = {
       "Return your changes as a list of file paths with the full new content of the comment block for each modified symbol. Do NOT output the entire file unless asked.",
   },
   wikiMode: {
-    enabled: false,
+    enabled: true,
     systemPrompt:
       "You are a wiki maintainer for this codebase. You incrementally build and maintain " +
       "a persistent knowledge wiki at `.opencode/wiki/` — a structured, interlinked collection " +

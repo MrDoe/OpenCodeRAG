@@ -70,6 +70,12 @@ export function registerInitCommand(program: Command): void {
         console.log(`  ${c.exists("Exists:")}   .opencode/`);
       }
 
+      // Wiki safety: warn if wiki exists but would be affected (currently init never touches it)
+      const wikiDir = path.join(opencodeDir, "wiki");
+      if (existsSync(wikiDir)) {
+        console.log(`  ${c.exists("Preserved:")} .opencode/wiki/ (never modified by init)`);
+      }
+
       if (!existsSync(pluginsDir)) {
         mkdirSync(pluginsDir, { recursive: true });
         console.log(`  ${c.created("Created:")}  .opencode/plugins/`);

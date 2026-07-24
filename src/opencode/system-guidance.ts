@@ -48,6 +48,7 @@ export const MANDATORY_GUIDANCE_LINES: readonly string[] = [
   "- Answering code questions without calling `search_semantic` first (you guess at behavior)",
   "- Using `grep`/`glob` when `search_semantic` would find the answer faster",
   "- Treating image files as text — use `describe_image` instead of reading raw bytes",
+  "- Using `npx opencode-rag quirk` shell commands instead of the built-in `add_quirk` / `recall_quirks` tools (the tools are faster, already loaded in-process, and go through the trust monitor)",
 ];
 
 /**
@@ -121,6 +122,7 @@ export function buildAgentsMdDirective(opts: { promptEnforcement: boolean }): st
     "- Answering code questions without calling `search_semantic` first (you guess at behavior)",
     "- Using `grep`/`glob` when `search_semantic` would find the answer faster",
     "- Treating image files as text — use `describe_image` instead of reading raw bytes",
+    "- Using `npx opencode-rag quirk` shell commands instead of the built-in `add_quirk` / `recall_quirks` tools (the tools are faster, already loaded in-process, and go through the trust monitor)",
   ];
 
   if (opts.promptEnforcement) {

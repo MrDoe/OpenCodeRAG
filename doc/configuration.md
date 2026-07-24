@@ -293,12 +293,12 @@ Progress is persisted in `.opencode/rag_db/doc-mode-progress.json` so subsequent
 
 ### `wikiMode`
 
-Controls the wiki mode that instructs the AI agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. Disabled by default. No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
+Controls the wiki mode that instructs the AI agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. **Enabled by default.** No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
 
 ```json
 {
   "wikiMode": {
-    "enabled": false,
+    "enabled": true,
     "systemPrompt": "You are a wiki maintainer for this codebase..."
   }
 }
@@ -306,7 +306,7 @@ Controls the wiki mode that instructs the AI agent to build and maintain a persi
 
 | Option | Default | Description |
 |---|---|---|
-| `enabled` | `false` | Enable the `/wiki` slash command and wiki maintainer system prompt |
+| `enabled` | `true` | Enable the `/wiki` slash command and wiki maintainer system prompt |
 | `systemPrompt` | *(built-in)* | System prompt defining the wiki layout, frontmatter conventions, and the Ingest/Query/Lint/Seed operations |
 
 The built-in system prompt defines the wiki layout (`.opencode/wiki/index.md`, `log.md`, `entities/`, `concepts/`, `sources/`), page frontmatter (`title`, `tags`, `sourceRefs`, `lastReviewed`), and cross-references via `[[wiki/page-name]]` links. See [Plugin documentation](plugin.md#6-wiki-mode--slash-command-wiki).
