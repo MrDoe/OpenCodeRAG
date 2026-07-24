@@ -92,6 +92,10 @@ export class InMemoryVectorStore implements VectorStore {
   /** Release any held resources. No-op for the in-memory store. */
   async close(): Promise<void> {
   }
+
+  /** No-op for the in-memory store. */
+  async optimize(): Promise<void> {
+  }
 }
 
 /**

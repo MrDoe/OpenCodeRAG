@@ -22,7 +22,7 @@ opencode-rag init [options]
 **Options:**
 | Flag | Default | Description |
 |---|---|---|
-| `-f, --force` | `false` | Overwrite existing files |
+| `-f, --force` | `false` | Overwrite existing files (except `opencode-rag.json`, which requires interactive confirmation) |
 | `--skip-install` | `false` | Skip npm install step |
 | `--skip-health-check` | `false` | Skip provider connectivity and model availability check |
 
@@ -36,8 +36,11 @@ opencode-rag init [options]
 - `opencode-rag.json` — runtime configuration
 - `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`
 - `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
-- `AGENTS.md` — always-loaded tool-usage directive (merged into existing content via sentinel markers)
+- `AGENTS.md` — always-loaded tool-usage directive (merged into existing content via sentinel markers; includes mandatory tool guidance, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules)
 - Runs `npm install` to install workspace dependencies
+
+**Config protection:**
+If `opencode-rag.json` already exists, it is **never overwritten without interactive `y/N` confirmation** — not even with `--force`. Non-interactive shells (pipes, CI) skip the overwrite automatically. To reset the config, run `init` in a TTY and type `y` when prompted, or edit the file manually.
 
 **Health check:**
 After writing config files, `init` validates provider connectivity and model availability for all configured models (embedding + description + image description if enabled). For Ollama, if models are missing, you're prompted to pull them automatically. Use `--skip-health-check` to bypass (e.g., for offline environments).

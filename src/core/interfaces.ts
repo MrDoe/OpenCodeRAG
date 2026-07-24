@@ -195,6 +195,8 @@ export interface VectorStore {
   getChunksByFilePath(filePath: string): Promise<Chunk[]>;
   /** Re-open the store, optionally pointing at a new database path. */
   reopen?(newPath?: string): Promise<void>;
+  /** Compact fragments and prune old versions to prevent version-manifest accumulation. */
+  optimize?(): Promise<void>;
 }
 
 /** Filter criteria for narrowing search results by file path, language, or kind. */

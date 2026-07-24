@@ -248,7 +248,10 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   const scanSec = ((Date.now() - scanStart) / 1000).toFixed(1);
   logger.info(`Workspace scan complete: ${workspaceFiles.length} files in ${scanSec}s`);
 
+  logger.info(`Querying vector store for existing chunk count...`);
+  const storeCountStart = Date.now();
   const existingCount = await options.store.count();
+  logger.info(`Store has ${existingCount} existing chunks (${((Date.now() - storeCountStart) / 1000).toFixed(1)}s)`);
 
   // Detect data loss: if the store has far fewer chunks than the manifest expects,
   // treat it as a corrupt store (e.g. schema migration dropped the old table).
@@ -896,6 +899,19 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // a successful swap this points to the new data; after an abort it's the old).
   await saveManifest(options.storePath, manifest);
   await options.keywordIndex?.save(options.storePath);
+
+  // Compact fragments and prune old version manifests so countRows() can't
+  // hang on accumulated versions from many add/delete cycles.
+  if (!aborted()) {
+    logger.info("Optimizing vector store (compacting fragments, pruning old versions)...");
+    const optimizeStart = Date.now();
+    try {
+      await effectiveStore.optimize?.();
+      logger.info(`Vector store optimized in ${((Date.now() - optimizeStart) / 1000).toFixed(1)}s`);
+    } catch (err) {
+      logger.warn(`Vector store optimization failed: ${(err as Error).message}`);
+    }
+  }
 
   // Persist description cache
   await descCache.save();

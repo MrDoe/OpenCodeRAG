@@ -98,18 +98,20 @@ describe("opencode-rag init", () => {
     assert.equal(afterContent, customContent, "should not overwrite without --force");
   });
 
-  it("overwrites files with --force", async () => {
+  it("does not overwrite opencode-rag.json even with --force in non-interactive shell", async () => {
     process.cwd = () => tmpDir;
 
     const configPath = join(tmpDir, "opencode-rag.json");
-    writeFileSync(configPath, "garbage", "utf-8");
+    const customContent = JSON.stringify({ embedding: { provider: "custom-preserved" } });
+    writeFileSync(configPath, customContent, "utf-8");
 
     const { runCli } = await import("../cli.js");
     await runCli(["node", "cli.ts", "init", "--force", "--skip-install", "--skip-health-check"]);
 
+    // Config must NOT be overwritten in non-TTY even with --force; requires interactive y/N
     const afterContent = readFileSync(configPath, "utf-8");
-    const parsed = JSON.parse(afterContent);
-    assert.equal(parsed.embedding.provider, "ollama", "should contain defaults after force");
+    assert.equal(afterContent, customContent, "should not overwrite config without interactive confirmation");
+    assert.ok(!existsSync(configPath + ".bak"), "should not create .bak file");
   });
 
   it("removes stale plugin registration from .opencode/opencode.json", async () => {
@@ -225,6 +227,10 @@ describe("opencode-rag init AGENTS.md", () => {
     assert.ok(content.includes("`get_file_skeleton`"), "should mention get_file_skeleton");
     assert.ok(content.includes("`find_usages`"), "should mention find_usages");
     assert.ok(content.includes("`describe_image`"), "should mention describe_image");
+    assert.ok(content.includes("Decision tree"), "should contain decision tree");
+    assert.ok(content.includes("Proactive triggers"), "should contain proactive triggers");
+    assert.ok(content.includes("Anti-patterns"), "should contain anti-patterns");
+    assert.ok(content.includes("quirk capture rules"), "should contain quirk capture rules (default promptEnforcement=true)");
     assert.ok(content.includes("<!-- BEGIN opencode-rag -->"), "should contain begin sentinel");
     assert.ok(content.includes("<!-- END opencode-rag -->"), "should contain end sentinel");
   });
@@ -276,6 +282,10 @@ describe("mergeAgentsMdContent helper", () => {
     assert.ok(out.trimEnd().endsWith("<!-- END opencode-rag -->"));
     assert.ok(out.endsWith("\n"), "should end with newline");
     assert.ok(out.includes("search_semantic"));
+    assert.ok(out.includes("Decision tree"), "should include decision tree");
+    assert.ok(out.includes("Proactive triggers"), "should include proactive triggers");
+    assert.ok(out.includes("Anti-patterns"), "should include anti-patterns");
+    assert.ok(out.includes("quirk capture rules"), "should include quirk rules by default");
   });
 
   it("appends section preserving custom content", () => {
@@ -292,8 +302,22 @@ describe("mergeAgentsMdContent helper", () => {
     assert.ok(out.includes("ALWAYS use OpenCodeRAG tools"), "old body replaced with new directive");
     assert.ok(!out.includes("OLD BODY"), "stale body removed");
     assert.ok(out.includes("Trailing."), "trailing content preserved");
+    assert.ok(out.includes("Decision tree"), "new sections should be present");
+    assert.ok(out.includes("Proactive triggers"), "proactive triggers should be present");
+    assert.ok(out.includes("Anti-patterns"), "anti-patterns should be present");
     const beginCount = (out.match(/<!-- BEGIN opencode-rag -->/g) ?? []).length;
     assert.equal(beginCount, 1, "no duplicate sections");
+  });
+
+  it("hides quirk rules when promptEnforcement is false", () => {
+    const out = mergeAgentsMdContent(undefined, { promptEnforcement: false });
+    assert.ok(out.includes("Decision tree"), "decision tree should still be present");
+    assert.ok(!out.includes("quirk capture rules"), "quirk rules should be hidden");
+  });
+
+  it("includes quirk rules when promptEnforcement is true (default)", () => {
+    const out = mergeAgentsMdContent(undefined, { promptEnforcement: true });
+    assert.ok(out.includes("quirk capture rules"), "quirk rules should be present");
   });
 });
 

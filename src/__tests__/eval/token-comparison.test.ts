@@ -302,7 +302,7 @@ describe("system prompt guidance overhead", () => {
     const guidanceTokens = estimateContextTokens(guidance);
 
     assert.ok(guidanceTokens >= 100, `Expected ≥100 tokens for system guidance, got ${guidanceTokens}`);
-    assert.ok(guidanceTokens <= 600, `Expected ≤600 tokens for system guidance, got ${guidanceTokens}`);
+    assert.ok(guidanceTokens <= 750, `Expected ≤750 tokens for system guidance, got ${guidanceTokens}`);
   });
 });
 

@@ -17,6 +17,7 @@ import {
 import { execSync } from "node:child_process";
 import { DEFAULT_CONFIG } from "../../core/config.js";
 import { c } from "../format.js";
+import { BEGIN_MARKER, END_MARKER, buildAgentsMdDirective } from "../../opencode/system-guidance.js";
 import {
   getStringRecord,
   readJsonObject,
@@ -285,23 +286,6 @@ export function mergeGitignoreContent(existingContent?: string): string {
   return merged.join("\n");
 }
 
-const BEGIN_MARKER = "<!-- BEGIN opencode-rag -->";
-const END_MARKER = "<!-- END opencode-rag -->";
-
-const AGENTS_MD_SECTION = [
-  BEGIN_MARKER,
-  "## Code Navigation",
-  "",
-  "ALWAYS use OpenCodeRAG tools before reading or editing:",
-  "- **Search first** — `search_semantic(query)` instead of grep/glob",
-  "- **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines",
-  "- **Usages before edit** — `find_usages(symbolName)` before modifying any symbol",
-  "- **Images via describe** — `describe_image(filePath)` — never read raw bytes",
-  "",
-  "If no results, run `opencode-rag index`.",
-  END_MARKER,
-].join("\n");
-
 /**
  * Merge the OpenCodeRAG directive section into an existing `AGENTS.md`.
  *
@@ -311,11 +295,18 @@ const AGENTS_MD_SECTION = [
  * provided, the section alone is returned as a new file.
  *
  * @param existingContent - The current `AGENTS.md` content, or `undefined` if absent.
+ * @param opts - Optional settings. `promptEnforcement` controls whether the
+ *   quirk-capture enforcement rules are included (default `true`).
  * @returns The merged `AGENTS.md` content with a trailing newline.
  */
-export function mergeAgentsMdContent(existingContent?: string): string {
+export function mergeAgentsMdContent(
+  existingContent?: string,
+  opts?: { promptEnforcement?: boolean },
+): string {
+  const section = buildAgentsMdDirective({ promptEnforcement: opts?.promptEnforcement ?? true });
+
   if (!existingContent) {
-    return `${AGENTS_MD_SECTION}\n`;
+    return `${section}\n`;
   }
 
   const beginIdx = existingContent.indexOf(BEGIN_MARKER);
@@ -324,13 +315,13 @@ export function mergeAgentsMdContent(existingContent?: string): string {
   if (beginIdx !== -1 && endIdx !== -1 && endIdx > beginIdx) {
     const before = existingContent.slice(0, beginIdx);
     const after = existingContent.slice(endIdx + END_MARKER.length);
-    const merged = `${before}${AGENTS_MD_SECTION}${after}`;
+    const merged = `${before}${section}${after}`;
     return merged.endsWith("\n") ? merged : `${merged}\n`;
   }
 
   const trimmed = existingContent.trimEnd();
   const separator = trimmed.endsWith(BEGIN_MARKER) ? "" : "\n\n";
-  return `${trimmed}${separator}${AGENTS_MD_SECTION}\n`;
+  return `${trimmed}${separator}${section}\n`;
 }
 
 /**

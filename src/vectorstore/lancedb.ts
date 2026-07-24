@@ -555,7 +555,10 @@ export class LanceDbStore implements VectorStore {
 
   /**
    * Return the total number of chunks stored in the table.
-   * @returns The chunk count, or 0 if the table does not exist.
+   * Guarded by a 30s timeout — returns 0 if the store is unresponsive
+   * (e.g. corrupted version-manifest accumulation) so the pipeline can
+   * proceed with a fresh index instead of hanging forever.
+   * @returns The chunk count, or 0 if the table does not exist or times out.
    */
   async count(): Promise<number> {
     try {
@@ -564,9 +567,32 @@ export class LanceDbStore implements VectorStore {
       if (!tableNames.includes(TABLE_NAME)) return 0;
 
       const table = await this.getTable();
-      return await table.countRows();
+      const COUNT_TIMEOUT_MS = 30_000;
+      const result = await Promise.race([
+        table.countRows(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), COUNT_TIMEOUT_MS)),
+      ]);
+      if (result === null) {
+        console.warn(`[lancedb] count() timed out after ${COUNT_TIMEOUT_MS / 1000}s — treating store as empty.`);
+        return 0;
+      }
+      return result;
     } catch {
       return 0;
+    }
+  }
+
+  /**
+   * Compact fragments and prune old version manifests to prevent the
+   * version-manifest accumulation that causes countRows() to hang.
+   * Should be called at the end of a successful index pass.
+   */
+  async optimize(): Promise<void> {
+    try {
+      const table = await this.getTable();
+      await table.optimize({ cleanupOlderThan: new Date(), deleteUnverified: false });
+    } catch {
+      // Optimize is best-effort — must not break indexing.
     }
   }
 

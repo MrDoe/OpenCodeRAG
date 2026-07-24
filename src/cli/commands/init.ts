@@ -157,8 +157,19 @@ export function registerInitCommand(program: Command): void {
 
       const agentsMdPath = path.join(cwd, "AGENTS.md");
       const agentsMdExists = existsSync(agentsMdPath);
+      // Read effective promptEnforcement from existing config (if present)
+      let promptEnforcement = true;
+      try {
+        if (existsSync(configPath)) {
+          const existingCfg = loadConfig(configPath, false);
+          promptEnforcement = existingCfg.memory?.promptEnforcement ?? true;
+        }
+      } catch {
+        // Malformed or missing config — use default
+      }
       const nextAgentsMd = mergeAgentsMdContent(
         agentsMdExists ? readFileSync(agentsMdPath, "utf-8") : undefined,
+        { promptEnforcement },
       );
       if (!agentsMdExists || options.force) {
         writeFileSync(agentsMdPath, nextAgentsMd, "utf-8");
@@ -183,15 +194,35 @@ export function registerInitCommand(program: Command): void {
       }
 
       const configExists = existsSync(configPath);
-      if (!configExists || options.force) {
-        if (configExists && options.force) {
-          copyFileSync(configPath, configPath + ".bak");
-          console.log(`  ${c.dim("Backup:")}        ${configPath}.bak`);
-        }
+      if (!configExists) {
         writeFileSync(configPath, generateDefaultConfigJson(), "utf-8");
-        console.log(`  ${configExists ? c.updated("Updated:") : c.created("Created:")} opencode-rag.json`);
+        console.log(`  ${c.created("Created:")} opencode-rag.json`);
       } else {
-        console.log(`  ${c.exists("Exists:")}   opencode-rag.json`);
+        // NEVER overwrite existing config without interactive confirmation
+        let overwrite = false;
+        if (process.stdin.isTTY) {
+          const readline = await import("node:readline");
+          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          const answer = await new Promise<string>((resolve) => {
+            rl.question(
+              `  ${c.warn("opencode-rag.json already exists.")} Overwrite with default config? A backup will be saved. (y/N) `,
+              resolve,
+            );
+          });
+          rl.close();
+          overwrite = /^y(?:es)?$/i.test(answer.trim());
+        }
+        if (overwrite) {
+          copyFileSync(configPath, `${configPath}.bak`);
+          console.log(`  ${c.dim("Backup:")}        opencode-rag.json.bak`);
+          writeFileSync(configPath, generateDefaultConfigJson(), "utf-8");
+          console.log(`  ${c.updated("Updated:")}  opencode-rag.json`);
+        } else {
+          console.log(`  ${c.exists("Exists:")}   opencode-rag.json (preserved)`);
+          if (!process.stdin.isTTY && options.force) {
+            console.log(`  ${c.warn("Skipped overwrite:")} non-interactive shell. Edit opencode-rag.json manually or re-run in a TTY.`);
+          }
+        }
       }
 
       // ── Provider health check + dependency install (parallel) ──

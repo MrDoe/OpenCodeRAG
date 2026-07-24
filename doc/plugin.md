@@ -121,6 +121,8 @@ The skill teaches the workflow: skeleton → find_usages → search → read →
 
 The `experimental.chat.system.transform` hook prepends a tool list to the system prompt on every message, ensuring agents always know the tools are available — even before the index is built.
 
+The guidance text (mandatory tools, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules) is defined in a single source at `src/opencode/system-guidance.ts`. The same text is used at `init` time to populate the `AGENTS.md` directive, ensuring consistency between the runtime system prompt and the always-loaded workspace directive.
+
 ### 5. Documentation Mode — Slash Command (`/doc`)
 
 When `documentationMode.enabled` is `true`, the plugin provides a `/doc` slash command for documenting the codebase. No agent tools are registered — documentation is driven entirely through the slash command.

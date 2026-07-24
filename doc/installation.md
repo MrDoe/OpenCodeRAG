@@ -107,7 +107,7 @@ opencode-rag init
 ```
 
 This creates:
-- `opencode-rag.json` — Workspace-specific RAG configuration
+- `opencode-rag.json` — Workspace-specific RAG configuration (never overwritten without interactive confirmation)
 - `.opencode/plugins/rag-plugin.js` — Plugin entry (re-exports from workspace `node_modules/`)
 - `.opencode/plugins/rag-tui.js` — TUI plugin module
 - `.opencode/opencode.json` — OpenCode workspace config
@@ -115,12 +115,12 @@ This creates:
 - `.opencode/package.json` — Workspace dependencies (links to the globally-installed plugin)
 - `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
 - `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`
-- `AGENTS.md` — Always-loaded tool-usage directive (merged into existing content, never overwrites)
+- `AGENTS.md` — Always-loaded tool-usage directive (merged into existing content, never overwrites; includes mandatory tool guidance, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules)
 - Runs `npm install` to install workspace dependencies
 
 The `AGENTS.md` directive is wrapped in sentinel markers (`<!-- BEGIN opencode-rag -->` / `<!-- END opencode-rag -->`) so re-running `init` replaces the section in-place without duplicating it. Existing content outside the markers is always preserved.
 
-Use `--skip-install` to skip the npm install step. Use `--force` to overwrite existing files. Use `--skip-health-check` to skip provider validation (useful in offline environments).
+Use `--skip-install` to skip the npm install step. Use `--force` to overwrite existing files except `opencode-rag.json` (requires interactive confirmation). Use `--skip-health-check` to skip provider validation (useful in offline environments).
 
 After writing config, `init` validates that your embedding provider is reachable and all configured models (embedding, description & visual) are available. For Ollama, if models are missing, you will be asked to pull them automatically.
 
