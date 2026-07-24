@@ -319,11 +319,14 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 {
   "memory": {
     "enabled": true,
-    "autoInject": true,
+    "autoInject": false,
     "minConfidence": 0.5,
-    "recallMinScore": 0.3,
+    "recallMinScore": 0.8,
+    "autoInjectMinScore": 0.6,
+    "autoInjectTopK": 2,
+    "autoInjectLatencyBudgetMs": 2000,
     "decay": {
-      "enabled": true,
+      "enabled": false,
       "halfLifeDays": 30
     }
   }
@@ -333,10 +336,13 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 | Option | Default | Description |
 |---|---|---|
 | `enabled` | `true` | Enable quirk memory. When `false`, the `add_quirk` / `recall_quirks` tools are inert and quirks are not recalled. |
-| `autoInject` | `true` | Auto-inject relevant quirks into the prompt during retrieval (via the `chat.message` hook). |
+| `autoInject` | `false` | Auto-inject relevant quirks on every user message. Quirks are injected into both the system prompt (`experimental.chat.system.transform`, using `autoInjectMinScore`) and the user message (`chat.message`, using `recallMinScore`). The recall query combines the agent's previous response with the current user message. |
 | `minConfidence` | `0.5` | Minimum confidence (0–1) for a quirk to be returned by recall. |
-| `recallMinScore` | `0.3` | Minimum query-relevance score (0–1) for a quirk to be recalled. |
-| `decay.enabled` | `true` | Enable confidence decay over time for aging quirks. |
+| `recallMinScore` | `0.72` | Minimum query-relevance score (0–1) for a quirk to be returned by manual `recall_quirks` and for auto-injection into the user message. Higher means only high-confidence quirks reach the user's prompt. |
+| `autoInjectMinScore` | `0.6` | Minimum query-relevance score (0–1) for auto-injection into the system prompt. Lower than `recallMinScore` to pre-warm context with permissively relevant quirks. |
+| `autoInjectTopK` | `2` | Maximum number of quirks to auto-inject per turn (both system prompt and user message). Lower = fewer irrelevant quirks. |
+| `autoInjectLatencyBudgetMs` | `2000` | Maximum latency (ms) for auto-inject quirk recall. If the embedder is slower than this, injection is skipped for that message. Set to `0` to disable the timeout. |
+| `decay.enabled` | `false` | Enable confidence decay over time for aging quirks. |
 | `decay.halfLifeDays` | `30` | Number of days after which a quirk's confidence halves (only when decay is enabled). |
 | `passiveCapture` | `false` | Automatically extract quirks from each completed agent turn by running the description LLM on the exchange text (error signals only). Requires `description.enabled`. |
 | `promptEnforcement` | `true` | Upgrade the system-prompt quirk nudge into a mandatory trigger with explicit rules (build/test/type errors fixed, undocumented constraints discovered, etc.). |
@@ -468,6 +474,8 @@ Overrides which AST node types are chunked per language. By default, chunkers us
 | `nodeTypes` | `Record<string, string[]>` | Map of language name to AST node types to chunk on |
 
 See [chunking.md](chunking.md) for the full strategy and per-language node type details.
+
+These settings are also editable via the **OpenCodeRAG TUI** (`Ctrl+Shift+R` → Chunking). The `nodeTypes` field uses a JSON editor — changes require re-indexing.
 
 ### Custom Chunkers
 

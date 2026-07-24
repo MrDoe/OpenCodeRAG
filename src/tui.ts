@@ -288,9 +288,9 @@ type SettingEntry = {
   /** Human-readable label for the setting. */
   label: string;
   /** Data type of the setting value. */
-  type: "boolean" | "number" | "string";
+  type: "boolean" | "number" | "string" | "json";
   /** Current effective value (merged from runtime overrides and file config). */
-  currentValue: boolean | number | string;
+  currentValue: boolean | number | string | Record<string, unknown>;
   /** Optional list of selectable options (used for model pickers). */
   options?: { title: string; value: string; description?: string; category?: string }[];
 };
@@ -450,11 +450,19 @@ function buildSettingCategories(
   const wikiModeCfg = (cfg.wikiMode ?? {}) as Record<string, unknown>;
   const wikiModeRo = (ro.wikiMode ?? {}) as Record<string, unknown>;
 
+  const memoryCfg = (cfg.memory ?? {}) as Record<string, unknown>;
+  const memoryRo = (ro.memory ?? {}) as Record<string, unknown>;
+
   const embeddingCfg = (cfg.embedding ?? {}) as Record<string, unknown>;
   const embeddingRo = (ro.embedding ?? {}) as Record<string, unknown>;
 
   const tuiCfg = (cfg.tui ?? {}) as Record<string, unknown>;
   const tuiRo = (ro.tui ?? {}) as Record<string, unknown>;
+
+  const indexingCfg = (cfg.indexing ?? {}) as Record<string, unknown>;
+  const indexingRo = (ro.indexing ?? {}) as Record<string, unknown>;
+  const chunkingCfg = (cfg.chunking ?? {}) as Record<string, unknown>;
+  const chunkingRo = (ro.chunking ?? {}) as Record<string, unknown>;
 
   const modelOptions = providers ? buildModelOptions(providers) : undefined;
 
@@ -522,6 +530,31 @@ function buildSettingCategories(
             { title: "git (poll)", value: "git", description: "Poll `git diff-index HEAD` for working-tree changes" },
           ],
           currentValue: (aiRo.watcher as string) ?? (aiCfg.watcher as string) ?? "chokidar",
+        },
+      ],
+    },
+    {
+      id: "chunking",
+      label: "Chunking",
+      description: "Configure how files are split into chunks",
+      entries: [
+        {
+          path: ["indexing", "chunkOverlap"],
+          label: "Chunk overlap (lines)",
+          type: "number",
+          currentValue: (indexingRo.chunkOverlap as number) ?? (indexingCfg.chunkOverlap as number) ?? 0,
+        },
+        {
+          path: ["indexing", "maxSvgSizeBytes"],
+          label: "Max SVG size (bytes)",
+          type: "number",
+          currentValue: (indexingRo.maxSvgSizeBytes as number) ?? (indexingCfg.maxSvgSizeBytes as number) ?? 1_048_576,
+        },
+        {
+          path: ["chunking", "nodeTypes"],
+          label: "Node types (JSON)",
+          type: "json",
+          currentValue: (chunkingRo.nodeTypes as Record<string, unknown>) ?? (chunkingCfg.nodeTypes as Record<string, unknown>) ?? {},
         },
       ],
     },
@@ -594,6 +627,67 @@ function buildSettingCategories(
           label: "Wiki mode",
           type: "boolean",
           currentValue: (wikiModeRo.enabled as boolean) ?? (wikiModeCfg.enabled as boolean) ?? false,
+        },
+      ],
+    },
+    {
+      id: "memory",
+      label: "Quirk Memory",
+      description: "Configure experiential memory — gotchas, preferences, decisions recalled across sessions",
+      entries: [
+        {
+          path: ["memory", "enabled"],
+          label: "Quirk memory enabled",
+          type: "boolean",
+          currentValue: (memoryRo.enabled as boolean) ?? (memoryCfg.enabled as boolean) ?? true,
+        },
+        {
+          path: ["memory", "autoInject"],
+          label: "Auto-inject quirks",
+          type: "boolean",
+          currentValue: (memoryRo.autoInject as boolean) ?? (memoryCfg.autoInject as boolean) ?? false,
+        },
+        {
+          path: ["memory", "recallMinScore"],
+          label: "User prompt min score",
+          type: "number",
+          currentValue: (memoryRo.recallMinScore as number) ?? (memoryCfg.recallMinScore as number) ?? 0.72,
+        },
+        {
+          path: ["memory", "autoInjectMinScore"],
+          label: "System prompt min score",
+          type: "number",
+          currentValue: (memoryRo.autoInjectMinScore as number) ?? (memoryCfg.autoInjectMinScore as number) ?? 0.6,
+        },
+        {
+          path: ["memory", "autoInjectLatencyBudgetMs"],
+          label: "Latency budget (ms)",
+          type: "number",
+          currentValue: (memoryRo.autoInjectLatencyBudgetMs as number) ?? (memoryCfg.autoInjectLatencyBudgetMs as number) ?? 2000,
+        },
+        {
+          path: ["memory", "minConfidence"],
+          label: "Min confidence",
+          type: "number",
+          currentValue: (memoryRo.minConfidence as number) ?? (memoryCfg.minConfidence as number) ?? 0.5,
+        },
+        {
+          path: ["memory", "passiveCapture"],
+          label: "Passive capture",
+          type: "boolean",
+          currentValue: (memoryRo.passiveCapture as boolean) ?? (memoryCfg.passiveCapture as boolean) ?? false,
+        },
+        {
+          path: ["memory", "promptEnforcement"],
+          label: "Prompt enforcement",
+          type: "boolean",
+          currentValue: (memoryRo.promptEnforcement as boolean) ?? (memoryCfg.promptEnforcement as boolean) ?? true,
+        },
+        {
+          path: ["memory", "sessionEndExtraction"],
+          label: "Session-end extraction",
+          type: "boolean",
+          currentValue: (memoryRo.sessionEndExtraction as boolean) ?? (memoryCfg.sessionEndExtraction as boolean) ?? true,
         },
       ],
     },
@@ -690,7 +784,7 @@ async function openSettingsDialog(api: {
   function showSettingMenu(cat: SettingCategory): void {
     const options = [
       ...cat.entries.map((s) => ({
-        title: `${s.label}: ${s.type === "boolean" ? (s.currentValue ? "Yes" : "No") : String(s.currentValue)}`,
+        title: `${s.label}: ${s.type === "boolean" ? (s.currentValue ? "Yes" : "No") : s.type === "json" ? JSON.stringify(s.currentValue) : String(s.currentValue)}`,
         value: s.path.join("."),
         description: s.options ? "Select to open model picker" : (s.type === "boolean" ? "Select to toggle" : "Select to edit"),
       })),
@@ -722,6 +816,9 @@ async function openSettingsDialog(api: {
                 title: "Settings",
                 message: `${entry.label}: ${newVal ? "Yes" : "No"}`,
               });
+              if (entry.path[0] === "indexing" || entry.path[0] === "chunking") {
+                api.ui.toast({ variant: "warning", title: "Settings", message: "Chunking changed. Re-index required." });
+              }
               entry.currentValue = newVal;
               showSettingMenu(cat);
             } else if (entry.type === "number") {
@@ -741,7 +838,46 @@ async function openSettingsDialog(api: {
                           title: "Settings",
                           message: `${entry.label}: ${num}`,
                         });
+                        if (entry.path[0] === "indexing" || entry.path[0] === "chunking") {
+                          api.ui.toast({ variant: "warning", title: "Settings", message: "Chunking changed. Re-index required." });
+                        }
                         entry.currentValue = num;
+                      }
+                      showSettingMenu(cat);
+                    },
+                    onCancel: () => {
+                      showSettingMenu(cat);
+                    },
+                  }),
+              );
+            } else if (entry.type === "json") {
+              api.ui.dialog.replace(
+                () =>
+                  api.ui.DialogPrompt({
+                    title: `Edit ${entry.label}`,
+                    placeholder: "JSON",
+                    value: JSON.stringify(entry.currentValue, null, 2),
+                    onConfirm: (input: string) => {
+                      try {
+                        const parsed = JSON.parse(input);
+                        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+                          api.ui.toast({ variant: "error", title: "Settings", message: "Value must be a JSON object" });
+                          showSettingMenu(cat);
+                          return;
+                        }
+                        saveRuntimeOverride(storePath, entry.path, parsed as Record<string, unknown>);
+                        saveConfigValue(configPath!, entry.path, parsed);
+                        api.ui.toast({
+                          variant: "success",
+                          title: "Settings",
+                          message: `${entry.label}: updated`,
+                        });
+                        if (entry.path[0] === "indexing" || entry.path[0] === "chunking") {
+                          api.ui.toast({ variant: "warning", title: "Settings", message: "Chunking changed. Re-index required." });
+                        }
+                        entry.currentValue = parsed as Record<string, unknown>;
+                      } catch {
+                        api.ui.toast({ variant: "error", title: "Settings", message: "Invalid JSON" });
                       }
                       showSettingMenu(cat);
                     },

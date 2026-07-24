@@ -249,7 +249,7 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
 
 1. **Add a quirk** — `add_quirk(content)` embeds the text, stores it as a `quirk`-kind chunk in the vector store + keyword index, and appends an audit entry to `quirks.jsonl`. Before writing, an immutable trust monitor (`src/quirks/monitor.ts`) rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`, `disable lint`). Quirk types: `gotcha`, `preference`, `decision`, `environment-constraint`.
 
-2. **Recall a quirk** — `recall_quirks(query)` runs a hybrid (vector + keyword) search filtered to `quirk` chunks, then re-weights results by confidence and returns the top matches. Results respect `memory.minConfidence` and `memory.recallMinScore`. When `memory.autoInject` is `true`, relevant quirks are automatically injected into the prompt during retrieval (via the `chat.message` hook).
+2. **Recall a quirk** — `recall_quirks(query)` runs a hybrid (vector + keyword) search filtered to `quirk` chunks, then re-weights results by confidence and returns the top matches. Results respect `memory.minConfidence` and `memory.recallMinScore`. When `memory.autoInject` is `true`, relevant quirks are automatically injected into the prompt on every user message (via both the `chat.message` hook and the system prompt transform). The recall query combines the agent's previous response with the current user message for maximum relevance. A latency budget (`memory.autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing.
 
 3. **Decay & lint** — Optional confidence decay ages quirks over time (`memory.decay.halfLifeDays`). `opencode-rag quirk lint` flags low-confidence, stale, and near-duplicate quirks; `opencode-rag quirk test "<text>"` reports whether a similar quirk has already been appended.
 
@@ -266,7 +266,9 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
     "enabled": true,
     "autoInject": true,
     "minConfidence": 0.5,
-    "recallMinScore": 0.3,
+    "recallMinScore": 0.8,
+    "autoInjectMinScore": 0.6,
+    "autoInjectTopK": 2,
     "decay": { "enabled": true, "halfLifeDays": 30 }
   }
 }
@@ -351,6 +353,8 @@ The TUI plugin (`src/tui.ts`) registers a settings panel in the OpenCode sidebar
 | Category | Settings |
 |---|---|
 | Retrieval | `topK`, `minScore`, `maxChunks`, hybrid search toggle |
+| Auto-Indexing | Watcher enable/disable, debounce delay, backend selection |
+| Chunking | `chunkOverlap`, `maxSvgSizeBytes`, `nodeTypes` JSON editor |
 | Embedding | Model picker dropdown (populated from OpenCode's registered providers) |
 | LLM Descriptions | Enable/disable toggle, model picker dropdown |
 

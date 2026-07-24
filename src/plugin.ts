@@ -939,6 +939,38 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       if (wikiMode?.enabled && wikiMode.systemPrompt) {
         output.system.unshift(wikiMode.systemPrompt);
       }
+
+      // Inject relevant quirks into system prompt when memory.autoInject is enabled
+      try {
+        const sessionId = (_input as { sessionID?: string })?.sessionID;
+        if (sessionId) {
+          const memCfg = getEffectiveCfg().memory;
+          if (memCfg?.enabled && memCfg?.autoInject) {
+            const assistantText = sessionAssistantText.get(sessionId) ?? "";
+            const userReq = sessionPrevUserReq.get(sessionId) ?? "";
+            const query = [assistantText, userReq].filter((t) => t.length > 0).join("\n");
+            if (query.length > 0) {
+              const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+              const budgetMs = memCfg.autoInjectLatencyBudgetMs ?? 2000;
+              const quirkResults = await Promise.race([
+                recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 2, minScore: memCfg.autoInjectMinScore }),
+                new Promise<any>((resolve) => setTimeout(() => resolve([]), budgetMs)),
+              ]);
+              if (quirkResults.length > 0) {
+                const lines: string[] = ["", "⚠ **Relevant quirks for this task:**", ""];
+                for (const qr of quirkResults) {
+                  const m = qr.chunk.metadata;
+                  const badge = m.quirkType ? `[${m.quirkType}] ` : "";
+                  lines.push(`- ${badge}${qr.chunk.content.slice(0, 200)}`);
+                }
+                output.system.unshift(lines.join("\n"));
+              }
+            }
+          }
+        }
+      } catch {
+        // Non-critical — must never throw
+      }
     },
     async "chat.message"(input, output) {
       try {
@@ -1253,6 +1285,52 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           return;
         }
 
+        // Always-on quirk injection when memory.autoInject is enabled
+        // (runs on every non-slash message, not just hotkey injection)
+        const quirkMemoryCfg = getEffectiveCfg().memory;
+        if (quirkMemoryCfg?.enabled && quirkMemoryCfg?.autoInject) {
+          try {
+            const assistantText = sessionAssistantText.get(input.sessionID) ?? "";
+            const quirkQuery = [assistantText, text].filter((t) => t.length > 0).join("\n");
+            if (quirkQuery.length > 0) {
+              const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+              const budgetMs = quirkMemoryCfg.autoInjectLatencyBudgetMs ?? 2000;
+              // Use the stricter recallMinScore for user-prompt injection
+              // (system prompt injection uses the lower autoInjectMinScore)
+              const minScore = quirkMemoryCfg.recallMinScore ?? 0.72;
+              const quirkResults = await Promise.race([
+                recallQuirks(quirkDeps, quirkQuery, { topK: quirkMemoryCfg.autoInjectTopK ?? 2, minScore }),
+                new Promise<any>((resolve) => setTimeout(() => resolve([]), budgetMs)),
+              ]);
+              if (quirkResults.length > 0) {
+                const quirkLines: string[] = ["", "---", "⚠ **Quirk memory**", ""];
+                for (const qr of quirkResults) {
+                  const m = qr.chunk.metadata;
+                  const badge = m.quirkType ? `[\`${m.quirkType}\`] ` : "";
+                  quirkLines.push(`- ${badge}${qr.chunk.content.slice(0, 200)}`);
+                }
+                const quirkBlock = quirkLines.join("\n");
+                const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
+                if (Array.isArray(parts) && parts.length > 0) {
+                  const first = parts[0] as Record<string, unknown>;
+                  if (typeof first.text === "string") {
+                    parts[0] = { ...first, text: first.text + "\n\n" + quirkBlock } as typeof parts[0];
+                  }
+                  const msgParts = (output?.message as Record<string, unknown>)?.parts;
+                  if (Array.isArray(msgParts) && msgParts !== parts) {
+                    const mfirst = msgParts[0] as Record<string, unknown>;
+                    if (typeof mfirst.text === "string") {
+                      msgParts[0] = { ...mfirst, text: mfirst.text + "\n\n" + quirkBlock } as typeof msgParts[0];
+                    }
+                  }
+                }
+              }
+            }
+          } catch {
+            // Non-critical — must never throw
+          }
+        }
+
         // Handle hotkey-triggered RAG injection (Ctrl+Enter / Ctrl+Alt+Enter)
         const pendingInjection = consumePendingRagInjection(options.storePath);
         if (pendingInjection) {
@@ -1321,39 +1399,6 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               }
             }
 
-            // Auto-inject quirks when memory.autoInject is enabled
-            const memoryCfg = effectiveCfg.memory;
-            if (memoryCfg?.autoInject) {
-              try {
-                const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: effectiveCfg, storePath: options.storePath };
-                const quirkResults = await recallQuirks(quirkDeps, searchQuery, { topK: 3 });
-                if (quirkResults.length > 0) {
-                  const quirkLines: string[] = ["", "---", "⚠ **Quirk memory**", ""];
-                  for (const qr of quirkResults) {
-                    const m = qr.chunk.metadata;
-                    const badge = m.quirkType ? `[\`${m.quirkType}\`] ` : "";
-                    quirkLines.push(`- ${badge}${qr.chunk.content.slice(0, 200)}`);
-                  }
-                  const quirkBlock = quirkLines.join("\n");
-                  const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
-                  if (Array.isArray(parts) && parts.length > 0) {
-                    const first = parts[0] as Record<string, unknown>;
-                    if (typeof first.text === "string") {
-                      parts[0] = { ...first, text: first.text + "\n\n" + quirkBlock } as typeof parts[0];
-                    }
-                    const msgParts = (output?.message as Record<string, unknown>)?.parts;
-                    if (Array.isArray(msgParts) && msgParts !== parts) {
-                      const mfirst = msgParts[0] as Record<string, unknown>;
-                      if (typeof mfirst.text === "string") {
-                        msgParts[0] = { ...mfirst, text: mfirst.text + "\n\n" + quirkBlock } as typeof msgParts[0];
-                      }
-                    }
-                  }
-                }
-              } catch {
-                // Non-critical — must never throw
-              }
-            }
           }
 
           appendDebugLog(options.logFilePath, {

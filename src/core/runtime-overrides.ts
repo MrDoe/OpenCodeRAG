@@ -53,6 +53,9 @@ export interface RuntimeOverrides {
     sessionEndExtraction?: boolean;
     autoCaptureMaxPerTurn?: number;
     autoCaptureDedupThreshold?: number;
+    autoInjectMinScore?: number;
+    autoInjectLatencyBudgetMs?: number;
+    autoInjectTopK?: number;
   };
   tui?: {
     fileListKeybinding?: string;
@@ -77,7 +80,7 @@ export function loadRuntimeOverrides(storePath: string): RuntimeOverrides {
 export function saveRuntimeOverride(
   storePath: string,
   path: string[],
-  value: boolean | number | string
+  value: boolean | number | string | Record<string, unknown>
 ): void {
   const overridePath = join(storePath, "runtime-overrides.json");
   const overrides = loadRuntimeOverrides(storePath);
@@ -179,6 +182,9 @@ export function applyRuntimeOverrides(
     if (overrides.memory.sessionEndExtraction !== undefined) m.sessionEndExtraction = overrides.memory.sessionEndExtraction;
     if (overrides.memory.autoCaptureMaxPerTurn !== undefined) m.autoCaptureMaxPerTurn = overrides.memory.autoCaptureMaxPerTurn;
     if (overrides.memory.autoCaptureDedupThreshold !== undefined) m.autoCaptureDedupThreshold = overrides.memory.autoCaptureDedupThreshold;
+    if (overrides.memory.autoInjectMinScore !== undefined) m.autoInjectMinScore = overrides.memory.autoInjectMinScore;
+    if (overrides.memory.autoInjectLatencyBudgetMs !== undefined) m.autoInjectLatencyBudgetMs = overrides.memory.autoInjectLatencyBudgetMs;
+    if (overrides.memory.autoInjectTopK !== undefined) m.autoInjectTopK = overrides.memory.autoInjectTopK;
   }
 
   if (overrides.tui) {

@@ -146,6 +146,12 @@ export interface MemoryConfig {
   minConfidence: number;
   /** Minimum query-relevance score (0-1) for a quirk to be recalled. */
   recallMinScore: number;
+  /** Minimum relevance score for auto-injected quirks (lower than recallMinScore for manual calls). */
+  autoInjectMinScore: number;
+  /** Maximum latency budget (ms) for auto-inject quirk recall. If exceeded, injection is skipped. */
+  autoInjectLatencyBudgetMs: number;
+  /** Max quirks to auto-inject per turn (default 2). */
+  autoInjectTopK: number;
   /** Automatically extract quirks from each completed agent turn. */
   passiveCapture: boolean;
   /** Upgrade the system-prompt nudge into a mandatory trigger. */
@@ -595,6 +601,9 @@ export const DEFAULT_CONFIG: RagConfig = {
     autoInject: false,
     minConfidence: 0.5,
     recallMinScore: 0.72,
+    autoInjectMinScore: 0.6,
+    autoInjectLatencyBudgetMs: 2000,
+    autoInjectTopK: 2,
     passiveCapture: false,
     promptEnforcement: true,
     sessionEndExtraction: true,
@@ -709,6 +718,17 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   if (config.memory?.recallMinScore != null) {
     const r = config.memory.recallMinScore;
     if (r < 0 || r > 1) warnings.push("memory.recallMinScore must be between 0 and 1");
+  }
+  if (config.memory?.autoInjectMinScore != null) {
+    const r = config.memory.autoInjectMinScore;
+    if (r < 0 || r > 1) warnings.push("memory.autoInjectMinScore must be between 0 and 1");
+  }
+  if (config.memory?.autoInjectLatencyBudgetMs != null) {
+    const r = config.memory.autoInjectLatencyBudgetMs;
+    if (r < 0) warnings.push("memory.autoInjectLatencyBudgetMs must be >= 0");
+  }
+  if (config.memory?.autoInjectTopK != null && config.memory.autoInjectTopK < 1) {
+    warnings.push("memory.autoInjectTopK must be >= 1");
   }
 
   if (config.openCode.maxContextChunks <= 0) {

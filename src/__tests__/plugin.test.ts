@@ -513,8 +513,9 @@ describe("ragPlugin", () => {
     await systemHook?.({ model: { providerID: "test", modelID: "test" } } as never, output as never);
 
     assert.ok(output.system.length > 0);
-    const guidance = output.system[0]!;
-    assert.match(guidance, /search_semantic/);
+    const guidance = output.system.find((s) => /BEFORE planning/.test(s));
+    assert.ok(guidance, "System guidance should mention BEFORE planning");
+    assert.match(guidance!, /search_semantic/);
     assert.match(guidance, /get_file_skeleton/);
     assert.match(guidance, /find_usages/);
     assert.match(guidance, /BEFORE planning/);

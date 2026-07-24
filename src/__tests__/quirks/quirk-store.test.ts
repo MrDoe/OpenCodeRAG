@@ -26,7 +26,7 @@ const MINIMAL_CFG = {
   openCode: { enabled: false, maxContextChunks: 5 },
   tui: { fileListKeybinding: "", chunksKeybinding: "" },
   logging: { level: "none" as const, logFilePath: "" },
-  memory: { enabled: true, autoInject: false, minConfidence: 0.3, recallMinScore: 0, decay: { enabled: false, halfLifeDays: 30 } },
+  memory: { enabled: true, autoInject: false, minConfidence: 0.3, recallMinScore: 0, autoInjectMinScore: 0.6, autoInjectTopK: 2, autoInjectLatencyBudgetMs: 2000, decay: { enabled: false, halfLifeDays: 30 } },
 } as unknown as RagConfig;
 
 describe("quirk-store", () => {

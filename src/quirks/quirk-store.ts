@@ -174,6 +174,8 @@ export async function recallQuirks(
     topK?: number;
     quirkType?: string;
     tags?: string[];
+    /** Override recallMinScore from config. Used by auto-inject for a lower threshold. */
+    minScore?: number;
   },
 ): Promise<SearchResult[]> {
   const topK = options?.topK ?? 10;
@@ -183,13 +185,13 @@ export async function recallQuirks(
     filter.languages = [options.quirkType];
   }
 
-  const recallMinScore = deps.cfg.memory?.recallMinScore ?? 0.72;
+  const recallMinScore = options?.minScore ?? deps.cfg.memory?.recallMinScore ?? 0.72;
   const raw = await retrieve(query, deps.embedder, deps.store, {
     topK: topK * 3,
     minScore: recallMinScore,
     keywordIndex: deps.keywordIndex,
     keywordWeight: deps.cfg.retrieval.hybridSearch?.keywordWeight,
-    hybridEnabled: false,
+    hybridEnabled: true,
     queryPrefix: deps.cfg.embedding.queryPrefix,
     filter,
   });
