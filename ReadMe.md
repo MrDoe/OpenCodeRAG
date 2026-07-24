@@ -166,7 +166,7 @@ opencode-rag quirk test "npm needs --legacy-peer-deps"
 #   99% confidence
 ```
 
-When `memory.autoInject` is `true`, the plugin checks for relevant quirks on every user message using the combined agent-response + user-query as the search query. Quirks are only injected when their relevance score exceeds the threshold — `recallMinScore` (default 0.72) for the user message, `autoInjectMinScore` (default 0.45) for the system prompt. A latency budget (`autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. Every `add_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
+When `memory.autoInject` is `true`, the plugin checks for relevant quirks on every user message using the combined agent-response + user-query as the search query. Quirks are only injected when their relevance score exceeds the threshold — `recallMinScore` (default 0.72) for the user message, `autoInjectMinScore` (default 0.45) for the system prompt. A latency budget (`autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections. Every `add_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
 
 ## MCP Server (Optional)
 

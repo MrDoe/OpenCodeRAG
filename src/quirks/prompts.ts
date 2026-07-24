@@ -4,7 +4,7 @@ export const MEMORY_CAPTURE_SYSTEM_PROMPT =
   "Rules:\n" +
   "- Output exactly one line per quirk in the format: TYPE|content\n" +
   "- TYPE must be one of: gotcha, preference, decision, environment-constraint\n" +
-  "- content is a single short sentence (max 200 chars)\n" +
+  "- Keep content brief and to the point — one short sentence capturing the essential fact\n" +
   "- If no quirks are present, output exactly: NOTHING\n" +
   "- Do not include explanations, numbering, or markdown\n\n" +
   "Examples:\n" +

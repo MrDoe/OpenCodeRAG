@@ -85,7 +85,7 @@ export function registerQueryCommand(program: Command): void {
               logCliInfo(logFilePath, "query", `  ${c.label("  Matched:")} ${c.lang(r.explanation.matchedTerms.join(", "))}`);
             }
           }
-          logCliInfo(logFilePath, "query", `  ${pc.dim(r.chunk.content.slice(0, 200).replace(/\n/g, "\n  "))}`);
+          logCliInfo(logFilePath, "query", `  ${pc.dim(r.chunk.content.replace(/\n/g, "\n  "))}`);
         }
         await cleanupContext(ctx);
       } catch (err) {

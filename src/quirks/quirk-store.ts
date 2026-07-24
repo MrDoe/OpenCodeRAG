@@ -225,14 +225,14 @@ export async function lintQuirks(deps: QuirkStoreDeps): Promise<string[]> {
 
   for (const q of quirks) {
     if (q.confidence < (cfg?.minConfidence ?? 0.5)) {
-      issues.push(`Low confidence (${q.confidence}): "${q.content.slice(0, 60)}..." [${q.id}]`);
+      issues.push(`Low confidence (${q.confidence}): "${q.content}" [${q.id}]`);
     }
 
     if (cfg?.decay?.enabled && q.lastObserved) {
       const ageDays = (Date.now() - new Date(q.lastObserved).getTime()) / 86_400_000;
       const halfLife = cfg.decay.halfLifeDays;
       if (halfLife > 0 && ageDays > halfLife * 2) {
-        issues.push(`Stale (${Math.round(ageDays)}d old): "${q.content.slice(0, 60)}..." [${q.id}]`);
+        issues.push(`Stale (${Math.round(ageDays)}d old): "${q.content}" [${q.id}]`);
       }
     }
   }
@@ -243,7 +243,7 @@ export async function lintQuirks(deps: QuirkStoreDeps): Promise<string[]> {
       const sim = lexicalSimilarity(quirks[i]!.content, quirks[j]!.content);
       if (sim > 0.85) {
         issues.push(
-          `Near-duplicate (${(sim * 100).toFixed(0)}% similar): "${quirks[i]!.content.slice(0, 50)}..." ↔ "${quirks[j]!.content.slice(0, 50)}..."`,
+          `Near-duplicate (${(sim * 100).toFixed(0)}% similar): "${quirks[i]!.content}" ↔ "${quirks[j]!.content}"`,
         );
       }
     }

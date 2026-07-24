@@ -63,7 +63,7 @@ export function registerQuirkCommand(program: Command): void {
           const badge = q.quirkType ? `[${q.quirkType}] ` : "";
           const tags = q.tags.length > 0 ? ` (${q.tags.join(", ")})` : "";
           const date = q.lastObserved ? new Date(q.lastObserved).toLocaleDateString() : "";
-          logCliInfo(ctx.logFilePath, "quirk list", `  ${c.value(badge)}${c.file(q.content.slice(0, 120))}${c.dim(tags)} ${c.dim(date)}`);
+          logCliInfo(ctx.logFilePath, "quirk list", `  ${c.value(badge)}${c.file(q.content)}${c.dim(tags)} ${c.dim(date)}`);
         }
         await cleanupContext(ctx);
       } catch (err) {
@@ -137,7 +137,7 @@ export function registerQuirkCommand(program: Command): void {
             const badge = r.chunk.metadata.quirkType ? `[${r.chunk.metadata.quirkType}] ` : "";
             const tags = r.chunk.metadata.tags?.length ? ` (${r.chunk.metadata.tags.join(", ")})` : "";
             const confidence = r.chunk.metadata.confidence ? `${(r.chunk.metadata.confidence * 100).toFixed(0)}% confidence` : "";
-            logCliInfo(ctx.logFilePath, "quirk test", `  ${c.value(badge)}${c.file(r.chunk.content.slice(0, 120))}${c.dim(tags)}`);
+            logCliInfo(ctx.logFilePath, "quirk test", `  ${c.value(badge)}${c.file(r.chunk.content)}${c.dim(tags)}`);
             logCliInfo(ctx.logFilePath, "quirk test", `  ${c.dim(confidence)}`);
             logCliInfo(ctx.logFilePath, "quirk test", "");
           }

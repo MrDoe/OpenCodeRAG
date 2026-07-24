@@ -104,6 +104,16 @@ function boundedSet<V>(map: Map<string, V>, key: string, value: V, maxSize: numb
   map.set(key, value);
 }
 
+/** Get or create a Set for a session key in the given Map, bounded by maxSize. */
+function getOrCreateSessionSet(map: Map<string, Set<string>>, key: string, maxSize: number): Set<string> {
+  let set = map.get(key);
+  if (!set) {
+    set = new Set();
+    boundedSet(map, key, set, maxSize);
+  }
+  return set;
+}
+
 /** Name of the semantic search tool as exposed to the LLM. */
 const CONTEXT_TOOL_NAME = "search_semantic";
 /** Marker string injected into context output to identify RAG-sourced content. */
@@ -579,6 +589,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   const sessionPrevUserReq = new Map<string, string>();
   const sessionToolResults = new Map<string, { tool: string; output: string }[]>();
   const sessionTranscript = new Map<string, CaptureExchange[]>();
+  // Track quirk IDs already injected per session to avoid duplicate injection
+  const sessionInjectedQuirks = new Map<string, Set<string>>();
 
   // Evaluation session logger — captures OpenCode events for analysis
   const sessionLogger: SessionLogger = createSessionLogger(options.storePath);
@@ -952,16 +964,20 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             if (query.length > 0) {
               const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
               const budgetMs = memCfg.autoInjectLatencyBudgetMs ?? 2000;
-              const quirkResults = await Promise.race([
+              let quirkResults = await Promise.race([
                 recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 2, minScore: memCfg.autoInjectMinScore }),
                 new Promise<any>((resolve) => setTimeout(() => resolve([]), budgetMs)),
               ]);
+              // Dedup: skip quirks already injected into this session
+              const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, sessionId, MAX_SESSION_MAP_SIZE);
+              quirkResults = quirkResults.filter((qr: any) => !injectedSet.has(qr.chunk.id));
               if (quirkResults.length > 0) {
                 const lines: string[] = ["", "⚠ **Relevant quirks for this task:**", ""];
                 for (const qr of quirkResults) {
                   const m = qr.chunk.metadata;
                   const badge = m.quirkType ? `[${m.quirkType}] ` : "";
-                  lines.push(`- ${badge}${qr.chunk.content.slice(0, 200)}`);
+                  lines.push(`- ${badge}${qr.chunk.content}`);
+                  injectedSet.add(qr.chunk.id);
                 }
                 output.system.unshift(lines.join("\n"));
               }
@@ -1256,7 +1272,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               for (const q of quirks) {
                 const badge = q.quirkType ? `[\`${q.quirkType}\`] ` : "";
                 const tags = q.tags.length > 0 ? ` _(${q.tags.join(", ")})_` : "";
-                lines.push(`- ${badge}${q.content.slice(0, 100)}${tags}  `);
+                lines.push(`- ${badge}${q.content}${tags}  `);
               }
             }
 
@@ -1298,16 +1314,20 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               // Use the stricter recallMinScore for user-prompt injection
               // (system prompt injection uses the lower autoInjectMinScore)
               const minScore = quirkMemoryCfg.recallMinScore ?? 0.72;
-              const quirkResults = await Promise.race([
+              let quirkResults = await Promise.race([
                 recallQuirks(quirkDeps, quirkQuery, { topK: quirkMemoryCfg.autoInjectTopK ?? 2, minScore }),
                 new Promise<any>((resolve) => setTimeout(() => resolve([]), budgetMs)),
               ]);
+              // Dedup: skip quirks already injected into this session
+              const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, input.sessionID, MAX_SESSION_MAP_SIZE);
+              quirkResults = quirkResults.filter((qr: any) => !injectedSet.has(qr.chunk.id));
               if (quirkResults.length > 0) {
                 const quirkLines: string[] = ["", "---", "⚠ **Quirk memory**", ""];
                 for (const qr of quirkResults) {
                   const m = qr.chunk.metadata;
                   const badge = m.quirkType ? `[\`${m.quirkType}\`] ` : "";
-                  quirkLines.push(`- ${badge}${qr.chunk.content.slice(0, 200)}`);
+                  quirkLines.push(`- ${badge}${qr.chunk.content}`);
+                  injectedSet.add(qr.chunk.id);
                 }
                 const quirkBlock = quirkLines.join("\n");
                 const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
