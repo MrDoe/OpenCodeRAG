@@ -4,5 +4,5 @@
     "incremental": true,
     "tsBuildInfoFile": "./.tsbuildinfo"
   },
-  "exclude": ["node_modules", "dist", "src/__tests__"]
+  "exclude": ["node_modules", "dist", "dist/web/ui", "src/web/ui", "src/__tests__"]
 }

@@ -34,7 +34,7 @@ import { countTokens } from "./eval/token-counter.js";
 import { checkForUpdate, getCurrentVersion, installLatestUpdate, type UpdateInfo } from "./core/version-check.js";
 import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "./core/auto-update-state.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
-import { listQuirks, lintQuirks, recallQuirks } from "./quirks/quirk-store.js";
+import { listQuirks, lintQuirks, recallQuirks, sharedWords } from "./quirks/quirk-store.js";
 import { autoCaptureQuirks, type CaptureExchange } from "./quirks/auto-capture.js";
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
@@ -971,6 +971,13 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               // Dedup: skip quirks already injected into this session
               const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, sessionId, MAX_SESSION_MAP_SIZE);
               quirkResults = quirkResults.filter((qr: any) => !injectedSet.has(qr.chunk.id));
+              // Lexical gate: drop quirks that match only the prior assistant text (no token
+              // overlap with the user's actual request) — prevents meta-quirks (quirks about
+              // quirks) from being injected into unrelated tasks. Disabled when autoInjectMinTokenOverlap=0.
+              const minTokenOverlap = memCfg.autoInjectMinTokenOverlap ?? 1;
+              if (minTokenOverlap > 0 && userReq.length > 0) {
+                quirkResults = quirkResults.filter((qr: any) => sharedWords(qr.chunk.content, userReq) >= minTokenOverlap);
+              }
               if (quirkResults.length > 0) {
                 const lines: string[] = ["", "⚠ **Relevant quirks for this task:**", ""];
                 for (const qr of quirkResults) {
@@ -1321,6 +1328,13 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               // Dedup: skip quirks already injected into this session
               const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, input.sessionID, MAX_SESSION_MAP_SIZE);
               quirkResults = quirkResults.filter((qr: any) => !injectedSet.has(qr.chunk.id));
+              // Lexical gate: drop quirks that match only the prior assistant text (no token
+              // overlap with the user's current message) — prevents meta-quirks (quirks about
+              // quirks) from being injected into unrelated tasks. Disabled when autoInjectMinTokenOverlap=0.
+              const minTokenOverlap = quirkMemoryCfg.autoInjectMinTokenOverlap ?? 1;
+              if (minTokenOverlap > 0 && text.length > 0) {
+                quirkResults = quirkResults.filter((qr: any) => sharedWords(qr.chunk.content, text) >= minTokenOverlap);
+              }
               if (quirkResults.length > 0) {
                 const quirkLines: string[] = ["", "---", "⚠ **Quirk memory**", ""];
                 for (const qr of quirkResults) {

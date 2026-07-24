@@ -324,6 +324,7 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
     "recallMinScore": 0.8,
     "autoInjectMinScore": 0.6,
     "autoInjectTopK": 2,
+    "autoInjectMinTokenOverlap": 1,
     "autoInjectLatencyBudgetMs": 2000,
     "decay": {
       "enabled": false,
@@ -341,6 +342,7 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 | `recallMinScore` | `0.72` | Minimum query-relevance score (0–1) for a quirk to be returned by manual `recall_quirks` and for auto-injection into the user message. Higher means only high-confidence quirks reach the user's prompt. |
 | `autoInjectMinScore` | `0.6` | Minimum query-relevance score (0–1) for auto-injection into the system prompt. Lower than `recallMinScore` to pre-warm context with permissively relevant quirks. |
 | `autoInjectTopK` | `2` | Maximum number of quirks to auto-inject per turn (both system prompt and user message). Lower = fewer irrelevant quirks. |
+| `autoInjectMinTokenOverlap` | `1` | Lexical relevance gate for auto-injection. A candidate quirk is dropped unless its content shares at least this many word tokens (≥3 chars) with the user's *current* message — not just the prior assistant text. Prevents meta-quirks (quirks about quirks themselves) from being injected into unrelated tasks where they only matched the combined recall query. Set to `0` to disable. |
 | `autoInjectLatencyBudgetMs` | `2000` | Maximum latency (ms) for auto-inject quirk recall. If the embedder is slower than this, injection is skipped for that message. Set to `0` to disable the timeout. |
 | `decay.enabled` | `false` | Enable confidence decay over time for aging quirks. |
 | `decay.halfLifeDays` | `30` | Number of days after which a quirk's confidence halves (only when decay is enabled). |

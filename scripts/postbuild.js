@@ -1,5 +1,5 @@
 import { mkdirSync, copyFileSync, existsSync, readdirSync, unlinkSync } from "node:fs";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const distDir = join(fileURLToPath(import.meta.url), "..", "..", "dist");
@@ -10,18 +10,6 @@ copyFileSync(
   join(srcDir, "types", "opencode-plugin.d.ts"),
   join(distDir, "types", "opencode-plugin.d.ts"),
 );
-
-const uiDir = join(distDir, "web", "ui");
-mkdirSync(uiDir, { recursive: true });
-
-copyFileSync(join(srcDir, "web", "ui", "index.html"), join(uiDir, "index.html"));
-
-for (const f of ["app.css", "github-dark.css", "highlight.min.js"]) {
-  const src = join(srcDir, "web", "ui", f);
-  if (existsSync(src)) {
-    copyFileSync(src, join(uiDir, f));
-  }
-}
 
 // Remove source maps from dist/ to reduce package size
 function removeSourceMaps(dir) {

@@ -152,6 +152,13 @@ export interface MemoryConfig {
   autoInjectLatencyBudgetMs: number;
   /** Max quirks to auto-inject per turn (default 2). */
   autoInjectTopK: number;
+  /**
+   * Minimum number of shared word tokens (≥3 chars) between a candidate quirk's
+   * content and the user's *current* message for the quirk to be auto-injected
+   * (default 1). Acts as a relevance gate against meta-quirks that match only
+   * the prior assistant text in the combined recall query. Set to `0` to disable.
+   */
+  autoInjectMinTokenOverlap: number;
   /** Automatically extract quirks from each completed agent turn. */
   passiveCapture: boolean;
   /** Upgrade the system-prompt nudge into a mandatory trigger. */
@@ -238,9 +245,28 @@ export interface RagConfig {
   indexing: {
     /** File extensions to include in indexing. */
     includeExtensions: string[];
-    /** Directory name patterns to exclude. */
+    /**
+     * Directory/file name patterns to exclude.
+     *
+     * Semantics (same for `excludeFiles`):
+     * - Plain name (no path separator, no glob chars `* ? [ { (`):
+     *   matches that **basename** at **any depth** (case-insensitive).
+     * - Basename glob (glob chars, no separator):
+     *   matches the segment at any depth via glob.
+     * - Path pattern (contains a separator or `**`):
+     *   **anchored to the workspace root** — matched as a glob against each
+     *   ancestor prefix (so it excludes the matched directory and all contents).
+     *
+     * Supports standard wildcards: `*`, `?`, `[...]`, `{a,b}`, `(pattern)`.
+     * Use `/` as path separator (converted automatically). Matching is
+     * case-insensitive and dot-inclusive.
+     */
     excludeDirs: string[];
-    /** Specific filenames (basenames, case-insensitive) to exclude from indexing. */
+    /**
+     * File-name patterns to exclude (same semantics as `excludeDirs`).
+     * Plain names match any file with that basename at any depth; path
+     * patterns are anchored to the workspace root.
+     */
     excludeFiles?: string[];
     /** Number of overlapping lines between adjacent chunks. */
     chunkOverlap: number;
@@ -435,6 +461,17 @@ export const DEFAULT_CONFIG: RagConfig = {
       ".commandcode",
       ".agents",
       "graphify-out",
+      ".vscode",
+      ".vs",
+      ".idea",
+      ".next",
+      ".nuxt",
+      ".turbo",
+      ".angular",
+      ".svelte-kit",
+      ".gradle",
+      ".dart_tool",
+      ".cache",
     ],
     excludeFiles: [
       "package-lock.json",
@@ -604,6 +641,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     autoInjectMinScore: 0.6,
     autoInjectLatencyBudgetMs: 2000,
     autoInjectTopK: 2,
+    autoInjectMinTokenOverlap: 1,
     passiveCapture: false,
     promptEnforcement: true,
     sessionEndExtraction: true,

@@ -2,13 +2,13 @@
  * @fileoverview HTTP server for the OpenCodeRAG Web UI dashboard with static asset serving and REST API routing.
  */
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, extname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LanceDbStore } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import { createApiHandler } from "./api.js";
-import { getStaticHtml } from "./static.js";
+import { getStaticHtml, resolveDistAsset } from "./static.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const uiDir = join(__dirname, "ui");
@@ -78,8 +78,18 @@ export async function startWebUi(
   const store = new LanceDbStore(storePath, vectorDimension);
   const keywordIndex = await KeywordIndex.load(storePath);
 
+  // Lazy embedder for /api/retrieve — initialized on first use
+  let embedderPromise: Promise<import("../core/interfaces.js").EmbeddingProvider> | null = null;
+  async function getEmbedder(): Promise<import("../core/interfaces.js").EmbeddingProvider> {
+    if (!embedderPromise) {
+      const { createEmbedder } = await import("../embedder/factory.js");
+      embedderPromise = Promise.resolve(createEmbedder(cfg!));
+    }
+    return embedderPromise;
+  }
+
   const html = getStaticHtml();
-  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg);
+  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg, getEmbedder);
 
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? "/";
@@ -96,13 +106,19 @@ export async function startWebUi(
         res.end("Forbidden");
         return;
       }
-      const assetPath = join(uiDir, decoded);
-      if (!assetPath.startsWith(uiDir + sep)) {
-        res.writeHead(403, { "Content-Type": "text/plain" });
-        res.end("Forbidden");
+      // Try production build output first, fall back to dev source
+      const distAsset = resolveDistAsset(decoded);
+      if (distAsset) {
+        serveUiAsset(res, distAsset);
         return;
       }
-      serveUiAsset(res, assetPath);
+      const devPath = join(uiDir, decoded);
+      if (devPath.startsWith(uiDir + sep) && existsSync(devPath)) {
+        serveUiAsset(res, devPath);
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not Found");
       return;
     }
 

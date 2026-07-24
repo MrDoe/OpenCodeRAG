@@ -259,6 +259,8 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
    - **Session-end extraction** (`memory.sessionEndExtraction`): On non-message lifecycle events (session close), runs a full-transcript extraction pass. Both passive capture and session-end extraction require `description.enabled: true` and reuse the same LLM model with a quirk-specific system prompt.
    - **Dedup**: Candidate quirks are deduped against existing ones via lexical similarity (`memory.autoCaptureDedupThreshold`, default 0.85). All auto-captured quirks pass the immutable trust monitor before storage.
 
+5. **Relevance gate for auto-injection** — After vector recall, each candidate quirk must share at least `memory.autoInjectMinTokenOverlap` (default `1`) word tokens (≥3 chars) with the user's *current* message alone — not merely the combined assistant+user recall query. This stops meta-quirks (quirks about quirks themselves, e.g. "Quirk content length is guided by…") from being injected into unrelated tasks where they only matched the prior assistant text in the recall query. Set `autoInjectMinTokenOverlap` to `0` to disable the gate (restores the old behavior of pure semantic matching).
+
 **Config example:**
 ```json
 {
@@ -269,6 +271,7 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
     "recallMinScore": 0.8,
     "autoInjectMinScore": 0.6,
     "autoInjectTopK": 2,
+    "autoInjectMinTokenOverlap": 1,
     "decay": { "enabled": true, "halfLifeDays": 30 }
   }
 }

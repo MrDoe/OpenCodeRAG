@@ -4,6 +4,7 @@
 import path from "node:path";
 import { manifestPathFor } from "../core/manifest.js";
 import type { RagConfig } from "../core/config.js";
+import { createExcludeMatcher } from "../core/exclude.js";
 
 /** Scheduler that coordinates debounced re-index passes triggered by file-system changes. */
 export interface WatchPassScheduler {
@@ -137,7 +138,8 @@ export function createWatchIgnore(
   storePath: string,
 ): (watchedPath: string) => boolean {
   const manifestPath = manifestPathFor(storePath);
-  const excludeDirs = new Set(config.indexing.excludeDirs);
+  const dirMatcher = createExcludeMatcher(config.indexing.excludeDirs);
+  const fileMatcher = createExcludeMatcher(config.indexing.excludeFiles ?? []);
 
   return (watchedPath: string): boolean => {
     const resolved = path.resolve(watchedPath);
@@ -146,7 +148,6 @@ export function createWatchIgnore(
 
     const relative = path.relative(cwd, resolved);
     if (!relative || relative.startsWith("..")) return false;
-    const segments = relative.split(path.sep);
-    return segments.some((segment) => excludeDirs.has(segment));
+    return dirMatcher.excluded(relative) || fileMatcher.excluded(relative);
   };
 }

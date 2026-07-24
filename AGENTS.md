@@ -32,6 +32,10 @@ Full architecture: [doc/architecture.md](doc/architecture.md).
 - **Quirk test**: `opencode-rag quirk test <text>` checks if a quirk already exists in the store (semantic search). Returns match details or "not appended"
 - **Auto-capture quirks**: three `memory.*` flags — `passiveCapture` (per-turn extraction), `promptEnforcement` (mandatory system prompt), `sessionEndExtraction` (full-transcript on session end). All off by default. Requires `description.enabled: true` (reuses description LLM for extraction).
 - **Auto-capture dedup**: candidate quirks are deduped against existing quirks via lexical similarity (`autoCaptureDedupThreshold`, default 0.85) before being added.
+- **excludeDirs/excludeFiles matching** (`src/core/exclude.ts`): plain names (no `/`, no glob chars) match basename at **any depth**; patterns with a separator are **anchored** to workspace root. Matching is case-insensitive. Uses `minimatch` (bundled TS types). `walkFiles` no longer auto-skips dotdirs — rely on `excludeDirs` config instead.
+- **`noUncheckedIndexedAccess`** in `tsconfig.json`: array indexing returns `string | undefined`. Use `for...of` loops instead of indexed `for` in new code to avoid `Object is possibly 'undefined'` errors.
+- **watch.ts ignores both excludeDirs AND excludeFiles**: `createWatchIgnore` uses both matchers — any excludeFiles pattern applies to file-watch ignore too.
+- **`walkFiles` signature changed**: `excludeDirs`/`excludeFiles` params changed from `Set<string>` to `ExcludeMatcher`; `rootDir` param added. If you import `walkFiles` directly, update the call site or use `scanWorkspaceFiles` instead.
 
 ## Resource Lifecycle
 
@@ -47,7 +51,15 @@ Every `new`/`create`/`open` MUST have a matching `close()`/`destroy()`/`cancel()
 - `npm test` — unit tests only (Node.js built-in `node:test`, ~5s)
 - `npm run test:integration` — integration tests (30s+, spawns opencode)
 - `npm run typecheck` — `tsc --noEmit`
-- `npm run build` — `tsc -p tsconfig.build.json`
+- `npm run build` — `tsc -p tsconfig.build.json && vite build` (backend + frontend)
+- `npm run dev:ui` — Vite dev server with HMR for frontend development
+
+### Web UI Testing
+
+When testing the web UI (`opencode-rag ui`), use the **firefox-devtools** skill.
+After rebuilding the frontend (`npm run build`), the server must be restarted
+to pick up new HTML/JS assets (cached in memory). See the skill for the
+restart pattern and browser cache troubleshooting.
 
 ## Release
 

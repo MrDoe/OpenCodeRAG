@@ -3,12 +3,14 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync } from "node:fs";
-import { extname, resolve as resolvePathModule } from "node:path";
+import { extname, join, resolve as resolvePathModule } from "node:path";
+import { createHash } from "node:crypto";
 import { LanceDbStore } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import { listSessions, getSession, deleteSession, compareSessions, validateSessionID } from "../eval/storage.js";
 import { analyzeTokenUsage, compareTokenAnalyses, projectTokenSavings } from "../eval/token-analysis.js";
 import { listQuirks, lintQuirks, removeQuirk, type QuirkStoreDeps } from "../quirks/quirk-store.js";
+import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
 import type { RagConfig } from "../core/config.js";
 import type { EmbeddingProvider } from "../core/interfaces.js";
 
@@ -73,7 +75,14 @@ function sendJson(res: ServerResponse, response: ApiResponse): void {
  * @param cfg          - Active RAG configuration (used by quirk endpoints).
  * @returns An async handler that returns `true` when a route matched or `false` otherwise.
  */
-export function createApiHandler(store: LanceDbStore, keywordIndex: KeywordIndex, storePath: string, cwd?: string, cfg?: RagConfig) {
+export function createApiHandler(
+  store: LanceDbStore,
+  keywordIndex: KeywordIndex,
+  storePath: string,
+  cwd?: string,
+  cfg?: RagConfig,
+  getEmbedder?: () => Promise<EmbeddingProvider>
+) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
@@ -92,7 +101,7 @@ export function createApiHandler(store: LanceDbStore, keywordIndex: KeywordIndex
     if (method === "OPTIONS") {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       });
       res.end();
@@ -116,6 +125,16 @@ export function createApiHandler(store: LanceDbStore, keywordIndex: KeywordIndex
         response = await handleSearch(keywordIndex, params);
       } else if (path === "/api/compare") {
         response = await handleCompare(store, params);
+      } else if (path === "/api/retrieve") {
+        response = await handleRetrieve(store, keywordIndex, getEmbedder, cfg!, params);
+      } else if (path === "/api/indexing/status") {
+        response = await handleIndexingStatus(storePath, cwd);
+      } else if (path === "/api/indexing/reindex" && method === "POST") {
+        response = await handleReindex(cwd!, cfg!, storePath, store, getEmbedder);
+      } else if (path === "/api/config") {
+        response = await handleConfig(cfg!);
+      } else if (path === "/api/embeddings/projection") {
+        response = await handleEmbeddingProjection(store, params);
       }
       // File content endpoint (for serving images)
       else if (path === "/api/file" && method === "GET") {
@@ -328,6 +347,95 @@ async function handleSearch(
   };
 }
 
+/**
+ * Perform a full vector+hybrid semantic search via the retrieve() pipeline.
+ * Accepts GET or POST with query parameters: q, topK, minScore, keywordWeight, hybrid, path, lang, explain.
+ * The embedder is lazily initialized on the first call; returns 202 if still initializing.
+ */
+async function handleRetrieve(
+  store: LanceDbStore,
+  keywordIndex: KeywordIndex,
+  getEmbedder: (() => Promise<EmbeddingProvider>) | undefined,
+  cfg: RagConfig,
+  params: URLSearchParams
+): Promise<ApiResponse> {
+  if (!getEmbedder) {
+    return { status: 503, body: { error: "Embedder not configured for this server instance" } };
+  }
+
+  const q = params.get("q") ?? "";
+  if (!q.trim()) {
+    return { status: 400, body: { error: "Missing 'q' query parameter" } };
+  }
+
+  let embedder: EmbeddingProvider;
+  try {
+    embedder = await getEmbedder();
+  } catch (err) {
+    return { status: 503, body: { error: `Embedding model unavailable: ${(err as Error).message}. Check that your embedding provider is running.` } };
+  }
+
+  const topK = parseInt(params.get("topK") ?? "10", 10);
+  const minScore = parseFloat(params.get("minScore") ?? "0.35");
+  const keywordWeight = parseFloat(params.get("keywordWeight") ?? "0.4");
+  const hybrid = params.get("hybrid") !== "false";
+  const explain = params.get("explain") !== "false";
+  const pathFilter = params.get("path") ?? undefined;
+  const langFilter = params.get("lang") ?? undefined;
+
+  try {
+    const results = await retrieve(q, embedder, store, {
+      topK,
+      minScore,
+      keywordIndex,
+      keywordWeight,
+      hybridEnabled: hybrid,
+      queryPrefix: cfg.embedding.queryPrefix,
+      explain,
+      filter: {
+        pathPatterns: pathFilter ? pathFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+        languages: langFilter ? langFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+      },
+    } satisfies RetrieveOptions);
+
+    return {
+      status: 200,
+      body: {
+        query: q,
+        params: { topK, minScore, keywordWeight, hybrid, queryPrefix: cfg.embedding.queryPrefix },
+        results: results.map((r) => ({
+          chunk: {
+            id: r.chunk.id,
+            filePath: r.chunk.metadata.filePath,
+            startLine: r.chunk.metadata.startLine,
+            endLine: r.chunk.metadata.endLine,
+            language: r.chunk.metadata.language,
+            content: r.chunk.content,
+            description: r.chunk.description,
+          },
+          score: Math.round(r.score * 1000) / 1000,
+          explanation: r.explanation
+            ? {
+                scoreBreakdown: {
+                  vectorScore: r.explanation.scoreBreakdown.vectorScore,
+                  keywordScore: r.explanation.scoreBreakdown.keywordScore,
+                  rawVectorScore: r.explanation.scoreBreakdown.rawVectorScore,
+                  rawKeywordScore: r.explanation.scoreBreakdown.rawKeywordScore,
+                  keywordWeight: r.explanation.scoreBreakdown.keywordWeight,
+                  vectorRank: r.explanation.scoreBreakdown.vectorRank,
+                  keywordRank: r.explanation.scoreBreakdown.keywordRank,
+                },
+                matchedTerms: r.explanation.matchedTerms,
+              }
+            : undefined,
+        })),
+      },
+    };
+  } catch (err) {
+    return { status: 500, body: { error: `Retrieval failed: ${(err as Error).message}` } };
+  }
+}
+
 /** Fetch multiple chunks by their comma-separated IDs (`ids` query param) for side-by-side comparison. */
 async function handleCompare(
   store: LanceDbStore,
@@ -346,6 +454,139 @@ async function handleCompare(
   );
 
   return { status: 200, body: { chunks } };
+}
+
+/**
+ * Return indexing status — manifest stats, staleness, and a placeholder for watcher state.
+ */
+async function handleIndexingStatus(storePath: string, cwd?: string): Promise<ApiResponse> {
+  const manifestPath = join(storePath, "manifest.json");
+  let manifest: Record<string, unknown> | null = null;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  } catch { /* no manifest yet */ }
+
+  let staleFileCount = 0;
+  let totalChunks = 0;
+  let totalFiles = 0;
+  let lastIndexedAt: string | null = null;
+  let schemaVersion = manifest?.schemaVersion as number ?? 0;
+
+  if (manifest?.files) {
+    const storedFiles = manifest.files as Record<string, { hash: string; chunkCount: number }>;
+    totalFiles = Object.keys(storedFiles).length;
+    totalChunks = Object.values(storedFiles).reduce((sum, f) => sum + (f.chunkCount ?? 0), 0);
+  }
+
+  if (manifest?.lastIndexedAt) {
+    lastIndexedAt = new Date(manifest.lastIndexedAt as number).toISOString();
+  }
+
+      // Count stale files by comparing manifest file list against current disk state
+      if (cwd && manifest?.files) {
+        const storedFiles = manifest.files as Record<string, { hash: string }>;
+        for (const [filePath, fileMeta] of Object.entries(storedFiles)) {
+          try {
+            const fullPath = filePath;
+            const content = readFileSync(fullPath, "utf-8");
+            const hash = createHash("sha256").update(content).digest("hex");
+            if (hash !== fileMeta.hash) staleFileCount++;
+          } catch {
+            staleFileCount++; // file was deleted or unreadable
+          }
+        }
+      }
+
+  return {
+    status: 200,
+    body: {
+      manifest: { totalChunks, totalFiles, schemaVersion, lastIndexedAt },
+      staleFileCount,
+      watcherActive: false,
+    },
+  };
+}
+
+/**
+ * Trigger a one-shot reindex pass in the background.
+ */
+async function handleReindex(
+  cwd: string,
+  cfg: import("../core/config.js").RagConfig,
+  storePath: string,
+  store: LanceDbStore,
+  getEmbedder?: () => Promise<EmbeddingProvider>
+): Promise<ApiResponse> {
+  try {
+    const { runIndexPass } = await import("../indexer.js");
+    const embedder = getEmbedder ? await getEmbedder() : undefined;
+    if (!embedder) {
+      return { status: 503, body: { error: "Embedder not available" } };
+    }
+    runIndexPass({ cwd, storePath, config: cfg, store, embedder }).catch((err: Error) => {
+      console.error("Background reindex failed:", err);
+    });
+    return { status: 200, body: { started: true } };
+  } catch (err) {
+    return { status: 500, body: { error: `Failed to start reindex: ${(err as Error).message}` } };
+  }
+}
+
+/**
+ * Return the effective configuration with API keys redacted.
+ */
+function handleConfig(cfg: import("../core/config.js").RagConfig): ApiResponse {
+  const redacted = JSON.parse(JSON.stringify(cfg));
+  redactKeys(redacted);
+  return { status: 200, body: { config: redacted } };
+}
+
+function redactKeys(obj: Record<string, unknown>): void {
+  for (const key of Object.keys(obj)) {
+    if (key.toLowerCase().includes("apikey") || key === "apiKey") {
+      obj[key] = "***";
+    } else if (typeof obj[key] === "object" && obj[key] !== null) {
+      redactKeys(obj[key] as Record<string, unknown>);
+    }
+  }
+}
+
+/**
+ * Project chunk embeddings to 2D via PCA for the Embedding Space Explorer.
+ */
+async function handleEmbeddingProjection(store: LanceDbStore, params: URLSearchParams): Promise<ApiResponse> {
+  const maxChunks = parseInt(params.get("maxChunks") ?? "5000", 10);
+  try {
+    const chunks = await store.getChunksWithEmbeddings(maxChunks);
+    if (chunks.length === 0) {
+      return { status: 200, body: { points: [], totalChunks: 0 } };
+    }
+    if (chunks.length === 1) {
+      return { status: 200, body: { points: [{ id: chunks[0]!.id, x: 0.5, y: 0.5, filePath: chunks[0]!.filePath, startLine: chunks[0]!.startLine, endLine: chunks[0]!.endLine, language: chunks[0]!.language, description: chunks[0]!.description }], totalChunks: 1, displayedChunks: 1 } };
+    }
+
+    const { computePCA } = await import("./pca.js");
+    const vectors = chunks.map(c => c.embedding);
+    const projected = computePCA(vectors);
+
+    const points = chunks.map((c, i) => ({
+      id: c.id,
+      x: projected[i]!.x,
+      y: projected[i]!.y,
+      filePath: c.filePath,
+      startLine: c.startLine,
+      endLine: c.endLine,
+      language: c.language,
+      description: c.description,
+    }));
+
+    return {
+      status: 200,
+      body: { points, totalChunks: chunks.length, displayedChunks: points.length },
+    };
+  } catch (err) {
+    return { status: 500, body: { error: `Projection failed: ${(err as Error).message}` } };
+  }
 }
 
 // ── File Content API ──────────────────────────────────────────────────

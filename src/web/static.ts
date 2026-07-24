@@ -1,25 +1,52 @@
 /**
  * @fileoverview Static HTML file reader and cache for the Web UI entry page.
+ * Supports both the Vite production build output and the development source.
  */
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Resolve the project root directory regardless of whether running from source (tsx)
+ * or compiled output (dist/). The static.ts module lives at src/web/static.ts or
+ * dist/web/static.ts, so going up two directories reaches the project root.
+ */
+function projectRoot(): string {
+  return resolve(__dirname, "..", "..");
+}
 
 let cachedHtml: string | null = null;
 
 /**
  * Read and cache the Web UI `index.html` from disk.
  *
- * The HTML is read once from the `ui/` directory adjacent to this module
- * and cached in memory for subsequent calls.
+ * Reads from the Vite production build output (`dist/web/ui/index.html`) when available,
+ * falling back to the development source (`src/web/ui/index.html`).
  *
  * @returns The full HTML string of the Web UI entry page.
  */
 export function getStaticHtml(): string {
   if (cachedHtml) return cachedHtml;
 
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const htmlPath = join(__dirname, "ui", "index.html");
-  cachedHtml = readFileSync(htmlPath, "utf-8");
+  const root = projectRoot();
+  const prodPath = join(root, "dist", "web", "ui", "index.html");
+  const devPath = join(root, "src", "web", "ui", "index.html");
+  const targetPath = existsSync(prodPath) ? prodPath : devPath;
+
+  cachedHtml = readFileSync(targetPath, "utf-8");
   return cachedHtml;
+}
+
+/**
+ * Resolve the path to a built UI asset from the Vite output directory.
+ * Returns null if the path escapes the dist directory or does not exist.
+ */
+export function resolveDistAsset(path: string): string | null {
+  const root = projectRoot();
+  const distDir = join(root, "dist", "web", "ui").replace(/\\/g, "/");
+  const resolved = join(distDir, path).replace(/\\/g, "/");
+  if (!resolved.startsWith(distDir + "/")) return null;
+  return existsSync(resolved) ? resolved : null;
 }

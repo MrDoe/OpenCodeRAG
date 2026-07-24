@@ -7,6 +7,7 @@ import path from "node:path";
 import pLimit from "p-limit";
 import type { RagConfig } from "../core/config.js";
 import { computeFileHash, computeDescriptionConfigHash, normalizeFilePath, type FileManifest } from "../core/manifest.js";
+import { createExcludeMatcher, type ExcludeMatcher } from "../core/exclude.js";
 import { DescriptionCache } from "../core/desc-cache.js";
 import {
   createImageVisionProvider,
@@ -46,8 +47,9 @@ interface Logger {
 export async function walkFiles(
   dir: string,
   extensions: Set<string>,
-  excludeDirs: Set<string>,
-  excludeFiles?: Set<string>,
+  excludeDirs: ExcludeMatcher,
+  excludeFiles?: ExcludeMatcher,
+  rootDir = dir,
   logger?: Logger,
   dirCount?: { value: number },
   maxDirs = 10_000,
@@ -60,8 +62,7 @@ export async function walkFiles(
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      if (excludeDirs.has(entry.name)) continue;
-      if (entry.name.startsWith(".")) continue;
+      if (excludeDirs.excluded(path.relative(rootDir, fullPath))) continue;
       if (dirCount) {
         dirCount.value++;
         if (dirCount.value % 100 === 0) {
@@ -76,7 +77,7 @@ export async function walkFiles(
         logger?.warn(`Exceeded ${maxResults} matching files — truncating walk at ${fullPath}`);
         return results;
       }
-      results.push(...(await walkFiles(fullPath, extensions, excludeDirs, excludeFiles, logger, dirCount, maxDirs, maxResults)));
+      results.push(...(await walkFiles(fullPath, extensions, excludeDirs, excludeFiles, rootDir, logger, dirCount, maxDirs, maxResults)));
     } else if (entry.isFile()) {
       if (results.length >= maxResults) {
         logger?.warn(`Exceeded ${maxResults} matching files — truncating walk`);
@@ -84,7 +85,7 @@ export async function walkFiles(
       }
       const ext = path.extname(entry.name).toLowerCase();
       const basename = entry.name.toLowerCase();
-      if ((extensions.has(ext) || extensions.has(basename)) && !excludeFiles?.has(basename)) {
+      if ((extensions.has(ext) || extensions.has(basename)) && !excludeFiles?.excluded(path.relative(rootDir, fullPath))) {
         results.push(fullPath);
       }
     }
@@ -158,22 +159,20 @@ export async function scanWorkspaceFiles(
     imageResizeMaxDimension = imageCfg.resizeMaxDimension;
   }
 
+  const excludeDirMatcher = createExcludeMatcher(config.indexing.excludeDirs);
+  const excludeFileMatcher = createExcludeMatcher(config.indexing.excludeFiles ?? []);
+
   let files: string[];
   if (filterPaths && filterPaths.length > 0) {
-    const excludeDirs = new Set(config.indexing.excludeDirs);
-    const excludeFiles = new Set(config.indexing.excludeFiles?.map((f) => f.toLowerCase()) ?? []);
     files = filterPaths
       .map((p) => path.resolve(cwd, p))
       .filter((fp) => {
         const ext = path.extname(fp).toLowerCase();
         const basename = path.basename(fp).toLowerCase();
         if (!extensions.has(ext) && !extensions.has(basename)) return false;
-        if (excludeFiles.has(basename)) return false;
         const rel = path.relative(cwd, fp);
         if (rel.startsWith("..")) return false;
-        const parts = rel.split(path.sep);
-        if (parts.some((part) => excludeDirs.has(part))) return false;
-        return true;
+        return !excludeDirMatcher.excluded(rel) && !excludeFileMatcher.excluded(rel);
       });
   } else {
     logger?.info("Walking directory tree...");
@@ -182,8 +181,9 @@ export async function scanWorkspaceFiles(
     files = await walkFiles(
       cwd,
       extensions,
-      new Set(config.indexing.excludeDirs),
-      new Set(config.indexing.excludeFiles?.map((f) => f.toLowerCase()) ?? []),
+      excludeDirMatcher,
+      excludeFileMatcher,
+      cwd,
       logger,
       dirCount,
     );

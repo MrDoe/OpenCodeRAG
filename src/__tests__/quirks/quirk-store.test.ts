@@ -2,7 +2,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { LanceDbStore } from "../../vectorstore/lancedb.js";
 import { KeywordIndex } from "../../retriever/keyword-index.js";
-import { addQuirk, recallQuirks, removeQuirk, listQuirks, lintQuirks } from "../../quirks/quirk-store.js";
+import { addQuirk, recallQuirks, removeQuirk, listQuirks, lintQuirks, sharedWords } from "../../quirks/quirk-store.js";
 import { isQuirkAllowed } from "../../quirks/monitor.js";
 import type { EmbeddingProvider } from "../../core/interfaces.js";
 import type { RagConfig } from "../../core/config.js";
@@ -26,7 +26,7 @@ const MINIMAL_CFG = {
   openCode: { enabled: false, maxContextChunks: 5 },
   tui: { fileListKeybinding: "", chunksKeybinding: "" },
   logging: { level: "none" as const, logFilePath: "" },
-  memory: { enabled: true, autoInject: false, minConfidence: 0.3, recallMinScore: 0, autoInjectMinScore: 0.6, autoInjectTopK: 2, autoInjectLatencyBudgetMs: 2000, decay: { enabled: false, halfLifeDays: 30 } },
+  memory: { enabled: true, autoInject: false, minConfidence: 0.3, recallMinScore: 0, autoInjectMinScore: 0.6, autoInjectTopK: 2, autoInjectMinTokenOverlap: 1, autoInjectLatencyBudgetMs: 2000, decay: { enabled: false, halfLifeDays: 30 } },
 } as unknown as RagConfig;
 
 describe("quirk-store", () => {
@@ -124,5 +124,41 @@ describe("quirk-store", () => {
     assert.ok(q.id, "quirk should have an id");
     const results = await recallQuirks(memDeps, "memory test");
     assert.ok(results.length > 0);
+  });
+});
+
+describe("sharedWords", () => {
+  it("counts shared meaningful tokens (>=3 chars)", () => {
+    // Reproduces the reported false-positive: meta-quirk about quirks vs a
+    // firefox-devtools task request — zero overlap, should be gated out.
+    assert.equal(
+      sharedWords(
+        "Quirk content length is guided by a soft prompt instruction in MEMORY_CAPTURE_SYSTEM_PROMPT",
+        "Create a firefox-devtools MCP skill from this session",
+      ),
+      0,
+      "meta-quirk should share no tokens with an unrelated task",
+    );
+  });
+
+  it("returns the count of distinct shared tokens", () => {
+    assert.equal(sharedWords("npm needs legacy peer deps", "npm legacy deps"), 3);
+  });
+
+  it("ignores tokens shorter than minTokenLen", () => {
+    assert.equal(sharedWords("a be cd", "be cd"), 0);
+    assert.equal(sharedWords("abc bed cde", "bed cde", 3), 2);
+  });
+
+  it("is case-insensitive", () => {
+    assert.equal(sharedWords("LanceDB types", "lancedb TYPES"), 2);
+  });
+
+  it("treats dedup tokens only once", () => {
+    assert.equal(sharedWords("npm npm npm", "npm"), 1);
+  });
+
+  it("returns 0 for disjoint texts", () => {
+    assert.equal(sharedWords("cat dog", "fish bird"), 0);
   });
 });

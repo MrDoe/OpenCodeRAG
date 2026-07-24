@@ -423,25 +423,27 @@ export class LanceDbStore implements VectorStore {
    * @returns An array of file summaries sorted by file path.
    */
   async listFiles(): Promise<{ filePath: string; language: string; chunkCount: number }[]> {
-    const table = await this.getTable();
-    const count = await table.countRows();
-    if (count === 0) return [];
+    return this.withCorruptionRecovery(async () => {
+      const table = await this.getTable();
+      const count = await table.countRows();
+      if (count === 0) return [];
 
-    const rows = await table.query().select(["filePath", "language"]).limit(count).toArray();
-    const fileMap = new Map<string, { language: string; chunkCount: number }>();
-    for (const row of rows) {
-      const filePath = row.filePath as string;
-      const language = row.language as string;
-      const existing = fileMap.get(filePath);
-      if (existing) {
-        existing.chunkCount++;
-      } else {
-        fileMap.set(filePath, { language, chunkCount: 1 });
+      const rows = await table.query().select(["filePath", "language"]).limit(count).toArray();
+      const fileMap = new Map<string, { language: string; chunkCount: number }>();
+      for (const row of rows) {
+        const filePath = row.filePath as string;
+        const language = row.language as string;
+        const existing = fileMap.get(filePath);
+        if (existing) {
+          existing.chunkCount++;
+        } else {
+          fileMap.set(filePath, { language, chunkCount: 1 });
+        }
       }
-    }
-    return Array.from(fileMap.entries())
-      .map(([filePath, info]) => ({ filePath, ...info }))
-      .sort((a, b) => a.filePath.localeCompare(b.filePath));
+      return Array.from(fileMap.entries())
+        .map(([filePath, info]) => ({ filePath, ...info }))
+        .sort((a, b) => a.filePath.localeCompare(b.filePath));
+    });
   }
 
   /**
@@ -450,38 +452,40 @@ export class LanceDbStore implements VectorStore {
    * @returns An array of chunks for that file.
    */
   async getChunksByFilePath(filePath: string): Promise<Chunk[]> {
-    const table = await this.getTable();
-    const normalizedPath = normalizeFilePath(filePath).replace(/'/g, "''");
-    const rows = await table.query()
-      .select(QUERY_COLUMNS)
-      .where(`filePath = '${normalizedPath}'`)
-      .toArray();
+    return this.withCorruptionRecovery(async () => {
+      const table = await this.getTable();
+      const normalizedPath = normalizeFilePath(filePath).replace(/'/g, "''");
+      const rows = await table.query()
+        .select(QUERY_COLUMNS)
+        .where(`filePath = '${normalizedPath}'`)
+        .toArray();
 
-    return rows
-      .map((row: Record<string, unknown>) => {
-        let tags: string[] | undefined;
-        try {
-          const raw = row.tags as string;
-          if (raw) tags = JSON.parse(raw) as string[];
-        } catch {
-          tags = undefined;
-        }
-        return {
-          id: row.id as string,
-          content: row.content as string,
-          description: (row.description as string) ?? "",
-          metadata: {
-            filePath: row.filePath as string,
-            startLine: row.startLine as number,
-            endLine: row.endLine as number,
-            language: row.language as string,
-            kind: (row.kind as string) || undefined,
-            quirkType: (row.quirkType as string) || undefined,
-            tags,
-          },
-        };
-      })
-      .sort((a, b) => a.metadata.startLine - b.metadata.startLine);
+      return rows
+        .map((row: Record<string, unknown>) => {
+          let tags: string[] | undefined;
+          try {
+            const raw = row.tags as string;
+            if (raw) tags = JSON.parse(raw) as string[];
+          } catch {
+            tags = undefined;
+          }
+          return {
+            id: row.id as string,
+            content: row.content as string,
+            description: (row.description as string) ?? "",
+            metadata: {
+              filePath: row.filePath as string,
+              startLine: row.startLine as number,
+              endLine: row.endLine as number,
+              language: row.language as string,
+              kind: (row.kind as string) || undefined,
+              quirkType: (row.quirkType as string) || undefined,
+              tags,
+            },
+          };
+        })
+        .sort((a, b) => a.metadata.startLine - b.metadata.startLine);
+    });
   }
 
   /**
@@ -491,25 +495,53 @@ export class LanceDbStore implements VectorStore {
    * @returns An array of chunk summaries.
    */
   async getChunks(offset: number, limit: number): Promise<ChunkSummary[]> {
-    const table = await this.getTable();
-    const rows = await table.query()
-      .select(QUERY_COLUMNS)
-      .offset(offset)
-      .limit(limit)
-      .toArray();
+    return this.withCorruptionRecovery(async () => {
+      const table = await this.getTable();
+      const rows = await table.query()
+        .select(QUERY_COLUMNS)
+        .offset(offset)
+        .limit(limit)
+        .toArray();
 
-    return rows.map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      filePath: row.filePath as string,
-      language: row.language as string,
-      startLine: row.startLine as number,
-      endLine: row.endLine as number,
-      content: row.content as string,
-      description: (row.description as string) ?? "",
-      kind: (row.kind as string) ?? "",
-      quirkType: (row.quirkType as string) ?? "",
-      tags: (row.tags as string) ?? "",
-    }));
+      return rows.map((row: Record<string, unknown>) => ({
+        id: row.id as string,
+        filePath: row.filePath as string,
+        language: row.language as string,
+        startLine: row.startLine as number,
+        endLine: row.endLine as number,
+        content: row.content as string,
+        description: (row.description as string) ?? "",
+        kind: (row.kind as string) ?? "",
+        quirkType: (row.quirkType as string) ?? "",
+        tags: (row.tags as string) ?? "",
+      }));
+    });
+  }
+
+  /**
+   * Fetch chunks with their embedding vectors included (for embedding projection).
+   * @param limit - Maximum number of rows to return.
+   * @returns Array of { id, filePath, language, startLine, endLine, description, embedding }.
+   */
+  async getChunksWithEmbeddings(limit: number): Promise<{ id: string; filePath: string; language: string; startLine: number; endLine: number; description: string; embedding: number[] }[]> {
+    return this.withCorruptionRecovery(async () => {
+      const table = await this.getTable();
+      const rows = await table.query()
+        .select([...QUERY_COLUMNS, "embedding"])
+        .limit(limit)
+        .toArray();
+      return rows
+        .filter((r: Record<string, unknown>) => r.embedding && typeof r.embedding === "object")
+        .map((row: Record<string, unknown>) => ({
+          id: row.id as string,
+          filePath: row.filePath as string,
+          language: row.language as string,
+          startLine: row.startLine as number,
+          endLine: row.endLine as number,
+          description: (row.description as string) ?? "",
+          embedding: Array.from(row.embedding as Iterable<number>),
+        }));
+    });
   }
 
   /**
@@ -590,7 +622,13 @@ export class LanceDbStore implements VectorStore {
   async optimize(): Promise<void> {
     try {
       const table = await this.getTable();
-      await table.optimize({ cleanupOlderThan: new Date(), deleteUnverified: false });
+      // Clean up versions older than 1 hour — not "right now" — so in-flight
+      // queries (e.g. Web UI search, background auto-index) can finish before
+      // their data files are reclaimed.  Using new Date() here caused data-file
+      // race conditions where a reader got "Not found: … .lance" because the
+      // GC deleted fragments that the current version still referenced.
+      const threshold = new Date(Date.now() - 60 * 60 * 1000);
+      await table.optimize({ cleanupOlderThan: threshold, deleteUnverified: false });
     } catch {
       // Optimize is best-effort — must not break indexing.
     }
@@ -606,14 +644,16 @@ export class LanceDbStore implements VectorStore {
       const tableNames = await db.tableNames();
       if (!tableNames.includes(TABLE_NAME)) return [];
 
-      const table = await this.getTable();
-      const rows = await table.query().select(["filePath"]).toArray();
-      const paths = new Set<string>();
-      for (const row of rows) {
-        const fp = row.filePath as string;
-        if (fp) paths.add(fp);
-      }
-      return Array.from(paths);
+      return this.withCorruptionRecovery(async () => {
+        const table = await this.getTable();
+        const rows = await table.query().select(["filePath"]).toArray();
+        const paths = new Set<string>();
+        for (const row of rows) {
+          const fp = row.filePath as string;
+          if (fp) paths.add(fp);
+        }
+        return Array.from(paths);
+      });
     } catch {
       return [];
     }
@@ -744,6 +784,53 @@ export class LanceDbStore implements VectorStore {
     const table = await this.getTable();
     const normalizedPath = normalizeFilePath(filePath).replace(/'/g, "''");
     await table.delete(`filePath = '${normalizedPath}'`);
+  }
+
+  /**
+   * Verify that data in the store is actually readable.
+   * Reads the `content` column (a large text field stored in data fragments,
+   * not in the version manifest) for the first few rows.  If any of the
+   * underlying `.lance` data files are missing from disk, LanceDB throws a
+   * corruption error ("Not found: ... .lance") and we return false.
+   *
+   * This catches silent corruption where countRows() returns metadata from
+   * the version manifest while the actual row data on disk is gone.
+   */
+  async checkIntegrity(): Promise<boolean> {
+    try {
+      const db = await this.getDb();
+      const tableNames = await db.tableNames();
+      if (!tableNames.includes(TABLE_NAME)) return true;
+      const table = await this.getTable();
+      const count = await table.countRows();
+      if (count === 0) return true;
+      // Read the `content` column (stored in data fragments, not in the
+      // version manifest) for the first few rows.  If a fragment is
+      // missing, LanceDB will fail with a "Not found" corruption error.
+      const rows = await table.query().select(["id", "content"]).limit(10).toArray();
+      return rows.length > 0;
+    } catch (err) {
+      if (isCorruptionError(err)) return false;
+      return true;
+    }
+  }
+
+  /**
+   * Execute an async function with automatic corruption recovery.
+   * If the function throws a LanceDB corruption error, tryRepair() is run
+   * and the function is retried once.  If repair fails, the original error
+   * is re-thrown so callers/higher layers can handle it (e.g. return
+   * fallback data, clear the manifest, or trigger a rebuild).
+   */
+  private async withCorruptionRecovery<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (isCorruptionError(err) && await this.tryRepair()) {
+        return fn();
+      }
+      throw err;
+    }
   }
 
   private async tryRepair(): Promise<boolean> {

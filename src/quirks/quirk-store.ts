@@ -260,3 +260,31 @@ export function lexicalSimilarity(a: string, b: string): number {
   const union = new Set([...wordsA, ...wordsB]);
   return union.size === 0 ? 0 : intersection.size / union.size;
 }
+
+/**
+ * Count of meaningful word tokens shared between two texts (Jaccard numerator).
+ *
+ * Tokens are whitespace/punctuation-split, lowercased, and filtered to those
+ * with length ≥ `minTokenLen` (default 3 — skips short filler like "the").
+ *
+ * Used by the quirk auto-inject gate: candidate quirks that share no tokens
+ * with the user's *current* message (i.e. they matched only against the prior
+ * assistant text in the combined recall query) are filtered out. This prevents
+ * meta-quirks (quirks about quirks themselves) from being injected into
+ * unrelated tasks, e.g. when the agent previously explained how quirks work.
+ *
+ * Set `memory.autoInjectMinTokenOverlap` to `0` to disable the gate.
+ */
+export function sharedWords(a: string, b: string, minTokenLen = 3): number {
+  const tokensA = a.toLowerCase().split(/\W+/).filter((w) => w.length >= minTokenLen);
+  const wordsB = new Set(b.toLowerCase().split(/\W+/).filter((w) => w.length >= minTokenLen));
+  let count = 0;
+  const seen = new Set<string>();
+  for (const tok of tokensA) {
+    if (wordsB.has(tok) && !seen.has(tok)) {
+      seen.add(tok);
+      count++;
+    }
+  }
+  return count;
+}

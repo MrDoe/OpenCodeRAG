@@ -11,6 +11,7 @@ function testConfig(): RagConfig {
       ...DEFAULT_CONFIG.indexing,
       includeExtensions: [".ts"],
       excludeDirs: ["node_modules", ".git", ".opencode", "ignored-dir"],
+      excludeFiles: ["*.generated.ts"],
       minFileSizeBytes: 0,
     },
   };
@@ -38,5 +39,36 @@ describe("createWatchIgnore", () => {
     // Regular source files should NOT be ignored
     assert.equal(ignore(path.join(workspaceDir, "src", "index.ts")), false);
     assert.equal(ignore(path.join(workspaceDir, "index.ts")), false);
+  });
+
+  it("anchored path and wildcard patterns are respected", () => {
+    const cfg = testConfig();
+    cfg.indexing.excludeDirs.push("RequestPortal/.config");
+    cfg.indexing.excludeFiles?.push("src/config.json");
+    const ignore = createWatchIgnore(workspaceDir, cfg, storeDir);
+
+    // Anchored dir path: RequestPortal/.config and everything under it
+    assert.equal(ignore(path.join(workspaceDir, "RequestPortal", ".config")), true);
+    assert.equal(ignore(path.join(workspaceDir, "RequestPortal", ".config", "settings.json")), true);
+
+    // Sibling dir same name should NOT be ignored (anchored)
+    assert.equal(ignore(path.join(workspaceDir, "other", ".config", "file.ts")), false);
+
+    // node_modules any-depth still works
+    assert.equal(ignore(path.join(workspaceDir, "src", "node_modules", "dep.ts")), true);
+
+    // Wildcard file ignore: *.generated.ts at any depth
+    assert.equal(ignore(path.join(workspaceDir, "types.generated.ts")), true);
+    assert.equal(ignore(path.join(workspaceDir, "src", "api.generated.ts")), true);
+
+    // Anchored file path: src/config.json
+    assert.equal(ignore(path.join(workspaceDir, "src", "config.json")), true);
+
+    // Non-matching sibling file should NOT be ignored
+    assert.equal(ignore(path.join(workspaceDir, "src", "config.json.bak")), false);
+    assert.equal(ignore(path.join(workspaceDir, "other", "config.json")), false);
+
+    // Non-matching wildcard should NOT be ignored
+    assert.equal(ignore(path.join(workspaceDir, "src", "api.ts")), false);
   });
 });

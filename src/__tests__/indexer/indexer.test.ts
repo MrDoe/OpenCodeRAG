@@ -785,4 +785,39 @@ describe("indexer", () => {
       "Image description should be reused from cache — vision LLM should " +
       "NOT be called again on the second run after Ctrl+C");
   });
+
+  it("excludes anchored dir paths and wildcard file patterns", async () => {
+    // Create a workspace with excluded and non-excluded content
+    await writeFile(path.join(workspaceDir, "good.ts"), "export const a = 1;\n");
+    await writeFile(path.join(workspaceDir, "RequestPortal", ".config", "settings.ts"), "export const s = 1;\n");
+    await writeFile(path.join(workspaceDir, "RequestPortal", "Migrations", "001.ts"), "export const m = 1;\n");
+    await writeFile(path.join(workspaceDir, "src", "util.generated.ts"), "export const u = 1;\n");
+    await writeFile(path.join(workspaceDir, "src", "util.ts"), "export const v = 1;\n");
+
+    const cfg = testConfig();
+    cfg.indexing.excludeDirs.push("RequestPortal/.config");
+    cfg.indexing.excludeFiles = ["*.generated.ts"];
+
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: cfg,
+      store,
+      embedder,
+    });
+
+    // good.ts, Migrations/001.ts, src/util.ts should be indexed (3 files)
+    // RequestPortal/.config/settings.ts and src/util.generated.ts should be excluded
+    assert.equal(stats.newFiles, 3);
+    assert.equal(stats.finalCount, 3);
+
+    const manifest = await loadManifest(storeDir);
+    assert.equal(manifest.status, "ok");
+    const filePaths = Object.keys(manifest.manifest.files);
+    assert.ok(filePaths.some((p) => p.endsWith("good.ts")));
+    assert.ok(filePaths.some((p) => p.endsWith("Migrations/001.ts") || p.endsWith("001.ts")));
+    assert.ok(filePaths.some((p) => p.endsWith("src/util.ts") || p.endsWith("util.ts")));
+    assert.ok(!filePaths.some((p) => p.endsWith("util.generated.ts")));
+    assert.ok(!filePaths.some((p) => p.endsWith("settings.ts")));
+  });
 });

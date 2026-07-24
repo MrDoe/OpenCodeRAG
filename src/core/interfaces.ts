@@ -197,6 +197,12 @@ export interface VectorStore {
   reopen?(newPath?: string): Promise<void>;
   /** Compact fragments and prune old versions to prevent version-manifest accumulation. */
   optimize?(): Promise<void>;
+  /**
+   * Verify that the store's data is actually readable.
+   * Returns false if data integrity is compromised (e.g., data files missing from disk).
+   * Used by the index pipeline to detect silent corruption before scanning.
+   */
+  checkIntegrity?(): Promise<boolean>;
 }
 
 /** Filter criteria for narrowing search results by file path, language, or kind. */

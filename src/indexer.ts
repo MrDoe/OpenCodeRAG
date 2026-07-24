@@ -7,6 +7,7 @@ export type { IndexRunStats, IndexStatusSummary } from "./indexer/stats.js";
 export { createIndexStats } from "./indexer/stats.js";
 export type { WorkspaceFile } from "./content/reader.js";
 export { scanWorkspaceFiles, walkFiles } from "./content/reader.js";
+export { createExcludeMatcher, type ExcludeMatcher } from "./core/exclude.js";
 export type { RunIndexPassOptions, WatchPassScheduler } from "./indexer/pipeline.js";
 export {
   runIndexPass,

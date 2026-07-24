@@ -253,6 +253,29 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   const existingCount = await options.store.count();
   logger.info(`Store has ${existingCount} existing chunks (${((Date.now() - storeCountStart) / 1000).toFixed(1)}s)`);
 
+  // Direct data-integrity check: try to actually read a row from the store.
+  // LanceDB's countRows() may return a value from the version manifest
+  // even when the underlying data files are missing from disk, so we need
+  // an explicit probe.  If this fails, treat the store as corrupt.
+  if (!options.force && manifestStatus === "ok" && Object.keys(manifest.files).length > 0) {
+    try {
+      const isIntact: boolean | undefined = await (options.store as any).checkIntegrity?.();
+      if (isIntact === false) {
+        logger.warn(
+          "Vector store data integrity check failed — data files are missing " +
+          `(${existingCount} chunks in manifest but store can't be read). Re-indexing all files.`
+        );
+        for (const key of Object.keys(manifest.files)) {
+          delete manifest.files[key];
+        }
+        manifest.lastIndexedAt = undefined;
+        manifestStatus = "missing";
+      }
+    } catch {
+      // checkIntegrity not available (older VectorStore impl) — skip
+    }
+  }
+
   // Detect data loss: if the store has far fewer chunks than the manifest expects,
   // treat it as a corrupt store (e.g. schema migration dropped the old table).
   if (!options.force && manifestStatus === "ok" && existingCount > 0) {

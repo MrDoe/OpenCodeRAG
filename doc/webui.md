@@ -1,8 +1,8 @@
 # Web UI
 
-The OpenCodeRAG Web UI is a lightweight browser-based dashboard for exploring the indexed vector database. It is built with Tailwind CSS and highlight.js, served from a zero-dependency Node.js HTTP server.
+The OpenCodeRAG Web UI is a browser-based dashboard for exploring the indexed vector database and performing semantic code search. It is built with **Preact**, **Vite**, and **Tailwind CSS**, served from a zero-dependency Node.js HTTP server.
 
-![Web UI](assets/webui.png)
+![Dashboard](assets/webui-dashboard.png)
 
 ## Starting the Web UI
 
@@ -51,15 +51,47 @@ The default view. Shows four KPI cards:
 
 Below the cards, a **Language Distribution** bar chart displays the top 8 languages by chunk count, with percentage labels.
 
+### Search
+
+The semantic search playground for interactively querying the vector database.
+
+![Search Playground](assets/webui-search.png)
+
+**Query input:** Type a natural language query (e.g., "How does the retrieval pipeline find relevant code for my query?"). The search runs automatically with a 300ms debounce.
+
+**Search Parameters** (collapsible panel):
+
+| Parameter | Default | Description |
+|---|---|---|
+| `topK` | 10 | Maximum number of results |
+| `minScore` | 0.35 | Minimum relevance threshold |
+| `keywordWeight` | 0.4 | Hybrid search fusion weight (0 = vector only, 1 = keyword only) |
+| Hybrid mode | on | Toggle hybrid vector+keyword search on/off |
+
+**Result cards** show for each match:
+
+- **File path** and **line range** (yellow, monospace)
+- **Relevance score** (color-coded: green ≥0.8, cyan ≥0.6, amber ≥0.4, red <0.4)
+- **ScoreBar** — stacked horizontal bar showing **vector contribution** (cyan) vs **keyword contribution** (amber), with precise values on hover
+- **Matched terms** — query tokens found in the chunk, shown as amber chips
+- **Description** — LLM-generated chunk summary (if enabled)
+- **Code snippet** — truncated source code preview
+
+Shareable URLs: search parameters are encoded in the URL hash.
+Example: `#/search?query=auth+middleware&topK=15&minScore=0.5`
+
+**Keyboard shortcut:** `Ctrl/Cmd+K` opens the Search view from anywhere.
+
 ### Chunks
 
 A master-detail split pane for browsing individual chunks.
+
+![Chunks View](assets/webui-chunks.png)
 
 **Left pane (master):** Paginated table with columns:
 
 | Column | Description |
 |---|---|
-| checkbox | Select for comparison |
 | File | File path + line range (e.g. `src/plugin.ts:10-42`) |
 | Lang | Language badge (color-coded) |
 | Description | Truncated chunk description |
@@ -71,7 +103,7 @@ Click a row to view its details. Use **Previous** / **Next** to paginate.
 - File path, line range, language badge, chunk ID
 - **Description** card (LLM-generated or path-based)
 - **Image Preview** panel (for image chunks) — displays the actual image file with automatic loading from the workspace
-- **Source Code** / **Vision Analysis** panel with syntax highlighting and a **Copy** button (shows the vision provider's text description for image chunks)
+- **Source Code** / **Vision Analysis** panel with a **Copy** button (shows the vision provider's text description for image chunks)
 
 Active filters (language, file) appear as dismissible badges above the table.
 
@@ -87,15 +119,11 @@ A table of all indexed files with:
 
 Click a file row to navigate to the Chunks view filtered by that file.
 
-### Compare
-
-Side-by-side comparison of 2–3 chunks. Select chunks via checkboxes in the Chunks view, then switch to Compare to see them rendered in parallel with syntax highlighting.
-
 ### Evaluate
 
 Session analytics dashboard for tracking token usage, costs, and RAG performance across OpenCode conversations.
 
-![Evaluate View](assets/eval.png)
+![Evaluate View](assets/webui-evaluate.png)
 
 **Session List:** A table of all recorded sessions with columns:
 
@@ -138,13 +166,29 @@ Session analytics dashboard for tracking token usage, costs, and RAG performance
 - **Delta Table:** All metrics with delta and percentage change columns
 - **Savings Projection:** Side-by-side savings estimate for both sessions
 
-**What-If Projection Panel:** Interactive tool in the Evaluate view for projecting token savings:
+**What-If Projection Panel:** Interactive sliders in the Evaluate view for projecting token savings:
 
 - **Sliders:** Avg chunk size, chunks per query, reads per query (with/without RAG), query count
 - **Live Output:** RAG overhead tokens, saved read tokens, net savings, and verdict
 - Fires debounced API calls on slider changes
 
 For CLI-based session analysis (`eval:sessions`, `eval:analyze`, `eval:compare`), see [Evaluation documentation](evaluation.md).
+
+### Quirks
+
+Quirk memory management — gotchas, preferences, decisions, and environment constraints discovered during coding sessions.
+
+![Quirks View](assets/webui-quirks.png)
+
+- **Card grid** (1 col → 2 cols at `lg`) displaying each quirk with:
+  - Color-coded type badge (gotcha = amber, preference = emerald, decision = sky, environment-constraint = rose)
+  - Confidence percentage (color-coded: green > 70%, amber > 40%, red below)
+  - Content text
+  - Tags as `#tag` chips
+  - Source reference and ID
+- **Type filter pills** — filter by quirk type
+- **Lint button** — health-check quirks (low confidence, stale, duplicates)
+- **Delete** — remove a quirk with confirmation
 
 ## File Tree Sidebar
 
@@ -158,11 +202,23 @@ A collapsible directory tree in the left sidebar:
 
 ## Global Search
 
-A search input in the top-right header:
+A quick keyword search input in the top-right header:
 
-- Debounced keyword search against the TF×IDF index
-- Results appear in a dropdown panel showing file path, line range, language, and description
-- Click a result to navigate directly to that chunk in the Chunks view
+- Debounced (300ms) keyword search against the TF×IDF index
+- Results appear in a dropdown panel showing file path, line range, language badge, and a code snippet
+- Click a result to navigate to that chunk in the Chunks view
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl/Cmd+K` | Open Search view (from anywhere) |
+| `g + d` | Navigate to Dashboard |
+| `g + s` | Navigate to Search |
+| `g + c` | Navigate to Chunks |
+| `g + f` | Navigate to Files |
+| `g + e` | Navigate to Evaluate |
+| `g + q` | Navigate to Quirks |
 
 ## API Endpoints
 
@@ -176,12 +232,28 @@ The web server exposes a REST API under `/api/`:
 | `/api/chunks/:id` | GET | Single chunk by ID |
 | `/api/search?q=&topK=` | GET | Keyword search via KeywordIndex |
 | `/api/compare?ids=` | GET | Fetch multiple chunks for side-by-side view |
+| `/api/retrieve?q=&topK=&minScore=&keywordWeight=&hybrid=&path=&lang=&explain=` | GET/POST | **Semantic search** — full vector+hybrid retrieval pipeline with score breakdowns and matched terms |
 | `/api/eval/sessions` | GET | All recorded sessions with summary stats |
 | `/api/eval/sessions/:id` | GET | Single session detail with events |
 | `/api/eval/sessions/:id` | DELETE | Delete a recorded session |
 | `/api/eval/sessions/:id/analysis` | GET | Token analysis with RAG savings projection and per-query breakdown |
 | `/api/eval/token-compare?a=&b=` | GET | Token analysis comparison with verdict, deltas, and percent changes |
 | `/api/eval/project-savings` | POST | Project token savings for given chunk/reads parameters (body: JSON) |
+| `/api/quirks` | GET | List all quirks |
+| `/api/quirks/lint` | GET | Health-check quirks |
+| `/api/quirks/:id` | DELETE | Delete a quirk |
 | `/api/file?path=` | GET | Serve workspace file content (base64-encoded); used for displaying image files in the chunk detail view |
 
 All endpoints return JSON with `Access-Control-Allow-Origin: *`.
+
+## Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Frontend framework | **Preact** via Vite |
+| Styling | **Tailwind CSS** (PostCSS build pipeline) |
+| Syntax highlighting | **highlight.js** |
+| Charts | Custom **SVG** components (donut, bar, scatter) |
+| State management | **@preact/signals** |
+| Routing | **Hash-based** (`#/search?query=...`) |
+| Bundle size | **~24 kB gzip** (vendor + app) |
