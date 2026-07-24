@@ -1,6 +1,6 @@
 {
   "name": "opencode-rag-plugin",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "description": "OpenCode plugin for local-first RAG-based semantic code search",
   "type": "module",
   "main": "./dist/plugin-entry.js",
