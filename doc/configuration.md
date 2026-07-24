@@ -338,8 +338,13 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 | `recallMinScore` | `0.3` | Minimum query-relevance score (0–1) for a quirk to be recalled. |
 | `decay.enabled` | `true` | Enable confidence decay over time for aging quirks. |
 | `decay.halfLifeDays` | `30` | Number of days after which a quirk's confidence halves (only when decay is enabled). |
+| `passiveCapture` | `false` | Automatically extract quirks from each completed agent turn by running the description LLM on the exchange text (error signals only). Requires `description.enabled`. |
+| `promptEnforcement` | `true` | Upgrade the system-prompt quirk nudge into a mandatory trigger with explicit rules (build/test/type errors fixed, undocumented constraints discovered, etc.). |
+| `sessionEndExtraction` | `true` | Summarize the full session transcript into quirks on session end (via event hook). Requires `description.enabled`. |
+| `autoCaptureMaxPerTurn` | `2` | Maximum number of quirks to auto-capture per turn or session-end pass. |
+| `autoCaptureDedupThreshold` | `0.85` | Lexical similarity threshold (0–1) above which a candidate quirk is considered a duplicate of an existing quirk and skipped. |
 
-Quirks can also be managed from the CLI — see [CLI Reference: `quirk`](cli.md#quirk). Every `addQuirk` call is vetted by an immutable trust monitor (`src/quirks/monitor.ts`) that rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`).
+Quirks can also be managed from the CLI — see [CLI Reference: `quirk`](cli.md#quirk). Every `addQuirk` call is vetted by an immutable trust monitor (`src/quirks/monitor.ts`) that rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Auto-captured quirks pass through the same trust boundary before storage.
 
 ### `mcp`
 

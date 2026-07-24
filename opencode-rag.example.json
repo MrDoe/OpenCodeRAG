@@ -109,6 +109,11 @@
     "autoInject": false,
     "minConfidence": 0.5,
     "recallMinScore": 0.72,
+    "passiveCapture": true,
+    "promptEnforcement": true,
+    "sessionEndExtraction": true,
+    "autoCaptureMaxPerTurn": 2,
+    "autoCaptureDedupThreshold": 0.85,
     "decay": {
       "enabled": false,
       "halfLifeDays": 30

@@ -251,6 +251,12 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
 
 3. **Decay & lint** — Optional confidence decay ages quirks over time (`memory.decay.halfLifeDays`). `opencode-rag quirk lint` flags low-confidence, stale, and near-duplicate quirks; `opencode-rag quirk test "<text>"` reports whether a similar quirk has already been appended.
 
+4. **Auto-capture (three modes)** — Reduce reliance on agent discipline by enabling automatic quirk extraction:
+   - **Passive capture** (`memory.passiveCapture`): After each completed agent turn, the description LLM scans the exchange (user request + assistant response + tool results) for error signals and extracts concise quirks. Uses `detectErrorSignal` regex to gate extraction and `recallQuirks` + `lexicalSimilarity` to skip near-duplicates.
+   - **Prompt enforcement** (`memory.promptEnforcement`): Replaces the soft "add_quirk when you discover a non-obvious fact" nudge with mandatory rules listing concrete triggers (build/test/type errors fixed, undocumented constraints, workarounds, etc.).
+   - **Session-end extraction** (`memory.sessionEndExtraction`): On non-message lifecycle events (session close), runs a full-transcript extraction pass. Both passive capture and session-end extraction require `description.enabled: true` and reuse the same LLM model with a quirk-specific system prompt.
+   - **Dedup**: Candidate quirks are deduped against existing ones via lexical similarity (`memory.autoCaptureDedupThreshold`, default 0.85). All auto-captured quirks pass the immutable trust monitor before storage.
+
 **Config example:**
 ```json
 {

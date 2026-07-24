@@ -35,6 +35,7 @@ import { checkForUpdate, getCurrentVersion, installLatestUpdate, type UpdateInfo
 import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "./core/auto-update-state.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
 import { listQuirks, lintQuirks, recallQuirks } from "./quirks/quirk-store.js";
+import { autoCaptureQuirks, type CaptureExchange } from "./quirks/auto-capture.js";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -573,6 +574,11 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   const sessionAssistantMessageId = new Map<string, string>();
   const sessionAssistantText = new Map<string, string>();
 
+  // Auto-capture maps: previous user request per session, tool results, and full transcript
+  const sessionPrevUserReq = new Map<string, string>();
+  const sessionToolResults = new Map<string, { tool: string; output: string }[]>();
+  const sessionTranscript = new Map<string, CaptureExchange[]>();
+
   // Evaluation session logger — captures OpenCode events for analysis
   const sessionLogger: SessionLogger = createSessionLogger(options.storePath);
 
@@ -850,8 +856,38 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       } catch {
         // Non-critical — must never throw
       }
+      // Session-end extraction: when we see a non-message lifecycle event,
+      // attempt to extract quirks from the full transcript.
+      try {
+        if (!event.type.startsWith("message.")) {
+          const sessionID = (event as Record<string, unknown>).sessionID as string | undefined;
+          if (sessionID) {
+            const transcript = sessionTranscript.get(sessionID);
+            if (transcript && transcript.length > 0) {
+              const effCfg = getEffectiveCfg();
+              const memCfg = effCfg.memory;
+              if (memCfg?.sessionEndExtraction && options.descriptionProvider) {
+                const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: effCfg, storePath: options.storePath };
+                void autoCaptureQuirks(qDeps, options.descriptionProvider, transcript, effCfg, { captureAll: true }).catch(() => {});
+              }
+              boundedSet(sessionTranscript, sessionID, [], MAX_SESSION_MAP_SIZE);
+            }
+          }
+        }
+      } catch {
+        // Non-critical — must never throw
+      }
     },
     tool: tools,
+    async "tool.execute.after"(input, output) {
+      try {
+        const results = sessionToolResults.get(input.sessionID) ?? [];
+        results.push({ tool: input.tool, output: output.output ?? "" });
+        boundedSet(sessionToolResults, input.sessionID, results, MAX_SESSION_MAP_SIZE);
+      } catch {
+        // Non-critical — must never throw
+      }
+    },
     async "experimental.chat.system.transform"(_input, output) {
       appendDebugLog(options.logFilePath, {
         scope: "experimental.chat.system.transform",
@@ -894,6 +930,22 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           "- Using `grep`/`glob` when `search_semantic` would find the answer faster",
           "- Treating image files as text — use `describe_image` instead of reading raw bytes",
         ];
+
+        // Inject quirk capture enforcement rules when promptEnforcement is enabled
+        if (cfg.memory?.promptEnforcement) {
+          guidance.push(
+            "",
+            "MANDATORY quirk capture rules — you MUST call `add_quirk` when:",
+            "- A build, test, or type-check command fails and you resolve it",
+            "- You discover an undocumented library constraint, peer dep, or workaround",
+            "- You learn an environment-specific requirement (OS, tool version, etc.)",
+            "- You make a design decision that future sessions should remember",
+            "- You resolve a gotcha that cost more than one attempt",
+            "",
+            "Anti-pattern — NEVER finish a coding session without adding quirks for resolved errors.",
+          );
+        }
+
         output.system.unshift(guidance.join("\n"));
       }
 
@@ -950,6 +1002,31 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           message: `extracted text="${text}" (length=${text.length})`,
         });
         if (text.length === 0) return;
+
+        // Passive capture: process the completed exchange before overwriting session state
+        const prevUserReq = sessionPrevUserReq.get(input.sessionID) ?? "";
+        if (prevUserReq) {
+          const effCfg = getEffectiveCfg();
+          const memCfg = effCfg.memory;
+          if (options.descriptionProvider) {
+            const assistantText = sessionAssistantText.get(input.sessionID) ?? "";
+            const toolResults = sessionToolResults.get(input.sessionID) ?? [];
+            if (assistantText) {
+              const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: effCfg, storePath: options.storePath };
+              const exchange: CaptureExchange = { userReq: prevUserReq, assistantText, toolResults };
+              if (memCfg?.passiveCapture) {
+                void autoCaptureQuirks(qDeps, options.descriptionProvider, [exchange], effCfg).catch(() => {});
+              }
+              if (memCfg?.sessionEndExtraction) {
+                const t = sessionTranscript.get(input.sessionID) ?? [];
+                t.push(exchange);
+                boundedSet(sessionTranscript, input.sessionID, t, MAX_SESSION_MAP_SIZE);
+              }
+            }
+          }
+        }
+        sessionPrevUserReq.set(input.sessionID, text);
+        sessionToolResults.set(input.sessionID, []);
 
         boundedSet(sessionLastMessage, input.sessionID, text, MAX_SESSION_MAP_SIZE);
 
@@ -1197,8 +1274,20 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
                 const tags = q.tags.length > 0 ? ` _(${q.tags.join(", ")})_` : "";
                 lines.push(`- ${badge}${q.content.slice(0, 100)}${tags}  `);
               }
-              lines.push("", "Commands:", "- `/quirk` — show this status", "- `/quirk lint` — health-check quirks", "- `/quirk add <text>` — instructions to use the add_quirk tool");
             }
+
+            const memCfg = getEffectiveCfg().memory;
+            const flags = [
+              memCfg?.autoInject ? "auto-inject" : "",
+              memCfg?.passiveCapture ? "passive-capture" : "",
+              memCfg?.promptEnforcement ? "prompt-enforce" : "",
+              memCfg?.sessionEndExtraction ? "session-end" : "",
+            ].filter(Boolean);
+            if (flags.length > 0) {
+              lines.push(`Flags: ${flags.join(", ")}`);
+            }
+
+            lines.push("", "Commands:", "- `/quirk` — show this status", "- `/quirk lint` — health-check quirks", "- `/quirk add <text>` — instructions to use the add_quirk tool");
           }
 
           const quirkMsg = lines.join("\n");

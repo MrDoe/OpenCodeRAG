@@ -45,6 +45,13 @@ export class GeminiDescriptionProvider implements DescriptionProvider {
     return this.chatRequest(contents, this.config.timeoutMs ?? 60000);
   }
 
+  async generateText(system: string, user: string, opts?: { timeoutMs?: number }): Promise<string> {
+    const contents: GeminiContent[] = [
+      { role: "user", parts: [{ text: user }] },
+    ];
+    return this.chatRequest(contents, opts?.timeoutMs ?? this.config.timeoutMs ?? 60000, system);
+  }
+
   async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger, opts?: BatchDescriptionOptions): Promise<Map<string, string>> {
     const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => process.stderr.write(`${msg}\n`), debug: (msg: string) => process.stderr.write(`${msg}\n`) };
     const concurrency = this.config.batchConcurrency ?? 3;
@@ -80,11 +87,12 @@ export class GeminiDescriptionProvider implements DescriptionProvider {
   private async chatRequest(
     contents: GeminiContent[],
     timeoutMs: number,
+    systemOverride?: string,
   ): Promise<string> {
     const baseUrl = this.config.baseUrl.replace(/\/+$/, "");
     const apiKey = this.config.apiKey ?? "";
     const model = this.config.model;
-    const systemPrompt = this.config.systemPrompt;
+    const systemPrompt = systemOverride ?? this.config.systemPrompt;
 
     const allParts: Array<{ text: string }> = [{ text: systemPrompt }];
     for (const c of contents) {

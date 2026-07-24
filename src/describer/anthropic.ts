@@ -45,6 +45,14 @@ export class AnthropicDescriptionProvider implements DescriptionProvider {
   }
 
   /** @inheritdoc */
+  async generateText(system: string, user: string, opts?: { timeoutMs?: number }): Promise<string> {
+    const messages: AnthropicMessage[] = [
+      { role: "user", content: user },
+    ];
+    return this.chatRequest(messages, opts?.timeoutMs ?? this.config.timeoutMs ?? 60000, system);
+  }
+
+  /** @inheritdoc */
   async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger, opts?: BatchDescriptionOptions): Promise<Map<string, string>> {
     const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => process.stderr.write(`${msg}\n`), debug: (msg: string) => process.stderr.write(`${msg}\n`) };
     const concurrency = this.config.batchConcurrency ?? 3;
@@ -90,10 +98,11 @@ export class AnthropicDescriptionProvider implements DescriptionProvider {
   private async chatRequest(
     messages: AnthropicMessage[],
     timeoutMs: number,
+    systemOverride?: string,
   ): Promise<string> {
     const baseUrl = this.config.baseUrl.replace(/\/+$/, "");
     const apiKey = this.config.apiKey ?? "";
-    const systemPrompt = this.config.systemPrompt;
+    const systemPrompt = systemOverride ?? this.config.systemPrompt;
 
     const body: Record<string, unknown> = {
       model: this.config.model,

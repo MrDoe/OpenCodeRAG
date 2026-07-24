@@ -385,6 +385,7 @@ describe("indexer", () => {
           }
           return result;
         },
+        async generateText(): Promise<string> { return ""; },
       };
 
       // Track what text is sent to the embedder
@@ -424,6 +425,7 @@ describe("indexer", () => {
         async generateBatchDescriptions(): Promise<Map<string, string>> {
           throw new Error("LLM unavailable");
         },
+        async generateText(): Promise<string> { throw new Error("LLM unavailable"); },
       };
 
       const embeddedTexts: string[] = [];
@@ -490,6 +492,7 @@ describe("indexer", () => {
           }
           return result;
         },
+        async generateText(): Promise<string> { return ""; },
       };
 
       const embeddedTexts: string[] = [];
@@ -538,6 +541,7 @@ describe("indexer", () => {
           }
           return result;
         },
+        async generateText(): Promise<string> { return ""; },
       };
 
       const embeddedTexts: string[] = [];
@@ -577,6 +581,7 @@ describe("indexer", () => {
         async generateBatchDescriptions(): Promise<Map<string, string>> {
           throw new Error("LLM unavailable");
         },
+        async generateText(): Promise<string> { throw new Error("LLM unavailable"); },
       };
 
       const stats = await runIndexPass({
@@ -614,6 +619,7 @@ describe("indexer", () => {
           }
           return result;
         },
+        async generateText(): Promise<string> { return ""; },
       };
 
       // First pass: file is new, descriptions should be generated
@@ -664,6 +670,7 @@ describe("indexer", () => {
         async generateBatchDescriptions(): Promise<Map<string, string>> {
           throw new Error("LLM unavailable");
         },
+        async generateText(): Promise<string> { throw new Error("LLM unavailable"); },
       };
 
       await runIndexPass({
@@ -690,6 +697,7 @@ describe("indexer", () => {
           }
           return result;
         },
+        async generateText(): Promise<string> { return ""; },
       };
 
       const stats = await runIndexPass({

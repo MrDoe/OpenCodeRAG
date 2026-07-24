@@ -42,6 +42,8 @@ export function registerUiCommand(program: Command): void {
           storePath,
           port,
           cwd,
+          config.embedding.vectorDimension ?? 384,
+          config,
         );
 
         const url = `http://127.0.0.1:${server.port}`;

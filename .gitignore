@@ -32,7 +32,7 @@ src/__tests__/_images
 *.png
 *.jpg
 build/config.gypi
-opencode-rag-db/__manifest/*
+
 .graphify*
 graphify-out/*
 

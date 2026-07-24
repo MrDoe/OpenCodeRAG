@@ -65,19 +65,21 @@ export interface WebUiServer {
  * @param port            - TCP port to listen on.
  * @param cwd             - Optional workspace root used to resolve file paths for the file API.
  * @param vectorDimension - Embedding vector dimension (default 384).
+ * @param cfg             - Active RAG configuration (used by quirk endpoints).
  * @returns A {@link WebUiServer} handle for the running server.
  */
 export async function startWebUi(
   storePath: string,
   port: number,
   cwd?: string,
-  vectorDimension: number = 384
+  vectorDimension: number = 384,
+  cfg?: import("../core/config.js").RagConfig
 ): Promise<WebUiServer> {
   const store = new LanceDbStore(storePath, vectorDimension);
   const keywordIndex = await KeywordIndex.load(storePath);
 
   const html = getStaticHtml();
-  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd);
+  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg);
 
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = req.url ?? "/";

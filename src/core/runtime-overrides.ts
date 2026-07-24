@@ -47,6 +47,13 @@ export interface RuntimeOverrides {
     model?: string;
     provider?: string;
   };
+  memory?: {
+    passiveCapture?: boolean;
+    promptEnforcement?: boolean;
+    sessionEndExtraction?: boolean;
+    autoCaptureMaxPerTurn?: number;
+    autoCaptureDedupThreshold?: number;
+  };
   tui?: {
     fileListKeybinding?: string;
     chunksKeybinding?: string;
@@ -162,6 +169,16 @@ export function applyRuntimeOverrides(
       if (!merged.imageDescription) merged.imageDescription = { ...defaultImg };
       merged.imageDescription.model = overrides.imageDescription.model;
     }
+  }
+
+  if (overrides.memory) {
+    if (!merged.memory) merged.memory = { ...DEFAULT_CONFIG.memory } as unknown as import("./config.js").MemoryConfig;
+    const m: import("./config.js").MemoryConfig = merged.memory;
+    if (overrides.memory.passiveCapture !== undefined) m.passiveCapture = overrides.memory.passiveCapture;
+    if (overrides.memory.promptEnforcement !== undefined) m.promptEnforcement = overrides.memory.promptEnforcement;
+    if (overrides.memory.sessionEndExtraction !== undefined) m.sessionEndExtraction = overrides.memory.sessionEndExtraction;
+    if (overrides.memory.autoCaptureMaxPerTurn !== undefined) m.autoCaptureMaxPerTurn = overrides.memory.autoCaptureMaxPerTurn;
+    if (overrides.memory.autoCaptureDedupThreshold !== undefined) m.autoCaptureDedupThreshold = overrides.memory.autoCaptureDedupThreshold;
   }
 
   if (overrides.tui) {

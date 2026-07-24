@@ -30,6 +30,8 @@ Full architecture: [doc/architecture.md](doc/architecture.md).
 - **Config loading**: `loadConfig()` deep-merges per section (not recursive). CLI auto-detects `./opencode-rag.json` and `./.opencode/rag.json`
 - **Ollama responses**: may return `{ embedding: number[] }` or `{ embeddings: number[][] }` — both accepted
 - **Quirk test**: `opencode-rag quirk test <text>` checks if a quirk already exists in the store (semantic search). Returns match details or "not appended"
+- **Auto-capture quirks**: three `memory.*` flags — `passiveCapture` (per-turn extraction), `promptEnforcement` (mandatory system prompt), `sessionEndExtraction` (full-transcript on session end). All off by default. Requires `description.enabled: true` (reuses description LLM for extraction).
+- **Auto-capture dedup**: candidate quirks are deduped against existing quirks via lexical similarity (`autoCaptureDedupThreshold`, default 0.85) before being added.
 
 ## Resource Lifecycle
 

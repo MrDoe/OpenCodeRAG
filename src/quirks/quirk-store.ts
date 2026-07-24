@@ -251,7 +251,7 @@ export async function lintQuirks(deps: QuirkStoreDeps): Promise<string[]> {
 }
 
 /** Simple Jaccard-based lexical similarity (word overlap). */
-function lexicalSimilarity(a: string, b: string): number {
+export function lexicalSimilarity(a: string, b: string): number {
   const wordsA = new Set(a.toLowerCase().split(/\W+/).filter(Boolean));
   const wordsB = new Set(b.toLowerCase().split(/\W+/).filter(Boolean));
   const intersection = new Set([...wordsA].filter((w) => wordsB.has(w)));

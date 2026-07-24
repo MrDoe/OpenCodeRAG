@@ -57,6 +57,11 @@ export interface DescriptionProvider {
    * @param opts - Optional progress reporting options.
    */
   generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger, opts?: BatchDescriptionOptions): Promise<Map<string, string>>;
+  /**
+   * Generate free-form text from a system prompt and user message.
+   * Used by auto-capture to extract quirks from agent transcripts.
+   */
+  generateText(system: string, user: string, opts?: { timeoutMs?: number }): Promise<string>;
 }
 
 /** Explains how a search result score was computed, including vector and keyword contributions. */

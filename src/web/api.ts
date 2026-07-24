@@ -8,6 +8,9 @@ import { LanceDbStore } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import { listSessions, getSession, deleteSession, compareSessions, validateSessionID } from "../eval/storage.js";
 import { analyzeTokenUsage, compareTokenAnalyses, projectTokenSavings } from "../eval/token-analysis.js";
+import { listQuirks, lintQuirks, removeQuirk, type QuirkStoreDeps } from "../quirks/quirk-store.js";
+import type { RagConfig } from "../core/config.js";
+import type { EmbeddingProvider } from "../core/interfaces.js";
 
 const FILE_MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -17,6 +20,14 @@ const FILE_MIME_TYPES: Record<string, string> = {
   ".webp": "image/webp",
   ".bmp": "image/bmp",
   ".svg": "image/svg+xml",
+};
+
+/** No-op embedder used by quirk endpoints that never need to embed text in the read-only UI context. */
+const stubEmbedder: EmbeddingProvider = {
+  name: "stub",
+  embed: async () => {
+    throw new Error("Embedder is not available in the Web UI context");
+  },
 };
 
 /** Internal shape for a JSON API response: an HTTP status code and a serialisable body. */
@@ -59,13 +70,23 @@ function sendJson(res: ServerResponse, response: ApiResponse): void {
  * @param keywordIndex - The keyword-index instance for text search.
  * @param storePath    - Filesystem path to the store directory (used by eval endpoints).
  * @param cwd          - Optional workspace root for resolving file paths.
+ * @param cfg          - Active RAG configuration (used by quirk endpoints).
  * @returns An async handler that returns `true` when a route matched or `false` otherwise.
  */
-export function createApiHandler(store: LanceDbStore, keywordIndex: KeywordIndex, storePath: string, cwd?: string) {
+export function createApiHandler(store: LanceDbStore, keywordIndex: KeywordIndex, storePath: string, cwd?: string, cfg?: RagConfig) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
     const { path, params } = parseQuery(url);
+
+    // Quirk store dependencies (embedder is a no-op stub for the read-only UI context).
+    const quirkDeps: QuirkStoreDeps = {
+      embedder: stubEmbedder,
+      store,
+      keywordIndex,
+      cfg: cfg ?? ({} as RagConfig),
+      storePath,
+    };
 
     // CORS preflight
     if (method === "OPTIONS") {
@@ -147,6 +168,19 @@ export function createApiHandler(store: LanceDbStore, keywordIndex: KeywordIndex
       } else if (path === "/api/eval/project-savings" && method === "POST") {
         const body = await readBody(req);
         response = handleEvalProjectSavings(body);
+      }
+      // Quirk memory endpoints
+      else if (path === "/api/quirks" && method === "GET") {
+        response = await handleQuirks(quirkDeps);
+      } else if (path === "/api/quirks/lint" && method === "GET") {
+        response = await handleQuirkLint(quirkDeps);
+      } else if (path.startsWith("/api/quirks/") && method === "DELETE") {
+        const id = path.slice("/api/quirks/".length);
+        if (!id) {
+          response = { status: 400, body: { error: "Missing quirk ID" } };
+        } else {
+          response = await handleQuirkDelete(quirkDeps, id);
+        }
       } else {
         return false;
       }
@@ -189,6 +223,26 @@ async function handleStats(store: LanceDbStore): Promise<ApiResponse> {
 async function handleFiles(store: LanceDbStore): Promise<ApiResponse> {
   const files = await store.listFiles();
   return { status: 200, body: files };
+}
+
+// ── Quirk Memory API ─────────────────────────────────────────────────
+
+/** Respond with all stored quirks, sorted by last-observed time (most recent first). */
+async function handleQuirks(deps: QuirkStoreDeps): Promise<ApiResponse> {
+  const quirks = await listQuirks(deps);
+  return { status: 200, body: { quirks } };
+}
+
+/** Respond with the health-check issues for the quirk store (confidence, staleness, duplicates). */
+async function handleQuirkLint(deps: QuirkStoreDeps): Promise<ApiResponse> {
+  const issues = await lintQuirks(deps);
+  return { status: 200, body: { issues } };
+}
+
+/** Delete a single quirk by its ID from the store, index, and audit log. */
+async function handleQuirkDelete(deps: QuirkStoreDeps, id: string): Promise<ApiResponse> {
+  await removeQuirk(deps, id);
+  return { status: 200, body: { deleted: true, id } };
 }
 
 /**

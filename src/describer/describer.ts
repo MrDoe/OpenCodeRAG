@@ -47,6 +47,15 @@ export class LlmDescriptionProvider implements DescriptionProvider {
   }
 
   /** @inheritdoc */
+  async generateText(system: string, user: string, opts?: { timeoutMs?: number }): Promise<string> {
+    const messages: ChatMessage[] = [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ];
+    return this.chatRequest(messages, opts?.timeoutMs ?? this.config.timeoutMs ?? 60000);
+  }
+
+  /** @inheritdoc */
   async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger, opts?: BatchDescriptionOptions): Promise<Map<string, string>> {
     const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => process.stderr.write(`${msg}\n`), debug: (msg: string) => process.stderr.write(`${msg}\n`) };
     const concurrency = this.config.batchConcurrency ?? 3;

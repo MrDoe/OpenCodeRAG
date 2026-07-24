@@ -32,6 +32,7 @@ describe("generateDescriptions", () => {
         llmCalledCount++;
         return new Map();
       },
+      generateText: async () => "",
     };
 
     const preDocChunk = makeChunk({
@@ -61,6 +62,7 @@ describe("generateDescriptions", () => {
         llmCalled = true;
         return new Map();
       },
+      generateText: async () => "",
     };
 
     const chunks = [
@@ -90,6 +92,7 @@ describe("generateDescriptions", () => {
         for (const c of chunks) map.set(c.id, `batch desc for ${c.id}`);
         return map;
       },
+      generateText: async () => "",
     };
 
     const preDocChunk = makeChunk({
@@ -124,6 +127,7 @@ describe("generateDescriptions", () => {
         llmCalled = true;
         return new Map();
       },
+      generateText: async () => "",
     };
 
     const imageChunk = makeChunk({
@@ -151,6 +155,7 @@ describe("generateDescriptions", () => {
     const provider: DescriptionProvider = {
       generateDescription: async () => "",
       generateBatchDescriptions: async () => new Map(),
+      generateText: async () => "",
     };
 
     const { descriptionMap } = await generateDescriptions([], provider, noopLogger);
@@ -161,6 +166,7 @@ describe("generateDescriptions", () => {
     const provider: DescriptionProvider = {
       generateDescription: async () => { throw new Error("LLM error"); },
       generateBatchDescriptions: async () => { throw new Error("batch error"); },
+      generateText: async () => { throw new Error("batch error"); },
     };
 
     const preDocChunk = makeChunk({

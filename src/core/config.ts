@@ -146,6 +146,16 @@ export interface MemoryConfig {
   minConfidence: number;
   /** Minimum query-relevance score (0-1) for a quirk to be recalled. */
   recallMinScore: number;
+  /** Automatically extract quirks from each completed agent turn. */
+  passiveCapture: boolean;
+  /** Upgrade the system-prompt nudge into a mandatory trigger. */
+  promptEnforcement: boolean;
+  /** Summarize the full session transcript into quirks at session end. */
+  sessionEndExtraction: boolean;
+  /** Max quirks to auto-capture per turn/session-end pass. */
+  autoCaptureMaxPerTurn: number;
+  /** Lexical similarity threshold (0-1) above which a candidate is considered a duplicate and skipped. */
+  autoCaptureDedupThreshold: number;
   /** Decay settings for aging quirks. */
   decay: {
     /** Whether confidence decays over time. */
@@ -585,6 +595,11 @@ export const DEFAULT_CONFIG: RagConfig = {
     autoInject: false,
     minConfidence: 0.5,
     recallMinScore: 0.72,
+    passiveCapture: false,
+    promptEnforcement: true,
+    sessionEndExtraction: true,
+    autoCaptureMaxPerTurn: 2,
+    autoCaptureDedupThreshold: 0.85,
     decay: {
       enabled: false,
       halfLifeDays: 30,
