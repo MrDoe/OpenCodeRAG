@@ -366,6 +366,15 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   const limit = pLimit(options.config.indexing.concurrency);
   const deferDescriptions = !!options.descriptionProvider;
 
+  const activeCount = workspaceFiles.filter(
+    (f) => !f.isEmpty && !f.isTooSmall && (!manifest.files[f.normalizedPath] || manifest.files[f.normalizedPath]!.hash !== f.hash),
+  ).length;
+  logger.info(`Chunking ${activeCount} file(s)...`);
+
+  let chunkedDone = 0;
+  const chunkProgressInterval = Math.max(1, Math.floor(activeCount / 20));
+  const chunkPhaseStart = Date.now();
+
   const prepared = await Promise.all(
     workspaceFiles.map((file) =>
       limit(async () => {
@@ -389,6 +398,14 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           descHash,
         );
 
+        if (isActive) {
+          chunkedDone++;
+          if (chunkedDone % chunkProgressInterval === 0 || chunkedDone === activeCount) {
+            const pct = ((chunkedDone / activeCount) * 100).toFixed(1);
+            logger.info(`  Chunking: ${chunkedDone}/${activeCount} files (${pct}%)`);
+          }
+        }
+
         if (prep.earlyResult && isActive) {
           options.progress?.finishFile(fileLabel);
         }
@@ -397,6 +414,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       }),
     ),
   );
+  const chunkPhaseSec = ((Date.now() - chunkPhaseStart) / 1000).toFixed(1);
+  logger.info(`Chunking complete: ${activeCount} files in ${chunkPhaseSec}s`);
 
   const aborted = (): boolean => options.abortSignal?.aborted ?? false;
 
@@ -420,6 +439,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       const allChunks: Chunk[] = [];
       const oversizedChunks: Chunk[] = [];
       const maxContentChars = options.config.description?.maxContentChars;
+      logger.info(`Description phase: ${deferredPreps.length} files with chunks to describe`);
       for (const prep of deferredPreps) {
         for (const chunk of prep.chunks!) {
           if (chunk.metadata.contentType !== "image") {
@@ -600,6 +620,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           prep.isImageFile ?? false,
         );
       }
+      const totalDescribedChunks = deferredPreps.reduce((s, p) => s + (p.chunks?.length ?? 0), 0);
+      logger.info(`Description phase complete: ${totalDescribedChunks} chunks across ${deferredPreps.length} files`);
     }
   }
 
@@ -673,8 +695,10 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   let embeddedDone = 0;
   const allTexts = embedQueue.map(item => item.text);
   let allEmbeddings: number[][] = [];
+  const embedPhaseStart = Date.now();
 
   if (allTexts.length > 0) {
+    logger.info(`Embedding phase: ${allTexts.length} texts in batches of ${batchSize}...`);
     try {
       allEmbeddings = await embedBatch(
         options.embedder,
@@ -687,6 +711,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           logChunkProgress("Embedding", "", completed, total, embeddedDone, totalEmbedChunks);
         },
       );
+      logger.info(`Embedding complete: ${allTexts.length} texts in ${((Date.now() - embedPhaseStart) / 1000).toFixed(1)}s`);
     } catch (err) {
       logger.warn(`  Global embedding failed: ${(err as Error).message}`);
       for (const { fileIdx } of embedQueue) {
@@ -716,6 +741,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
   // ── Phase 3: Store + manifest update per file (parallel) ──────────────
   const filesToStore = prepared.filter((p) => !earlyWorkerResults.has(prepared.indexOf(p)) && p.chunks && (p.textToEmbed?.length ?? 0) > 0).length;
+  const storePhaseStart = Date.now();
+  logger.info(`Store phase: storing ${filesToStore} file(s) into vector database...`);
   let storedFiles = 0;
   const storeLimit = pLimit(options.config.indexing.concurrency);
   const storeResults = await Promise.all(
@@ -820,6 +847,9 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       entry.size = size;
     }
   }
+
+  const storePhaseSec = ((Date.now() - storePhaseStart) / 1000).toFixed(1);
+  logger.info(`Store phase complete: ${storedFiles} files stored in ${storePhaseSec}s (${stats.totalChunks} total chunks)`);
 
   aggregateStats(stats, finalResults);
 

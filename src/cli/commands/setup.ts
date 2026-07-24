@@ -27,15 +27,23 @@ function removeIfExists(targetPath: string): void {
 
 function checkOpenCodeRunning(): void {
   try {
-    const pids = execSync("pgrep -x opencode 2>/dev/null || (Get-Process -Name opencode -ErrorAction SilentlyContinue 2>nul | ForEach-Object { $_.Id })", {
-      encoding: "utf-8",
-      timeout: 3_000,
-    }).trim();
-    if (pids) {
+    if (process.platform === "win32") {
+      execSync('tasklist /FI "IMAGENAME eq opencode.exe" 2>nul | find /I "opencode.exe" >nul', {
+        timeout: 3_000,
+        stdio: "ignore",
+      });
       console.log(`\n  ${c.warn("OpenCode is currently running.")} Restart it to load the updated plugin.`);
+    } else {
+      const pids = execSync("pgrep -x opencode 2>/dev/null", {
+        encoding: "utf-8",
+        timeout: 3_000,
+      }).trim();
+      if (pids) {
+        console.log(`\n  ${c.warn("OpenCode is currently running.")} Restart it to load the updated plugin.`);
+      }
     }
   } catch {
-    // pgrep/Get-Process aren't available or succeeded silently
+    // OpenCode not found or tools unavailable
   }
 }
 
