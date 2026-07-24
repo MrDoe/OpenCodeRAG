@@ -480,7 +480,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     minFileSizeBytes: 0,
     concurrency: 8,
     embedBatchSize: 100,
-    embedConcurrency: 6,
+    embedConcurrency: 3,
     ollamaMaxBatchSize: 500,
     descriptionConcurrency: 4,
     maxSvgSizeBytes: 1_048_576,

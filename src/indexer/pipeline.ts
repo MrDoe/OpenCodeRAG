@@ -747,7 +747,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           hash: prepared[fileIdx]!.hash,
           chunkCount: 0, fileLabel: prepared[fileIdx]!.fileLabel,
           isNew: false, isModified: false, isUnchanged: false, isEmpty: false,
-          isTooSmall: false, isRemoved: true, hadChunks: false,
+          isTooSmall: false, isRemoved: false, hadChunks: false,
           descriptionFailed: prepared[fileIdx]!.descriptionFailed,
         });
       }
@@ -805,14 +805,14 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         const result: WorkerResult = {
           normalizedPath: prep.normalizedPath,
           hash: prep.hash,
-          chunkCount: prep.chunks?.length ?? 0,
+          chunkCount: validChunks.length,
           fileLabel: prep.fileLabel,
           isNew: !prep.isModified,
           isModified: prep.isModified,
           isUnchanged: false,
           isEmpty: false,
           isTooSmall: false,
-          isRemoved: validChunks.length === 0,
+          isRemoved: (prep.chunks?.length ?? 0) > 0 && validChunks.length === 0 ? false : validChunks.length === 0,
           hadChunks: (prep.chunks?.length ?? 0) > 0,
           descriptionFailed: prep.descriptionFailed,
           descHash: prep.descHash,

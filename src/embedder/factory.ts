@@ -46,11 +46,15 @@ export function createEmbedder(config: RagConfig): EmbeddingProvider {
 }
 
 /**
- * Embed a list of texts in batches with optional concurrency control.
+ * Embed a list of texts in batches with optional concurrency control and per-batch retry.
  *
  * Splits the input texts into chunks of `batchSize` and embeds them sequentially
  * (or concurrently when `concurrency > 1`). When concurrency is limited, uses
  * `p-limit` to cap the number of in-flight requests.
+ *
+ * Each batch is retried up to `retryMax` times with exponential backoff. If all
+ * retries are exhausted, the batch is skipped and empty arrays are returned for
+ * those texts so the caller can still process successfully embedded batches.
  *
  * @param embedder - The embedding provider to use
  * @param texts - Array of text strings to embed
@@ -59,7 +63,10 @@ export function createEmbedder(config: RagConfig): EmbeddingProvider {
  * @param concurrency - Maximum number of concurrent batch requests (default 1)
  * @param onProgress - Optional callback invoked after each batch with the running
  *   completed count and total; per-text granularity when `concurrency <= 1`.
- * @returns A promise resolving to a flat array of embedding vectors (one per input text)
+ * @param retryMax - Maximum retry attempts per batch (default 3)
+ * @param retryBaseDelayMs - Base delay for exponential backoff (default 1000)
+ * @returns A promise resolving to a flat array of embedding vectors (one per input text);
+ *   failed batches return empty arrays
  */
 export async function embedBatch(
   embedder: EmbeddingProvider,
@@ -68,6 +75,8 @@ export async function embedBatch(
   purpose?: "query" | "document",
   concurrency: number = 1,
   onProgress?: (completed: number, total: number) => void,
+  retryMax: number = 3,
+  retryBaseDelayMs: number = 1000,
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
 
@@ -76,25 +85,46 @@ export async function embedBatch(
     batches.push({ index: i, texts: texts.slice(i, i + batchSize) });
   }
 
+  async function embedWithRetry(batchTexts: string[]): Promise<number[][] | null> {
+    for (let attempt = 0; attempt <= retryMax; attempt++) {
+      try {
+        return await embedder.embed(batchTexts, purpose);
+      } catch (err) {
+        if (attempt < retryMax) {
+          const delay = retryBaseDelayMs * Math.pow(2, attempt);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    return null;
+  }
+
   if (concurrency <= 1 || batches.length <= 1) {
     const results: number[][] = [];
     for (const batch of batches) {
-      const embeddings = await embedder.embed(batch.texts, purpose);
-      results.push(...embeddings);
+      const embeddings = await embedWithRetry(batch.texts);
+      if (embeddings) {
+        results.push(...embeddings);
+      } else {
+        for (let i = 0; i < batch.texts.length; i++) {
+          results.push([]);
+        }
+      }
       onProgress?.(results.length, texts.length);
     }
     return results;
   }
 
-  const limit = pLimit(concurrency);
   let completedCount = 0;
+  const limit = pLimit(concurrency);
   const batchResults = await Promise.all(
     batches.map((batch) =>
       limit(async () => {
-        const embeddings = await embedder.embed(batch.texts, purpose);
-        completedCount += embeddings.length;
+        const embeddings = await embedWithRetry(batch.texts);
+        const flatResult = embeddings ?? batch.texts.map(() => []);
+        completedCount += embeddings?.length ?? 0;
         onProgress?.(completedCount, texts.length);
-        return { index: batch.index, embeddings };
+        return { index: batch.index, embeddings: flatResult };
       }),
     ),
   );

@@ -28,12 +28,5 @@ Thumbs.db
 .npmrc
 memory:/
 opencode-rag.json
-src/__tests__/_images
-*.png
-*.jpg
 build/config.gypi
-
-.graphify*
-graphify-out/*
-
 paper/*
