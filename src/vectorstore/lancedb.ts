@@ -32,10 +32,34 @@ export function l2Normalize(vec: number[]): number[] {
 export function isCorruptionError(err: unknown): boolean {
   if (err instanceof Error) {
     return (
-      err.message.includes("Not found") &&
-      err.message.includes(".lance") &&
-      err.message.includes("lance error")
+      (err.message.includes("Not found") &&
+        err.message.includes(".lance") &&
+        err.message.includes("lance error")) ||
+      // Database has an incompatible transaction (e.g. a Restore from a prior
+      // version that conflicts with new Appends).  This is a recoverable
+      // corruption — tryRepair() iterates prior versions to find a consistent one.
+      (err.message.includes("Incompatible transaction") &&
+        err.message.includes("version"))
     );
+  }
+  return false;
+}
+
+/**
+ * Check whether an error is a LanceDB transient transaction conflict
+ * (e.g. "Incompatible transaction: This Append transaction is incompatible
+ * with concurrent transaction Restore at version ...").
+ *
+ * These are recoverable by retrying after the conflicting transaction finishes.
+ * Cross-process writes are the primary source; in-process writes are serialized
+ * by the write lock.
+ *
+ * @param err - The error to inspect.
+ * @returns True if the error matches a transient transaction conflict.
+ */
+export function isTransientConflictError(err: unknown): boolean {
+  if (err instanceof Error) {
+    return err.message.includes("Incompatible transaction");
   }
   return false;
 }
@@ -94,6 +118,42 @@ export class LanceDbStore implements VectorStore {
   private table: Table | null = null;
   private tableInit: Promise<Table> | null = null;
   private writeLock = Promise.resolve<void>(void 0);
+
+  /**
+   * Execute an async function under an exclusive write lock.
+   *
+   * All write operations (addChunks, deleteByFilePath, optimize, tryRepair) must
+   * go through this helper to prevent concurrent LanceDB transactions from
+   * conflicting (e.g. Append vs Restore, which produces the "Incompatible
+   * transaction" error).
+   *
+   * The lock is a Promise chain: each caller chains onto `this.writeLock` and
+   * sets it to a new promise that resolves only when its operation finishes
+   * (or throws).  This guarantees FIFO serialization without any busy-waiting
+   * or timers.
+   *
+   * @param fn - The async function to execute under the lock.
+   * @returns The result of `fn`.
+   */
+  private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    const prev = this.writeLock;
+    let release: () => void = () => {};
+    this.writeLock = new Promise<void>((resolve) => { release = resolve; });
+    await prev;
+    try {
+      return await fn();
+    } catch (err) {
+      // Cross-process transient conflict (e.g. CLI vs plugin):
+      // wait briefly and retry once, still under the same lock hold.
+      if (isTransientConflictError(err)) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return await fn();
+      }
+      throw err;
+    } finally {
+      release();
+    }
+  }
 
   /**
    * @param dbPath - Filesystem path to the LanceDB database directory.
@@ -272,20 +332,17 @@ export class LanceDbStore implements VectorStore {
    */
   async addChunks(chunks: Chunk[]): Promise<void> {
     if (chunks.length === 0) return;
-    const done = this.writeLock.then(() => this.addChunksInternal(chunks));
-    this.writeLock = done.catch(() => {});
-    try {
-      await done;
-    } catch (err) {
-      this.writeLock = Promise.resolve();
-      if (isCorruptionError(err) && await this.tryRepair()) {
-        const retry = this.addChunksInternal(chunks);
-        this.writeLock = retry.catch(() => {});
-        await retry;
-        return;
+    await this.withWriteLock(async () => {
+      try {
+        await this.addChunksInternal(chunks);
+      } catch (err) {
+        if (isCorruptionError(err) && await this.tryRepair()) {
+          await this.addChunksInternal(chunks);
+          return;
+        }
+        throw err;
       }
-      throw err;
-    }
+    });
   }
 
   private async addChunksInternal(chunks: Chunk[]): Promise<void> {
@@ -382,7 +439,7 @@ export class LanceDbStore implements VectorStore {
       return await this.searchInternal(embedding, topK, filter);
     } catch (err) {
       if (isCorruptionError(err)) {
-        const repaired = await this.tryRepair();
+        const repaired = await this.withWriteLock(() => this.tryRepair());
         if (repaired) {
           return this.searchInternal(embedding, topK, filter);
         }
@@ -620,18 +677,20 @@ export class LanceDbStore implements VectorStore {
    * Should be called at the end of a successful index pass.
    */
   async optimize(): Promise<void> {
-    try {
-      const table = await this.getTable();
-      // Clean up versions older than 1 hour — not "right now" — so in-flight
-      // queries (e.g. Web UI search, background auto-index) can finish before
-      // their data files are reclaimed.  Using new Date() here caused data-file
-      // race conditions where a reader got "Not found: … .lance" because the
-      // GC deleted fragments that the current version still referenced.
-      const threshold = new Date(Date.now() - 60 * 60 * 1000);
-      await table.optimize({ cleanupOlderThan: threshold, deleteUnverified: false });
-    } catch {
-      // Optimize is best-effort — must not break indexing.
-    }
+    await this.withWriteLock(async () => {
+      try {
+        const table = await this.getTable();
+        // Clean up versions older than 1 hour �?" not "right now" �?" so in-flight
+        // queries (e.g. Web UI search, background auto-index) can finish before
+        // their data files are reclaimed.  Using new Date() here caused data-file
+        // race conditions where a reader got "Not found: �?� .lance" because the
+        // GC deleted fragments that the current version still referenced.
+        const threshold = new Date(Date.now() - 60 * 60 * 1000);
+        await table.optimize({ cleanupOlderThan: threshold, deleteUnverified: false });
+      } catch {
+        // Optimize is best-effort �?" must not break indexing.
+      }
+    });
   }
 
   /**
@@ -765,15 +824,17 @@ export class LanceDbStore implements VectorStore {
    * @param filePath - The file path whose chunks should be deleted.
    */
   async deleteByFilePath(filePath: string): Promise<void> {
-    try {
-      await this.deleteByFilePathInternal(filePath);
-    } catch (err) {
-      if (isCorruptionError(err) && await this.tryRepair()) {
+    await this.withWriteLock(async () => {
+      try {
         await this.deleteByFilePathInternal(filePath);
-        return;
+      } catch (err) {
+        if (isCorruptionError(err) && await this.tryRepair()) {
+          await this.deleteByFilePathInternal(filePath);
+          return;
+        }
+        throw err;
       }
-      throw err;
-    }
+    });
   }
 
   private async deleteByFilePathInternal(filePath: string): Promise<void> {
@@ -826,8 +887,13 @@ export class LanceDbStore implements VectorStore {
     try {
       return await fn();
     } catch (err) {
-      if (isCorruptionError(err) && await this.tryRepair()) {
-        return fn();
+      if (isCorruptionError(err)) {
+        // Repair must be under writeLock to prevent Restore from conflicting
+        // with concurrent Append transactions (addChunks / deleteByFilePath).
+        const repaired = await this.withWriteLock(() => this.tryRepair());
+        if (repaired) {
+          return fn();
+        }
       }
       throw err;
     }
@@ -864,7 +930,7 @@ export class LanceDbStore implements VectorStore {
       }
 
       if (versions.length <= 1) {
-        return false;
+        return this.tryRebuildTable(db);
       }
 
       const sorted = [...versions].sort((a, b) => b.version - a.version);
@@ -882,11 +948,30 @@ export class LanceDbStore implements VectorStore {
         }
       }
 
-      console.error(
-        "[lancedb] All version-restore attempts failed. " +
-        "Run 'opencode-rag index --force' to rebuild the index."
+      // All version-restore attempts failed (likely corrupted version graph
+      // with incompatible Restore transactions).  Drop and recreate the table.
+      console.warn(
+        "[lancedb] Version restore failed. Dropping and recreating table to recover from corrupt version graph."
       );
+      return this.tryRebuildTable(db);
+    } catch {
       return false;
+    }
+  }
+
+  /**
+   * Drop the existing chunks table and let getTable() create a fresh one.
+   * All indexed data is lost — callers should detect the empty table and
+   * trigger a re-index if needed.
+   */
+  private async tryRebuildTable(db: Connection): Promise<boolean> {
+    try {
+      await db.dropTable(TABLE_NAME).catch(() => {});
+      this.table = null;
+      // Re-create fresh via getTable → initTable
+      await this.getTable();
+      console.warn("[lancedb] Table recreated from scratch after corruption recovery.");
+      return true;
     } catch {
       return false;
     }

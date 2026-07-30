@@ -383,6 +383,54 @@ describe("LanceDbStore (memory)", () => {
     const paths = await store.getFilePaths();
     assert.deepEqual(paths, []);
   });
+
+  it("handles concurrent writes without conflicts", async () => {
+    await store.clear({ noBackup: true });
+
+    const DIM = 384;
+    const workers = 10;
+    const results = await Promise.allSettled(
+      Array.from({ length: workers }, (_, i) =>
+        store.addChunks([
+          {
+            id: `concurrent-${i}`,
+            content: `worker ${i} content`,
+            embedding: new Array(DIM).fill(i * 0.1 + 0.01),
+            metadata: { filePath: `src/worker-${i}.ts`, startLine: i, endLine: i + 5, language: "typescript" },
+          },
+        ])
+      ),
+    );
+
+    for (const r of results) {
+      assert.equal(r.status, "fulfilled", `concurrent addChunks failed: ${r.status === "rejected" ? r.reason : ""}`);
+    }
+
+    const count = await store.count();
+    assert.equal(count, workers, "all concurrent chunks should be stored");
+
+    // Concurrent reads while writes are in flight
+    const searchTasks = Array.from({ length: 20 }, (_, i) =>
+      store.search(new Array(DIM).fill(i * 0.05 + 0.01), 3),
+    );
+    const searchResults = await Promise.allSettled(searchTasks);
+    for (const r of searchResults) {
+      assert.equal(r.status, "fulfilled", `concurrent search failed: ${r.status === "rejected" ? r.reason : ""}`);
+    }
+
+    // Concurrent deletes (targeting nonexistent paths, should be safe)
+    const deleteTasks = Array.from({ length: 5 }, (_, i) =>
+      store.deleteByFilePath(`src/nonexistent-${i}.ts`),
+    );
+    const deleteResults = await Promise.allSettled(deleteTasks);
+    for (const r of deleteResults) {
+      assert.equal(r.status, "fulfilled", `concurrent delete failed: ${r.status === "rejected" ? r.reason : ""}`);
+    }
+
+    // Verify data integrity
+    const finalCount = await store.count();
+    assert.equal(finalCount, workers, "all chunks preserved after concurrent deletes");
+  });
 });
 
 describe("l2Normalize", () => {
