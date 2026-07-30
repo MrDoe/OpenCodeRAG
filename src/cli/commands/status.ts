@@ -9,7 +9,7 @@ import type { Command } from "commander";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
-import { c, resolveCliContext, cleanupContext, logCliError, logCliInfo, formatTimestamp } from "../format.js";
+import { c, resolveCliContext, logCliError, logCliInfo, formatTimestamp } from "../format.js";
 import { getIndexStatusSummary } from "../../indexer.js";
 import { getPackageMetadata } from "../helpers.js";
 import { checkForUpdate } from "../../core/version-check.js";
@@ -167,7 +167,9 @@ export function registerStatusCommand(program: Command): void {
           }).catch(() => { /* ignore network errors */ });
         }
 
-        await cleanupContext(ctx);
+        // Force exit — avoid LanceDB close() hanging on Windows native bindings.
+        // Status is read-only so there's no state to lose.
+        process.exit(0);
       } catch (err) {
         const message = (err as Error).message || String(err);
         const logFilePath = path.resolve(process.cwd(), ".opencode", "opencode-rag.log");
