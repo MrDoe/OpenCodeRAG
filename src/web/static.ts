@@ -22,8 +22,11 @@ let cachedHtml: string | null = null;
 /**
  * Read and cache the Web UI `index.html` from disk.
  *
- * Reads from the Vite production build output (`dist/web/ui/index.html`) when available,
- * falling back to the development source (`src/web/ui/index.html`).
+ * Reads from the Vite production build output (`dist/web/ui/index.html`).
+ * There is deliberately NO fallback to `src/web/ui/index.html`: the dev
+ * source references `/src/main.tsx`, which the embedded server does not
+ * serve — a "working" fallback would render a blank page. Use
+ * `npm run build` (or `npm run dev:ui` with the Vite dev server) instead.
  *
  * @returns The full HTML string of the Web UI entry page.
  */
@@ -32,10 +35,13 @@ export function getStaticHtml(): string {
 
   const root = projectRoot();
   const prodPath = join(root, "dist", "web", "ui", "index.html");
-  const devPath = join(root, "src", "web", "ui", "index.html");
-  const targetPath = existsSync(prodPath) ? prodPath : devPath;
+  if (!existsSync(prodPath)) {
+    throw new Error(
+      "Web UI not built — run `npm run build` (or use `npm run dev:ui` with the Vite dev server).",
+    );
+  }
 
-  cachedHtml = readFileSync(targetPath, "utf-8");
+  cachedHtml = readFileSync(prodPath, "utf-8");
   return cachedHtml;
 }
 

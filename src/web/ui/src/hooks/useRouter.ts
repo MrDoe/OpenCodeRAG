@@ -15,7 +15,12 @@ function parseHash(): Route {
     for (const part of qs.split("&")) {
       const eqIdx = part.indexOf("=");
       if (eqIdx >= 0) {
-        params[decodeURIComponent(part.slice(0, eqIdx))] = decodeURIComponent(part.slice(eqIdx + 1));
+        // A malformed escape sequence (%zz) must not crash the render
+        try {
+          params[decodeURIComponent(part.slice(0, eqIdx))] = decodeURIComponent(part.slice(eqIdx + 1));
+        } catch {
+          // skip the malformed param
+        }
       }
     }
   }

@@ -2,11 +2,8 @@ import { useEffect } from "preact/hooks";
 import { theme } from "../state/store";
 
 export function useTheme() {
-  useEffect(() => {
-    const stored = localStorage.getItem("theme") as "dark" | "light" | null;
-    if (stored) theme.value = stored;
-  }, []);
-
+  // The theme signal initializer already reads localStorage synchronously
+  // (see store.ts), so there is no dark-flash for light-theme users.
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme.value === "dark");
     localStorage.setItem("theme", theme.value);

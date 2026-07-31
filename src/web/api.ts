@@ -2,7 +2,7 @@
  * @fileoverview REST API handler for the OpenCodeRAG Web UI with search, file, chunk, eval, and token analysis endpoints.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { extname, join, resolve as resolvePathModule } from "node:path";
 import { createHash } from "node:crypto";
 import { LanceDbStore } from "../vectorstore/lancedb.js";
@@ -345,31 +345,23 @@ async function handleQuirkDelete(deps: QuirkStoreDeps, id: string): Promise<ApiR
 /**
  * Respond with a paginated, optionally filtered list of chunks.
  *
- * Query params: `offset` (default 0), `limit` (default 50), `lang`, `file`.
+ * Query params: `offset` (default 0, clamped >= 0), `limit` (default 50,
+ * clamped 1..500), `lang`, `file`. Filtering and pagination are pushed
+ * down into the store query — loading 100k rows per request was a memory
+ * blowup on large stores.
  */
 async function handleChunks(
   store: LanceDbStore,
   params: URLSearchParams
 ): Promise<ApiResponse> {
-  const offset = parseInt(params.get("offset") ?? "0", 10);
-  const limit = parseInt(params.get("limit") ?? "50", 10);
+  const rawOffset = parseInt(params.get("offset") ?? "0", 10);
+  const rawLimit = parseInt(params.get("limit") ?? "50", 10);
+  const offset = Number.isFinite(rawOffset) ? Math.max(0, rawOffset) : 0;
+  const limit = Number.isFinite(rawLimit) ? Math.min(500, Math.max(1, rawLimit)) : 50;
   const langFilter = params.get("lang");
   const fileFilter = params.get("file");
 
-  const allChunks = await store.getChunks(0, 100000);
-
-  let filtered = allChunks;
-
-  if (langFilter) {
-    filtered = filtered.filter((c) => c.language === langFilter);
-  }
-
-  if (fileFilter) {
-    filtered = filtered.filter((c) => c.filePath.startsWith(fileFilter));
-  }
-
-  const total = filtered.length;
-  const chunks = filtered.slice(offset, offset + limit);
+  const { chunks, total } = await store.getChunksFiltered(offset, limit, langFilter || undefined, fileFilter || undefined);
 
   return {
     status: 200,
@@ -382,8 +374,7 @@ async function handleChunkById(
   store: LanceDbStore,
   id: string
 ): Promise<ApiResponse> {
-  const chunks = await store.getChunks(0, 100000);
-  const chunk = chunks.find((c) => c.id === id);
+  const chunk = await store.getChunkById(id);
 
   if (!chunk) {
     return { status: 404, body: { error: "Chunk not found" } };
@@ -398,7 +389,8 @@ async function handleSearch(
   params: URLSearchParams
 ): Promise<ApiResponse> {
   const query = params.get("q") ?? "";
-  const topK = parseInt(params.get("topK") ?? "20", 10);
+  const rawTopK = parseInt(params.get("topK") ?? "20", 10);
+  const topK = Number.isFinite(rawTopK) ? Math.min(100, Math.max(1, rawTopK)) : 20;
 
   if (!query.trim()) {
     return { status: 200, body: { results: [] } };
@@ -453,9 +445,14 @@ async function handleRetrieve(
     return { status: 503, body: { error: `Embedding model unavailable: ${(err as Error).message}. Check that your embedding provider is running.` } };
   }
 
-  const topK = parseInt(params.get("topK") ?? "10", 10);
-  const minScore = parseFloat(params.get("minScore") ?? "0.35");
-  const keywordWeight = parseFloat(params.get("keywordWeight") ?? "0.4");
+  const rawTopK = parseInt(params.get("topK") ?? "10", 10);
+  const rawMinScore = parseFloat(params.get("minScore") ?? "0.35");
+  const rawKeywordWeight = parseFloat(params.get("keywordWeight") ?? "0.4");
+  // Clamp all numeric params — a topK of 1e9 would overfetch 3x via the
+  // retriever's overfetch factor and blow up memory.
+  const topK = Number.isFinite(rawTopK) ? Math.min(100, Math.max(1, rawTopK)) : 10;
+  const minScore = Number.isFinite(rawMinScore) ? Math.min(1, Math.max(0, rawMinScore)) : 0.35;
+  const keywordWeight = Number.isFinite(rawKeywordWeight) ? Math.min(1, Math.max(0, rawKeywordWeight)) : 0.4;
   const hybrid = params.get("hybrid") !== "false";
   const explain = params.get("explain") !== "false";
   const pathFilter = params.get("path") ?? undefined;
@@ -526,14 +523,18 @@ async function handleCompare(
   if (ids.length === 0) {
     return { status: 400, body: { error: "No chunk IDs provided" } };
   }
+  if (ids.length > 100) {
+    return { status: 400, body: { error: "Too many chunk IDs (max 100)" } };
+  }
 
-  const allChunks = await store.getChunks(0, 100000);
-  const chunks = allChunks.filter((c) =>
-    ids.includes((c as unknown as { id?: string }).id ?? "")
-  );
+  const chunks = await store.getChunksByIds(ids);
 
   return { status: 200, body: { chunks } };
 }
+
+// Re-hashing every manifest file per status request is expensive — cache the
+// result keyed on the manifest file's mtime+size (invalidated on any write).
+let statusCache: { key: string; staleFileCount: number; manifest: unknown } | null = null;
 
 /**
  * Return indexing status — manifest stats, staleness, and a placeholder for watcher state.
@@ -561,20 +562,35 @@ async function handleIndexingStatus(storePath: string, cwd?: string): Promise<Ap
     lastIndexedAt = new Date(manifest.lastIndexedAt as number).toISOString();
   }
 
-      // Count stale files by comparing manifest file list against current disk state
-      if (cwd && manifest?.files) {
-        const storedFiles = manifest.files as Record<string, { hash: string }>;
-        for (const [filePath, fileMeta] of Object.entries(storedFiles)) {
-          try {
-            const fullPath = filePath;
-            const content = readFileSync(fullPath, "utf-8");
-            const hash = createHash("sha256").update(content).digest("hex");
-            if (hash !== fileMeta.hash) staleFileCount++;
-          } catch {
-            staleFileCount++; // file was deleted or unreadable
-          }
+  // Count stale files by comparing manifest file list against current disk state.
+  // Cached by manifest mtime+size so the poll loop doesn't hash every file
+  // synchronously on the event loop per request.
+  if (cwd && manifest?.files) {
+    const cacheKey = (() => {
+      try {
+        const st = statSync(manifestPath);
+        return `${st.mtimeMs}:${st.size}`;
+      } catch {
+        return "missing";
+      }
+    })();
+    if (statusCache && statusCache.key === cacheKey) {
+      staleFileCount = statusCache.staleFileCount;
+    } else {
+      const storedFiles = manifest.files as Record<string, { hash: string }>;
+      for (const [filePath, fileMeta] of Object.entries(storedFiles)) {
+        try {
+          const fullPath = filePath;
+          const content = readFileSync(fullPath, "utf-8");
+          const hash = createHash("sha256").update(content).digest("hex");
+          if (hash !== fileMeta.hash) staleFileCount++;
+        } catch {
+          staleFileCount++; // file was deleted or unreadable
         }
       }
+      statusCache = { key: cacheKey, staleFileCount, manifest };
+    }
+  }
 
   return {
     status: 200,
@@ -586,6 +602,9 @@ async function handleIndexingStatus(storePath: string, cwd?: string): Promise<Ap
   };
 }
 
+/** Guards concurrent reindex requests — only one pass may run at a time. */
+let reindexInFlight = false;
+
 /**
  * Trigger a one-shot reindex pass in the background.
  */
@@ -596,17 +615,31 @@ async function handleReindex(
   store: LanceDbStore,
   getEmbedder?: () => Promise<EmbeddingProvider>
 ): Promise<ApiResponse> {
+  if (reindexInFlight) {
+    return { status: 409, body: { error: "A reindex is already running" } };
+  }
   try {
     const { runIndexPass } = await import("../indexer.js");
     const embedder = getEmbedder ? await getEmbedder() : undefined;
     if (!embedder) {
       return { status: 503, body: { error: "Embedder not available" } };
     }
-    runIndexPass({ cwd, storePath, config: cfg, store, embedder }).catch((err: Error) => {
-      console.error("Background reindex failed:", err);
-    });
+    reindexInFlight = true;
+    runIndexPass({ cwd, storePath, config: cfg, store, embedder })
+      .then(() => {
+        reindexInFlight = false;
+        statusCache = null; // invalidate the status cache after a pass
+        projectionCache = null;
+      })
+      .catch((err: Error) => {
+        reindexInFlight = false;
+        statusCache = null;
+        projectionCache = null;
+        console.error("Background reindex failed:", err);
+      });
     return { status: 200, body: { started: true } };
   } catch (err) {
+    reindexInFlight = false;
     return { status: 500, body: { error: `Failed to start reindex: ${(err as Error).message}` } };
   }
 }
@@ -632,16 +665,30 @@ function redactKeys(obj: Record<string, unknown>): void {
 
 /**
  * Project chunk embeddings to 2D via PCA for the Embedding Space Explorer.
+ * Capped at 5000 chunks and memoized per (storePath, maxChunks) so the
+ * O(n·dim²) computation does not run on every visit.
  */
+let projectionCache: { key: string; body: unknown } | null = null;
+
 async function handleEmbeddingProjection(store: LanceDbStore, params: URLSearchParams): Promise<ApiResponse> {
-  const maxChunks = parseInt(params.get("maxChunks") ?? "5000", 10);
+  const rawMaxChunks = parseInt(params.get("maxChunks") ?? "5000", 10);
+  const maxChunks = Number.isFinite(rawMaxChunks) ? Math.min(5000, Math.max(1, rawMaxChunks)) : 5000;
   try {
+    // Invalidated after a reindex pass completes (see handleReindex)
+    const cacheKey = `${maxChunks}`;
+    if (projectionCache && projectionCache.key === cacheKey) {
+      return { status: 200, body: projectionCache.body };
+    }
+
     const chunks = await store.getChunksWithEmbeddings(maxChunks);
     if (chunks.length === 0) {
-      return { status: 200, body: { points: [], totalChunks: 0 } };
+      projectionCache = { key: cacheKey, body: { points: [], totalChunks: 0 } };
+      return { status: 200, body: projectionCache.body };
     }
     if (chunks.length === 1) {
-      return { status: 200, body: { points: [{ id: chunks[0]!.id, x: 0.5, y: 0.5, filePath: chunks[0]!.filePath, startLine: chunks[0]!.startLine, endLine: chunks[0]!.endLine, language: chunks[0]!.language, description: chunks[0]!.description }], totalChunks: 1, displayedChunks: 1 } };
+      const body = { points: [{ id: chunks[0]!.id, x: 0.5, y: 0.5, filePath: chunks[0]!.filePath, startLine: chunks[0]!.startLine, endLine: chunks[0]!.endLine, language: chunks[0]!.language, description: chunks[0]!.description }], totalChunks: 1, displayedChunks: 1 };
+      projectionCache = { key: cacheKey, body };
+      return { status: 200, body };
     }
 
     const { computePCA } = await import("./pca.js");
@@ -659,10 +706,9 @@ async function handleEmbeddingProjection(store: LanceDbStore, params: URLSearchP
       description: c.description,
     }));
 
-    return {
-      status: 200,
-      body: { points, totalChunks: chunks.length, displayedChunks: points.length },
-    };
+    const body = { points, totalChunks: chunks.length, displayedChunks: points.length };
+    projectionCache = { key: cacheKey, body };
+    return { status: 200, body };
   } catch (err) {
     return { status: 500, body: { error: `Projection failed: ${(err as Error).message}` } };
   }

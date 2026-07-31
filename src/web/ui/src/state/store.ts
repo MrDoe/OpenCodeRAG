@@ -45,7 +45,13 @@ export const evalSessionDetail = signal<any>(null);
 export const quirkTypeFilter = signal<string | null>(null);
 
 // UI
-export const theme = signal<"dark" | "light">("dark");
+// Read the stored theme synchronously so a light-theme user never gets a
+// dark flash before the effect runs.
+export const theme = signal<"dark" | "light">(
+  typeof localStorage !== "undefined"
+    ? (localStorage.getItem("theme") as "dark" | "light" | null) ?? "dark"
+    : "dark",
+);
 export const sidebarOpen = signal<boolean>(true);
 export const toasts = signal<ToastMessage[]>([]);
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { useDebounce } from "./useDebounce";
 import { API } from "../lib/api";
-import { searchQuery, searchParams, searchHistory } from "../state/store";
+import { searchQuery, searchParams, searchHistory, searchResults } from "../state/store";
 
 export function useSearch() {
   const [results, setResults] = useState<any[]>([]);
@@ -14,6 +14,9 @@ export function useSearch() {
     const q = searchQuery.value.trim();
     if (!q) {
       setResults([]);
+      setError(null);
+      setIsLoading(false);
+      searchResults.value = [];
       return;
     }
 
@@ -41,6 +44,9 @@ export function useSearch() {
         setIsInitializing(false);
         const newResults = res.body?.results ?? res.results ?? [];
         setResults(newResults);
+        // Mirror into the global signal so the Embeddings search overlay
+        // (which reads searchResults.value) can activate.
+        searchResults.value = newResults;
 
         // Add to history
         const entry = { query: q, params: { ...debouncedParams } };
