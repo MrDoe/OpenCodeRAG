@@ -19,10 +19,20 @@ export function GlobalSearch() {
       setOpen(false);
       return;
     }
+    let cancelled = false;
     API.search(debouncedQuery, 10).then((data) => {
-      setResults(data?.results ?? []);
-      setOpen(true);
+      // Stale-response guard: a slower response for an older query must not
+      // overwrite the results of the current one.
+      if (!cancelled) {
+        setResults(data?.results ?? []);
+        setOpen(true);
+      }
+    }).catch(() => {
+      if (!cancelled) setOpen(false);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [debouncedQuery]);
 
   useEffect(() => {
@@ -54,7 +64,7 @@ export function GlobalSearch() {
         value={query}
         onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
         onKeyDown={handleKeyDown as any}
-        className="w-56 px-3 py-1.5 bg-slate-800 border border-slate-600 rounded text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-400"
+        className="global-search-input w-56 px-3 py-1.5 bg-slate-800 border border-slate-600 rounded text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-400"
         aria-label="Global search"
         role="combobox"
         aria-expanded={open}

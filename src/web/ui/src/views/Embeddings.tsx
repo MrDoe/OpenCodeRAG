@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState, useMemo } from "preact/hooks";
 import { useApi } from "../hooks/useApi";
 import { useRouter } from "../hooks/useRouter";
 import { API } from "../lib/api";
@@ -43,20 +43,10 @@ export function Embeddings() {
   const rawPoints: RawPoint[] = data?.body?.points ?? data?.points ?? [];
   const totalChunks: number = data?.body?.totalChunks ?? data?.totalChunks ?? 0;
 
-  // Toggle search overlay
-  useEffect(() => {
-    if (showSearchOverlay && searchResults.value.length > 0) {
-      setSearchIds(new Set(searchResults.value.map((r: any) => r.chunk.id)));
-    } else {
-      setSearchIds(new Set());
-    }
-  }, [showSearchOverlay, searchResults.value]);
-
-  if (isLoading) return <ViewSkeleton type="chart" />;
-  if (error) return <ErrorState message={error} onRetry={refresh} />;
-  if (rawPoints.length === 0) return <EmptyState icon="🌐" message="No embedding data available. Index some files first." />;
-
-  // Compute clusters if enabled (client-side k-means)
+  // Compute clusters if enabled (client-side k-means).
+  // NOTE: this effect MUST live above the early returns below — conditional
+  // hooks (effect after `if (isLoading) return …`) shift hook slots between
+  // renders and break Preact's cleanup pairing.
   useEffect(() => {
     if (showClusters && rawPoints.length > 0) {
       const k = Math.min(8, Math.max(2, Math.floor(rawPoints.length / 20)));
@@ -81,8 +71,22 @@ export function Embeddings() {
     }
   }, [showClusters, showOutliers, rawPoints]);
 
-  // Build display points
-  const displayPoints: ScatterPlotPoint[] = rawPoints.map((p, i) => {
+  // Toggle search overlay
+  useEffect(() => {
+    if (showSearchOverlay && searchResults.value.length > 0) {
+      setSearchIds(new Set(searchResults.value.map((r: any) => r.chunk.id)));
+    } else {
+      setSearchIds(new Set());
+    }
+  }, [showSearchOverlay, searchResults.value]);
+
+  if (isLoading) return <ViewSkeleton type="chart" />;
+  if (error) return <ErrorState message={error} onRetry={refresh} />;
+  if (rawPoints.length === 0) return <EmptyState icon="🌐" message="No embedding data available. Index some files first." />;
+
+  // Build display points (memoized — rebuilding 5000 objects per render was
+  // wasted work on every state change)
+  const displayPoints: ScatterPlotPoint[] = useMemo(() => rawPoints.map((p, i) => {
     let color: string;
     if (colorMode === "language") {
       // Map language — get a hex from the class name
@@ -109,7 +113,7 @@ export function Embeddings() {
       radius: highlighted ? 6 : isOutlier ? 5 : 3,
       highlighted,
     };
-  });
+  }), [rawPoints, colorMode, clusterAssignments, outliers, searchIds]);
 
   return (
     <div>

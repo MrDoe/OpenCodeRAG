@@ -27,6 +27,7 @@ export function Compare() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     if (ids.length < 2) {
       setError("Select 2-3 chunks to compare.");
       setLoading(false);
@@ -34,13 +35,16 @@ export function Compare() {
     }
     API.compare(ids)
       .then((res) => {
+        if (cancelled) return;
         setChunks(res?.body?.chunks ?? res?.chunks ?? []);
         setLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         setError((err as Error).message);
         setLoading(false);
       });
+    return () => { cancelled = true; };
   }, [ids.join(",")]);
 
   if (loading) return <ViewSkeleton type="detail" />;

@@ -589,6 +589,109 @@ export class LanceDbStore implements VectorStore {
   }
 
   /**
+   * Retrieve a paginated list of chunks without embeddings, with optional
+   * language and file-path filters pushed into the SQL WHERE clause.
+   *
+   * @param offset - Number of rows to skip (for pagination).
+   * @param limit - Maximum number of rows to return.
+   * @param lang - Optional exact language filter.
+   * @param filePrefix - Optional filePath prefix filter.
+   * @returns The page of chunks plus the total count of matching rows.
+   */
+  async getChunksFiltered(
+    offset: number,
+    limit: number,
+    lang?: string,
+    filePrefix?: string,
+  ): Promise<{ chunks: ChunkSummary[]; total: number }> {
+    const conditions: string[] = [];
+    if (lang) conditions.push(`language = '${lang.replace(/'/g, "''")}'`);
+    if (filePrefix) conditions.push(`filePath LIKE '${filePrefix.replace(/'/g, "''")}%'`);
+    const where = conditions.length > 0 ? conditions.join(" AND ") : undefined;
+
+    return this.withCorruptionRecovery(async () => {
+      const table = await this.getTable();
+      let query = table.query().select(QUERY_COLUMNS);
+      let countQuery = table.query().select(["id"]);
+      if (where) {
+        query = query.where(where);
+        countQuery = countQuery.where(where);
+      }
+      const [rows, countRows] = await Promise.all([
+        query.offset(Math.max(0, offset)).limit(Math.max(1, Math.min(limit, 1000))).toArray(),
+        countQuery.toArray(),
+      ]);
+      return {
+        chunks: rows.map((row: Record<string, unknown>) => ({
+          id: row.id as string,
+          filePath: row.filePath as string,
+          language: row.language as string,
+          startLine: row.startLine as number,
+          endLine: row.endLine as number,
+          content: row.content as string,
+          description: (row.description as string) ?? "",
+          kind: (row.kind as string) ?? "",
+          quirkType: (row.quirkType as string) ?? "",
+          tags: (row.tags as string) ?? "",
+        })),
+        total: countRows.length,
+      };
+    });
+  }
+
+  /** Look up a single chunk by its ID. Returns undefined when not found. */
+  async getChunkById(id: string): Promise<ChunkSummary | undefined> {
+    return this.withCorruptionRecovery(async () => {
+      const table = await this.getTable();
+      const rows = await table.query()
+        .select(QUERY_COLUMNS)
+        .where(`id = '${id.replace(/'/g, "''")}'`)
+        .limit(1)
+        .toArray();
+      const row = rows[0] as Record<string, unknown> | undefined;
+      if (!row) return undefined;
+      return {
+        id: row.id as string,
+        filePath: row.filePath as string,
+        language: row.language as string,
+        startLine: row.startLine as number,
+        endLine: row.endLine as number,
+        content: row.content as string,
+        description: (row.description as string) ?? "",
+        kind: (row.kind as string) ?? "",
+        quirkType: (row.quirkType as string) ?? "",
+        tags: (row.tags as string) ?? "",
+      };
+    });
+  }
+
+  /** Fetch chunks by their IDs (for the compare view). Bounded to 100 ids. */
+  async getChunksByIds(ids: string[]): Promise<ChunkSummary[]> {
+    const bounded = ids.slice(0, 100);
+    if (bounded.length === 0) return [];
+    return this.withCorruptionRecovery(async () => {
+      const table = await this.getTable();
+      const idList = bounded.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
+      const rows = await table.query()
+        .select(QUERY_COLUMNS)
+        .where(`id IN (${idList})`)
+        .toArray();
+      return rows.map((row: Record<string, unknown>) => ({
+        id: row.id as string,
+        filePath: row.filePath as string,
+        language: row.language as string,
+        startLine: row.startLine as number,
+        endLine: row.endLine as number,
+        content: row.content as string,
+        description: (row.description as string) ?? "",
+        kind: (row.kind as string) ?? "",
+        quirkType: (row.quirkType as string) ?? "",
+        tags: (row.tags as string) ?? "",
+      }));
+    });
+  }
+
+  /**
    * Fetch chunks with their embedding vectors included (for embedding projection).
    * @param limit - Maximum number of rows to return.
    * @returns Array of { id, filePath, language, startLine, endLine, description, embedding }.

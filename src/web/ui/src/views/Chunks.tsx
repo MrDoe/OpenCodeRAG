@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState, useRef } from "preact/hooks";
 import { useApi } from "../hooks/useApi";
 import { useRouter } from "../hooks/useRouter";
 import { API } from "../lib/api";
@@ -194,17 +194,35 @@ export function Chunks() {
 function ChunkDetail({ chunkId, chunks }: { chunkId: string; chunks: ChunkData[] }) {
   const [detail, setDetail] = useState<ChunkData | null>(null);
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const local = chunks.find((c) => c.id === chunkId);
     if (local) {
       setDetail(local);
     } else {
+      // Out-of-order guard: clicking chunk A then B must not render A's
+      // detail while B is selected; 404s surface an error instead of an
+      // unhandled rejection.
       API.chunk(chunkId).then((res) => {
-      setDetail(res);
-    });
+        if (!cancelled) setDetail(res);
+      }).catch(() => {
+        if (!cancelled) {
+          setDetail({ id: chunkId, content: "", filePath: "not found", language: "", startLine: 0, endLine: 0, description: "" } as ChunkData);
+        }
+      });
     }
+    return () => {
+      cancelled = true;
+    };
   }, [chunkId, chunks]);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    };
+  }, []);
 
   if (!detail) return <ViewSkeleton type="detail" />;
 
@@ -214,7 +232,8 @@ function ChunkDetail({ chunkId, chunks }: { chunkId: string; chunks: ChunkData[]
   const handleCopy = () => {
     navigator.clipboard.writeText(c.content).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500);
     });
   };
 

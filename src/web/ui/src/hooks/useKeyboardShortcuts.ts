@@ -3,6 +3,20 @@ import { navigate } from "../state/store";
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
+    let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingNextHandler: ((e: KeyboardEvent) => void) | null = null;
+
+    const clearPending = () => {
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        pendingTimer = null;
+      }
+      if (pendingNextHandler) {
+        window.removeEventListener("keydown", pendingNextHandler);
+        pendingNextHandler = null;
+      }
+    };
+
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
@@ -11,6 +25,10 @@ export function useKeyboardShortcuts() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         navigate("search");
+        // Focus the global search input once the search view renders
+        setTimeout(() => {
+          document.querySelector<HTMLInputElement>(".global-search-input")?.focus();
+        }, 0);
         return;
       }
 
@@ -25,17 +43,24 @@ export function useKeyboardShortcuts() {
           "q": () => navigate("quirks"),
         };
 
+        // One pending handler at a time — repeated 'g' presses must not
+        // stack listeners, and the timer is tracked for cleanup.
+        clearPending();
         const nextHandler = (e2: KeyboardEvent) => {
           handlers[e2.key]?.();
-          window.removeEventListener("keydown", nextHandler);
+          clearPending();
         };
+        pendingNextHandler = nextHandler;
         window.addEventListener("keydown", nextHandler);
-        setTimeout(() => window.removeEventListener("keydown", nextHandler), 500);
+        pendingTimer = setTimeout(clearPending, 500);
         return;
       }
     };
 
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    return () => {
+      window.removeEventListener("keydown", handler);
+      clearPending();
+    };
   }, []);
 }

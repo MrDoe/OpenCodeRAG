@@ -1,4 +1,4 @@
-import { useState, useEffect } from "preact/hooks";
+import { useState, useEffect, useRef } from "preact/hooks";
 import { API } from "../lib/api";
 import { formatRelativeTime, formatTokens } from "../lib/format";
 import { addToast } from "../state/store";
@@ -18,6 +18,7 @@ export function IndexStatusCard() {
   const [status, setStatus] = useState<IndexStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [reindexing, setReindexing] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchStatus = async () => {
     try {
@@ -29,24 +30,48 @@ export function IndexStatusCard() {
 
   useEffect(() => { fetchStatus(); }, []);
 
+  // Clear any running completion poll on unmount — without this the
+  // interval fires every 2s forever (calling setState on an unmounted
+  // component) when the reindex fails or the card is hidden.
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   const handleReindex = async () => {
     setReindexing(true);
     try {
       await API.triggerReindex();
       addToast("info", "Reindex started in background");
-      // Poll for completion
-      const poll = setInterval(async () => {
-        const res = await API.indexStatus();
-        const s = res.body ?? res;
-        if (s.manifest?.lastIndexedAt !== status?.manifest?.lastIndexedAt) {
-          clearInterval(poll);
-          setStatus(s);
+      // Poll for completion (bounded: 10 minutes max, then give up)
+      const initialLastIndexed = status?.manifest?.lastIndexedAt;
+      const startedAt = Date.now();
+      pollRef.current = setInterval(async () => {
+        if (Date.now() - startedAt > 10 * 60_000) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
           setReindexing(false);
-          addToast("success", "Reindex complete!");
+          addToast("info", "Reindex is still running — check back later");
+          return;
+        }
+        try {
+          const res = await API.indexStatus();
+          const s = res.body ?? res;
+          if (s.manifest?.lastIndexedAt !== initialLastIndexed) {
+            if (pollRef.current) clearInterval(pollRef.current);
+            pollRef.current = null;
+            setStatus(s);
+            setReindexing(false);
+            addToast("success", "Reindex complete!");
+          }
+        } catch {
+          // transient network hiccup — keep polling
         }
       }, 2000);
     } catch (err) {
-      addToast("error", `Reindex failed: ${(err as Error).message}`);
+      const message = (err as Error).message ?? "";
+      addToast("error", /already running/i.test(message) ? "A reindex is already running" : `Reindex failed: ${message}`);
       setReindexing(false);
     }
   };
