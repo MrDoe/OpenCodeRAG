@@ -91,7 +91,7 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
   const runPass = async (filterPaths?: string[]): Promise<void> => {
     updateStatus({ running: true, lastRunAt: Date.now() });
     try {
-      await runIndexPass({
+      const stats = await runIndexPass({
         cwd,
         storePath,
         config,
@@ -108,6 +108,19 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
               debug: (message) => appendDebugLog(logFilePath, { scope: "autoIndex", message: `DEBUG: ${message}`, severity: "debug" }, logLevel),
         },
       });
+      // A lock-skipped pass did NO work — retry shortly so the workspace
+      // does not stay unindexed until the next file event.
+      if (stats.skipped) {
+        appendDebugLog(logFilePath, {
+          scope: "autoIndex",
+          message: "Index pass skipped (another pass holds the lock) — retrying in 30s",
+        }, logLevel);
+        if (!ac.signal.aborted) {
+          setTimeout(() => {
+            if (!ac.signal.aborted) scheduler.notifyChange(filterPaths);
+          }, 30_000).unref();
+        }
+      }
       updateStatus({ running: false, lastRunAt: Date.now() });
     } catch (err) {
       appendDebugLog(logFilePath, {
@@ -168,21 +181,33 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
     }, logLevel);
   });
 
-  // Periodic timer: only needed for git backend (chokidar gets real FS events)
+  // Periodic timer: only needed for git backend (chokidar gets real FS events).
+  // Note: with git mode BOTH backends run — the scheduler coalesces redundant
+  // passes into one, so this only adds a safety net for missed events.
   const watcherBackend = autoIndexCfg.watcher ?? "chokidar";
   const periodicTimer = watcherBackend === "git"
     ? setInterval(() => {
         scheduler.notifyChange();
       }, autoIndexCfg.intervalMs)
     : undefined;
+  // Never keep the process alive just for the periodic scan
+  periodicTimer?.unref();
 
   return {
     async close(): Promise<void> {
       if (periodicTimer) clearInterval(periodicTimer);
       ac.abort();
       scheduler.close();
-      await scheduler.waitForIdle();
-      await watcher.close();
+      // chokidar close() can hang on some Windows setups — guard it like
+      // the CLI does.
+      await Promise.race([
+        scheduler.waitForIdle(),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000).unref()),
+      ]);
+      await Promise.race([
+        watcher.close(),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000).unref()),
+      ]);
       const statusPath = path.join(storePath, "watcher-status.json");
       if (existsSync(statusPath)) {
         try { unlinkSync(statusPath); } catch { /* ignore */ }

@@ -9,7 +9,7 @@ import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "../retriever/cont
 import { Parser } from "web-tree-sitter";
 import { initParser, loadLanguage, walkTree, type AstNode } from "../chunker/grammar.js";
 import { readFileSync } from "node:fs";
-import { resolve, isAbsolute, relative } from "node:path";
+import { resolve, isAbsolute, relative, sep as pathSep } from "node:path";
 
 /**
  * Resolve a user-supplied file path against the worktree root, refusing to
@@ -24,7 +24,9 @@ export function resolveFilePath(filePath: string, worktree: string): string {
   const candidate = isAbsolute(filePath) ? resolve(filePath) : resolve(root, filePath);
   const rel = relative(root, candidate);
   if (rel === "") return root;
-  if (rel.startsWith("..") || isAbsolute(rel)) {
+  // ".." or "../..." escapes; a sibling literally named "..foo" must NOT be
+  // rejected. isAbsolute(rel) covers cross-drive paths on Windows.
+  if (rel === ".." || rel.startsWith(`..${pathSep}`) || isAbsolute(rel)) {
     throw new Error(
       `Path "${filePath}" escapes worktree root "${root}" — access denied.`
     );

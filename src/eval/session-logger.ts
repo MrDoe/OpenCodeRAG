@@ -67,6 +67,13 @@ export function createSessionLogger(storePath: string): SessionLogger {
             const info = props.info as MessageInfo | undefined;
             if (!info || info.role !== "assistant") return;
 
+            // message.updated fires repeatedly DURING streaming — only record
+            // completed messages (time.completed/finish/error set), otherwise
+            // every token chunk triggers a synchronous disk write on the
+            // event hot path and the log fills with redundant entries.
+            const isFinal = !!info.time?.completed || !!info.finish || !!info.error;
+            if (!isFinal) return;
+
             const ev: SessionEvent = {
               ts: Date.now(),
               event: "message",

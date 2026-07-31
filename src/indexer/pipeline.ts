@@ -129,9 +129,17 @@ export async function runIndexPass(options: RunIndexPassOptions): Promise<IndexR
     const age = lock.startedAt ? Date.now() - lock.startedAt : Infinity;
     if (lock.pid && !isPidAlive(lock.pid)) {
       logger.debug(`Stale lock from dead process ${lock.pid} — continuing`);
+    } else if (lock.pid) {
+      // A LIVE process owns the lock — always skip, regardless of age.
+      // (Long re-indexes routinely exceed LOCK_MAX_AGE_MS; allowing a second
+      // process through the age check defeats the lock entirely and causes
+      // concurrent LanceDB writes.)
+      logger.warn(`Another index pass is running (PID ${lock.pid}). Skipping.`);
+      return { ...createIndexStats(0, "missing"), skipped: true };
     } else if (lock.startedAt && age < LOCK_MAX_AGE_MS) {
-      logger.warn(`Another index pass is running (PID ${lock.pid ?? "unknown"}). Skipping.`);
-      return createIndexStats(0, "missing");
+      // No readable PID but a fresh lock — treat as active.
+      logger.warn(`Another index pass is running (no PID). Skipping.`);
+      return { ...createIndexStats(0, "missing"), skipped: true };
     }
   } catch {
     // No lock file — proceed
@@ -139,8 +147,10 @@ export async function runIndexPass(options: RunIndexPassOptions): Promise<IndexR
 
   try {
     await fs.writeFile(lockPath, JSON.stringify({ pid: process.pid, startedAt: Date.now() }), "utf-8");
-  } catch {
-    // Best-effort lock
+  } catch (err) {
+    // Best-effort lock — but surface it: without the lock file, the
+    // concurrent-pass protection above silently stops working.
+    logger.debug(`Could not write index lock file: ${(err as Error).message} — concurrent-pass protection disabled`);
   }
 
   try {

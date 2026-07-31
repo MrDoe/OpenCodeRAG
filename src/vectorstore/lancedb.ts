@@ -436,6 +436,14 @@ export class LanceDbStore implements VectorStore {
 
   async searchWithFilter(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]> {
     try {
+      // Guard against dimension mismatch BEFORE the native call — LanceDB
+      // throws a cryptic error that used to be swallowed into "no results".
+      if (embedding.length !== this.vectorDimension) {
+        console.warn(
+          `[lancedb] searchWithFilter: query embedding dimension ${embedding.length} != store dimension ${this.vectorDimension} — returning empty`,
+        );
+        return [];
+      }
       return await this.searchInternal(embedding, topK, filter);
     } catch (err) {
       if (isCorruptionError(err)) {
@@ -443,7 +451,12 @@ export class LanceDbStore implements VectorStore {
         if (repaired) {
           return this.searchInternal(embedding, topK, filter);
         }
+        console.warn(`[lancedb] searchWithFilter: repair failed: ${(err as Error).message}`);
+        return [];
       }
+      // Never silently mask non-corruption failures as "no results" —
+      // that hides provider outages and store bugs from every caller.
+      console.warn(`[lancedb] searchWithFilter failed (returning []): ${(err as Error).message}`);
       return [];
     }
   }
@@ -657,8 +670,11 @@ export class LanceDbStore implements VectorStore {
 
       const table = await this.getTable();
       const COUNT_TIMEOUT_MS = 30_000;
+      // Attach a no-op catch to the race loser so a late rejection (after the
+      // timeout resolved `null`) cannot become an unhandled rejection.
+      const countPromise = table.countRows().catch(() => 0);
       const result = await Promise.race([
-        table.countRows(),
+        countPromise,
         new Promise<null>((resolve) => setTimeout(() => resolve(null), COUNT_TIMEOUT_MS)),
       ]);
       if (result === null) {
@@ -726,20 +742,37 @@ export class LanceDbStore implements VectorStore {
    * @param newPath - Optional new filesystem path for the LanceDB database.
    */
   async reopen(newPath?: string): Promise<void> {
-    await this.table?.close();
-    await this.db?.close();
-    this.table = null;
-    this.db = null;
-    this.tableInit = null;
+    await this.close();
     if (newPath) this.dbPath = newPath;
   }
 
-  /** Close the database connection and release resources. */
+  /**
+   * Close the database connection and release resources.
+   *
+   * The native LanceDB `close()` can hang indefinitely on Windows, so the
+   * whole close is raced against a timeout — callers (CLI commands, plugin
+   * reload, web server) must never block forever on shutdown.
+   */
   async close(): Promise<void> {
-    await this.table?.close();
-    this.table = null;
-    await this.db?.close();
-    this.db = null;
+    await Promise.race([
+      (async () => {
+        try {
+          await this.table?.close();
+        } catch {
+          // best-effort — the connection may already be gone
+        }
+        this.table = null;
+        try {
+          await this.db?.close();
+        } catch {
+          // best-effort — the connection may already be gone
+        }
+        this.db = null;
+      })(),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 5000).unref();
+      }),
+    ]);
   }
 
   /**

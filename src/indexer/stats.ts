@@ -35,6 +35,8 @@ export interface IndexRunStats {
   extractionErrors: Array<{ filePath: string; error: string }>;
   /** Number of files where description generation failed. */
   descriptionFailedFiles: number;
+  /** True when the pass was skipped because another pass holds the lock. */
+  skipped: boolean;
 }
 
 /** Summary of the current index health without running a full pass. */
@@ -86,5 +88,6 @@ export function createIndexStats(
     extractionFailures: 0,
     extractionErrors: [],
     descriptionFailedFiles: 0,
+    skipped: false,
   };
 }

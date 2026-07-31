@@ -149,6 +149,9 @@ export async function createMcpServer(options?: McpServerOptions): Promise<RagMc
       await server.close();
       await ctx.store.close();
       ctx.keywordIndex.close();
+      // Release keep-alive sockets held by the embedder/description providers
+      const { destroyAllPooledConnections } = await import("../embedder/http.js");
+      destroyAllPooledConnections();
     },
   };
 }

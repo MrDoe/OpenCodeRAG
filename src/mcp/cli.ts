@@ -25,5 +25,10 @@ export async function runMcpServer(options?: {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
+  // If the parent MCP client disconnects, stdin closes — exit instead of
+  // becoming a zombie that holds the store open forever.
+  process.stdin.on("end", shutdown);
+  process.stdin.on("close", shutdown);
+
   await new Promise<void>(() => {});
 }
