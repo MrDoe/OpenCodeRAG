@@ -312,7 +312,7 @@ describe("createRagReadTool", () => {
       {}
     ) as { output: string };
 
-    assert.match(result.output, /OpenCodeRAG retrieval failed/);
+    assert.match(result.output, /Could not read file/);
     assert.match(result.output, /outside the workspace/);
   });
 
@@ -329,7 +329,7 @@ describe("createRagReadTool", () => {
       {}
     ) as { output: string };
 
-    assert.match(result.output, /OpenCodeRAG retrieval failed/);
+    assert.match(result.output, /Could not read file: ENOENT/);
   });
 
   // ── Related files tests ──────────────────────────────────
@@ -510,9 +510,12 @@ describe("createRagReadTool", () => {
     // Pre-populate: simulate chat.message having stored the user message
     sessionLastMessage.set("session-1", "tell me about authentication");
 
-    // And a cached retrieval result
+    // And a cached retrieval result — keyed by message + file + line range.
+    // resolveWorkspacePath normalizes to forward slashes, so the key must
+    // match that form.
+    const mainFilePath = path.join(tmpWorktree, "src", "main.ts").replace(/\\/g, "/");
     sessionRetrievalCache.set("session-1", {
-      messageText: "tell me about authentication",
+      messageText: `tell me about authentication::${mainFilePath}::-`,
       rawResults: [
         makeResult("c1", mainFile, 1, 10, "typescript", "cached result", 0.95),
       ],

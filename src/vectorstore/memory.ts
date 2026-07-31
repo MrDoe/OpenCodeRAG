@@ -24,7 +24,11 @@ export class InMemoryVectorStore implements VectorStore {
       .filter((c) => matchesFilter(c, filter))
       .map((chunk) => {
         const sim = cosineSimilarity(embedding, chunk.embedding);
-        return { chunk, score: sim };
+        // Normalize cosine [-1,1] into [0,1] so scores are comparable with
+        // the LanceDB store's clamped `1 - distance/2` domain (minScore and
+        // displayed scores mean the same thing across both stores).
+        const normalized = Math.min(1, Math.max(0, (sim + 1) / 2));
+        return { chunk, score: normalized };
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);

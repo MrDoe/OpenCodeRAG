@@ -96,7 +96,11 @@ export function createRagReadTool(
             if (sessionID && sessionRetrievalCache) {
               const cached = sessionRetrievalCache.get(sessionID);
 
-              if (cached && cached.messageText === messageText) {
+              // The cache key must include the FILE and line range: without
+              // them, the first read of a message reused its retrieval results
+              // for every later read of a DIFFERENT file in the same message.
+              const cacheKey = `${messageText}::${resolvedPath}::${normalized.startLine ?? ""}-${normalized.endLine ?? ""}`;
+              if (cached && cached.messageText === cacheKey) {
                 rawResults = cached.rawResults;
               } else {
                 const retrievalQuery = buildSessionQuery(messageText, resolvedPath, normalized);
@@ -106,7 +110,7 @@ export function createRagReadTool(
                   const oldest = sessionRetrievalCache.keys().next().value;
                   if (oldest !== undefined) sessionRetrievalCache.delete(oldest);
                 }
-                sessionRetrievalCache.set(sessionID, { messageText, rawResults });
+                sessionRetrievalCache.set(sessionID, { messageText: cacheKey, rawResults });
               }
             } else {
               const retrievalQuery = buildReadQuery({

@@ -55,8 +55,12 @@ export abstract class TreeSitterChunker implements Chunker {
         if (!tree) { return []; }
         // tree-sitter ranges are UTF-8 byte offsets; translate for slicing
         const offsetMap = buildByteOffsetMap(content);
-        const nodes = walkTree(tree.rootNode, types, content, 10, 0, offsetMap);
-        tree.delete();
+        let nodes: AstNode[];
+        try {
+          nodes = walkTree(tree.rootNode, types, content, 10, 0, offsetMap);
+        } finally {
+          tree.delete();
+        }
         return nodes.map((node: AstNode) => ({
           id: uuid(),
           content: node.text,
@@ -123,8 +127,12 @@ export abstract class TreeSitterChunker implements Chunker {
 
     // tree-sitter ranges are UTF-8 byte offsets; translate for slicing
     const offsetMap = buildByteOffsetMap(content);
-    const nodes = walkTree(tree.rootNode, this.nodeTypes, content, 10, 0, offsetMap);
-    tree.delete();
+    let nodes: AstNode[];
+    try {
+      nodes = walkTree(tree.rootNode, this.nodeTypes, content, 10, 0, offsetMap);
+    } finally {
+      tree.delete();
+    }
     return nodes.map((node: AstNode) => ({
       id: uuid(),
       content: node.text,

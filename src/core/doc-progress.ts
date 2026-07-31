@@ -58,17 +58,20 @@ export function markFileDocumented(storePath: string, filePath: string): void {
 export function markSubdirectoryDocumented(storePath: string, subdir: string, allFilePaths: string[]): void {
   const normalized = subdir.replace(/\\/g, "/").replace(/\/$/, "");
   const progress = loadDocProgress(storePath);
+  // Set lookups avoid the O(n·m) `includes` scan for large workspaces
+  const documentedSet = new Set(progress.documented);
   let changed = false;
   for (const filePath of allFilePaths) {
     const normalizedFile = filePath.replace(/\\/g, "/");
     if (normalizedFile.startsWith(normalized + "/") || normalizedFile === normalized) {
-      if (!progress.documented.includes(filePath)) {
-        progress.documented.push(filePath);
+      if (!documentedSet.has(filePath)) {
+        documentedSet.add(filePath);
         changed = true;
       }
     }
   }
   if (changed) {
+    progress.documented = [...documentedSet];
     progress.lastUpdated = Date.now();
     saveDocProgress(storePath, progress);
   }

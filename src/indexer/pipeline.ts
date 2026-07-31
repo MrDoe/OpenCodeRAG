@@ -21,7 +21,7 @@ import { embedBatch } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { swapStoreDirectories } from "../vectorstore/lancedb.js";
 import { createIndexStats, type IndexRunStats, type IndexStatusSummary } from "./stats.js";
-import { prepareFile, buildTextsToEmbed, type WorkerResult } from "./worker.js";
+import { prepareFile, buildTextsToEmbed, type WorkerResult, type PreparedFile } from "./worker.js";
 import { buildFallbackDescription } from "./description-stage.js";
 import { getCurrentCommit, getChangedFilesSince, getUntrackedFiles, getRepoRoot } from "./git-diff.js";
 
@@ -325,7 +325,6 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   let tempStorePath: string | undefined;
 
   if (options.force || (manifestStatus !== "ok" && existingCount > 0)) {
-    options.keywordIndex?.clear();
     for (const key of Object.keys(manifest.files)) {
       delete manifest.files[key];
     }
@@ -344,6 +343,10 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       try { await fs.rm(tempStorePath, { recursive: true, force: true }); } catch { /* may not exist */ }
       effectiveStore = createVectorStore(options.config, tempStorePath, options.dimension);
       logger.debug(`Rebuilding index in temporary store at ${tempStorePath}`);
+      // Only clear the shared in-memory keyword index once the rebuild is
+      // guaranteed to proceed — the guard below may still bail out, and
+      // clearing it there would degrade live hybrid search for nothing.
+      options.keywordIndex?.clear();
     } else if (existingCount > 0) {
       // NEVER destroy existing data when we can't do an atomic rebuild.
       // Abort and ask the user to run 'opencode-rag index --force' manually.
@@ -355,6 +358,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       return createIndexStats(workspaceFiles.length, manifestStatus);
     } else {
       // No existing data — safe to proceed with in-place indexing (no clear needed)
+      options.keywordIndex?.clear();
       logger.debug("No existing data; indexing from scratch.");
     }
   }
@@ -426,47 +430,49 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   const chunkProgressInterval = Math.max(1, Math.floor(activeCount / 20));
   const chunkPhaseStart = Date.now();
 
-  const prepared = await Promise.all(
-    workspaceFiles.map((file) =>
-      limit(async () => {
-        const fileLabel = path.relative(options.cwd, file.normalizedPath).replace(/\\/g, "/");
+  /** Chunk one window of files (used by the windowed pipeline loop below). */
+  async function prepareWindow(windowFiles: import("../content/reader.js").WorkspaceFile[]): Promise<PreparedFile[]> {
+    const prepared = await Promise.all(
+      windowFiles.map((file) =>
+        limit(async () => {
+          const fileLabel = path.relative(options.cwd, file.normalizedPath).replace(/\\/g, "/");
 
-        const isActive = !file.isEmpty && !file.isTooSmall &&
-          (!manifest.files[file.normalizedPath] || manifest.files[file.normalizedPath]!.hash !== file.hash);
-        if (isActive) {
-          options.progress?.startFile(fileLabel);
-        }
-
-        const prep = await prepareFile(
-          file,
-          options.cwd,
-          manifest.files[file.normalizedPath],
-          options.config,
-          options.keywordIndex,
-          options.descriptionProvider,
-          logger,
-          deferDescriptions,
-          descHash,
-        );
-
-        if (isActive) {
-          chunkedDone++;
-          if (chunkedDone % chunkProgressInterval === 0 || chunkedDone === activeCount) {
-            const pct = ((chunkedDone / activeCount) * 100).toFixed(1);
-            logger.info(`  Chunking: ${chunkedDone}/${activeCount} files (${pct}%)`);
+          const isActive = !file.isEmpty && !file.isTooSmall &&
+            (!manifest.files[file.normalizedPath] || manifest.files[file.normalizedPath]!.hash !== file.hash);
+          if (isActive) {
+            options.progress?.startFile(fileLabel);
           }
-        }
 
-        if (prep.earlyResult && isActive) {
-          options.progress?.finishFile(fileLabel);
-        }
+          const prep = await prepareFile(
+            file,
+            options.cwd,
+            manifest.files[file.normalizedPath],
+            options.config,
+            options.keywordIndex,
+            options.descriptionProvider,
+            logger,
+            deferDescriptions,
+            descHash,
+          );
 
-        return prep;
-      }),
-    ),
-  );
-  const chunkPhaseSec = ((Date.now() - chunkPhaseStart) / 1000).toFixed(1);
-  logger.info(`Chunking complete: ${activeCount} files in ${chunkPhaseSec}s`);
+          if (isActive) {
+            chunkedDone++;
+            if (chunkedDone % chunkProgressInterval === 0 || chunkedDone === activeCount) {
+              const pct = ((chunkedDone / activeCount) * 100).toFixed(1);
+              logger.info(`  Chunking: ${chunkedDone}/${activeCount} files (${pct}%)`);
+            }
+          }
+
+          if (prep.earlyResult && isActive) {
+            options.progress?.finishFile(fileLabel);
+          }
+
+          return prep;
+        }),
+      ),
+    );
+    return prepared;
+  }
 
   const aborted = (): boolean => options.abortSignal?.aborted ?? false;
 
@@ -483,6 +489,45 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     const pct = total > 0 ? ((remaining / total) * 100).toFixed(1) : "0.0";
     logger.info(`${stage} ${fileLabel} (chunk ${index}/${count}) — ${remaining}/${total} remaining (${pct}%)`);
   };
+
+  // File metadata look-up for manifest entries
+  const fileMeta = new Map(workspaceFiles.map((f) => [f.normalizedPath, { mtime: f.mtime, size: f.size }]));
+
+  // Serialised manifest-save queue — prevents concurrent write races and acts
+  // as a checkpoint for Ctrl+C resilience.  Each worker appends to this chain
+  // after a successful store, so previously completed files are never lost.
+  // During a temp-store rebuild, saves go to the temp path so the real
+  // manifest stays consistent with the real store if the process is aborted.
+  const manifestTargetPath = (): string => tempStorePath ?? options.storePath;
+  let manifestSaveChain = Promise.resolve<void>(undefined);
+  function enqueueManifestSave(): void {
+    manifestSaveChain = manifestSaveChain.then(() =>
+      saveManifest(manifestTargetPath(), manifest).catch((err) => {
+        options.logger?.warn?.(`Failed to save manifest: ${(err as Error).message}`);
+      }),
+    );
+  }
+
+  // ── Windowed pipeline ────────────────────────────────────────────────────
+  // The prepare→describe→embed→store chain used to materialize ALL chunks,
+  // embed texts, and vectors of the whole workspace simultaneously (hundreds
+  // of MB on large repos). Processing bounded windows of files keeps peak
+  // memory proportional to the window size instead of the workspace size.
+  const WINDOW_SIZE = Math.max(50, (options.config.indexing.concurrency ?? 4) * 10);
+  const allFinalResults: WorkerResult[] = [];
+  let abortedInWindow = false;
+
+  for (let windowStart = 0; windowStart < workspaceFiles.length; windowStart += WINDOW_SIZE) {
+    if (aborted()) {
+      abortedInWindow = true;
+      break;
+    }
+    const windowFiles = workspaceFiles.slice(windowStart, windowStart + WINDOW_SIZE);
+    const prepared = await prepareWindow(windowFiles);
+    if (windowStart === 0) {
+      const chunkPhaseSec = ((Date.now() - chunkPhaseStart) / 1000).toFixed(1);
+      logger.info(`Chunking complete: ${activeCount} files in ${chunkPhaseSec}s`);
+    }
 
   if (deferDescriptions) {
     const deferredPreps = prepared.filter((p) => p.chunks && p.chunks.length > 0 && p.relPath !== undefined);
@@ -539,11 +584,14 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       }
 
       if (allChunks.length > 0 && descHash) {
-        // Check description cache first — reuse cached descriptions for unchanged chunks
+        // Check description cache first — reuse cached descriptions for unchanged chunks.
+        // The key includes the chunk's file context: identical content in two
+        // files must not reuse a contextually wrong description.
+        const chunkContext = (c: Chunk): string => `${c.metadata.filePath}:${c.metadata.startLine}-${c.metadata.endLine}`;
         const cacheHits: Array<{ chunk: Chunk; desc: string }> = [];
         const cacheMisses: Chunk[] = [];
         for (const chunk of allChunks) {
-          const cacheKey = DescriptionCache.codeKey(chunk.content, descHash);
+          const cacheKey = DescriptionCache.codeKey(chunk.content, descHash, chunkContext(chunk));
           const cached = descCache.get(cacheKey);
           if (cached) {
             cacheHits.push({ chunk, desc: cached });
@@ -603,7 +651,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
                     const desc = batchResult.get(chunk.id);
                     if (desc && desc.trim().length > 0) {
                       chunk.description = desc;
-                      newCacheEntries.push([DescriptionCache.codeKey(chunk.content, descHash), desc]);
+                      newCacheEntries.push([DescriptionCache.codeKey(chunk.content, descHash, chunkContext(chunk)), desc]);
                     }
                   }
                   if (newCacheEntries.length > 0) {
@@ -676,29 +724,11 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     }
   }
 
-  // Cross-file embedding batch: collect all texts into a single queue,
+  // Cross-file embedding batch: collect this window's texts into a single queue,
   // embed in one batched call (with concurrency), then distribute back.
   const isOllama = options.embedder.name === "ollama";
   const defaultBatchSize = options.config.indexing.embedBatchSize;
   const defaultConcurrency = options.config.indexing.embedConcurrency ?? 1;
-
-  // File metadata look-up for manifest entries
-  const fileMeta = new Map(workspaceFiles.map((f) => [f.normalizedPath, { mtime: f.mtime, size: f.size }]));
-
-  // Serialised manifest-save queue — prevents concurrent write races and acts
-  // as a checkpoint for Ctrl+C resilience.  Each worker appends to this chain
-  // after a successful store, so previously completed files are never lost.
-  // During a temp-store rebuild, saves go to the temp path so the real
-  // manifest stays consistent with the real store if the process is aborted.
-  const manifestTargetPath = (): string => tempStorePath ?? options.storePath;
-  let manifestSaveChain = Promise.resolve<void>(undefined);
-  function enqueueManifestSave(): void {
-    manifestSaveChain = manifestSaveChain.then(() =>
-      saveManifest(manifestTargetPath(), manifest).catch((err) => {
-        options.logger?.warn?.(`Failed to save manifest: ${(err as Error).message}`);
-      }),
-    );
-  }
 
   // ── Phase 1: Collect embed queue + handle early results ────────────────
   const embedQueue: Array<{ fileIdx: number; chunkIdx: number; text: string }> = [];
@@ -892,11 +922,28 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   );
 
   const workerResults = storeResults;
-  const finalResults: WorkerResult[] = [];
   for (const r of workerResults) {
-    if ((r as { skipped?: boolean }).skipped) break;
-    finalResults.push(r as WorkerResult);
+    if ((r as { skipped?: boolean }).skipped) {
+      abortedInWindow = true;
+      break;
+    }
+    allFinalResults.push(r as WorkerResult);
   }
+  aggregateStats(stats, allFinalResults.slice(-workerResults.length));
+
+  const storePhaseSec = ((Date.now() - storePhaseStart) / 1000).toFixed(1);
+  logger.info(`Store phase: ${storedFiles} files stored in ${storePhaseSec}s (running total ${stats.totalChunks} chunks)`);
+
+  // Free this window's chunk payloads so GC can reclaim them before the
+  // next window is prepared.
+  for (const prep of prepared) {
+    prep.chunks = undefined;
+    prep.textToEmbed = undefined;
+  }
+  if (abortedInWindow) break;
+  } // end windowed pipeline loop
+
+  const finalResults = allFinalResults;
 
   // Drain any in-flight manifest saves so all file entries are durable
   await manifestSaveChain;
@@ -910,10 +957,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     }
   }
 
-  const storePhaseSec = ((Date.now() - storePhaseStart) / 1000).toFixed(1);
-  logger.info(`Store phase complete: ${storedFiles} files stored in ${storePhaseSec}s (${stats.totalChunks} total chunks)`);
-
-  aggregateStats(stats, finalResults);
+  logger.info(`Index pass complete: ${stats.totalChunks} total chunks (${finalResults.length} files processed)`);
 
   // Update timestamps; advance lastGitCommit ONLY on a complete pass
   manifest.lastIndexedAt = Date.now();

@@ -253,7 +253,33 @@ export async function scanWorkspaceFiles(
       excelExtractor.EXCEL_EXTENSIONS.has(ext) ||
       isImage;
 
-    logger?.info(`Reading: ${filePath}`);
+    // Reject oversized binaries BEFORE buffering them — a 2 GB PDF was
+    // previously read fully into memory only to be rejected by the
+    // 100 MB check inside the PDF extractor.
+    if (isBinary && pdfExtractor.PDF_EXTENSIONS.has(ext)) {
+      try {
+        const stat = await fs.stat(filePath);
+        if (stat.size > 100 * 1024 * 1024) {
+          logger?.warn(`  ${filePath} (PDF exceeds 100 MB — skipping)`);
+          completed++;
+          return {
+            filePath,
+            normalizedPath,
+            content: "",
+            hash: computeFileHash(""),
+            isEmpty: true,
+            isTooSmall: false,
+            extractionStatus: "ok" as const,
+            mtime: stat.mtimeMs,
+            size: stat.size,
+          } satisfies WorkspaceFile;
+        }
+      } catch {
+        /* stat failed, fall through to read */
+      }
+    }
+
+    logger?.debug(`Reading: ${filePath}`);
 
     const buffer = isBinary ? await fs.readFile(filePath) : Buffer.alloc(0);
 
@@ -293,12 +319,16 @@ export async function scanWorkspaceFiles(
 
     const result = await dispatchExtraction(filePath, buffer, imageVisionProvider, imagePrompt, imageResizeMaxDimension);
 
-    // Cache the image description for future runs
+    // Cache the image description for future runs. Saves are throttled —
+    // a full cache rewrite per image was O(n²) I/O for image-heavy workspaces.
+    // The pipeline saves the cache again at the end of a pass.
     if (isImage && result.ok && descCache && imageDescConfigHash) {
       const imageBytesHash = computeFileHash(buffer.toString("base64"));
       const cacheKey = DescriptionCache.imageKey(imageBytesHash, imageDescConfigHash);
       descCache.set(cacheKey, result.content);
-      await descCache.save();
+      if (completed % 25 === 0) {
+        await descCache.save();
+      }
     }
 
     if (!result.ok) {

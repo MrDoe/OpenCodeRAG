@@ -122,26 +122,44 @@ export async function resizeImage(
       const { pixels, width, height, channels } = decodeBmp(buffer);
       const ch = channels as 3 | 4;
       if (width <= maxDimension && height <= maxDimension) {
-        return sharp(pixels, { raw: { width, height, channels: ch } })
-          .jpeg({ quality: 80 })
-          .toBuffer();
+        const pipeline = sharp(pixels, { raw: { width, height, channels: ch } })
+          .jpeg({ quality: 80 });
+        try {
+          return await pipeline.toBuffer();
+        } finally {
+          pipeline.destroy();
+        }
       }
-      return sharp(pixels, { raw: { width, height, channels: ch } })
+      const pipeline = sharp(pixels, { raw: { width, height, channels: ch } })
         .resize({ width: maxDimension, fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 80 })
-        .toBuffer();
+        .jpeg({ quality: 80 });
+      try {
+        return await pipeline.toBuffer();
+      } finally {
+        pipeline.destroy();
+      }
     }
 
-    const meta = await sharp(buffer).metadata();
+    const metaPipeline = sharp(buffer);
+    const meta = await metaPipeline.metadata().finally(() => metaPipeline.destroy());
     const w = meta.width ?? 0;
     const h = meta.height ?? 0;
     if (w <= maxDimension && h <= maxDimension) {
-      return sharp(buffer).jpeg({ quality: 80 }).toBuffer();
+      const pipeline = sharp(buffer).jpeg({ quality: 80 });
+      try {
+        return await pipeline.toBuffer();
+      } finally {
+        pipeline.destroy();
+      }
     }
-    return sharp(buffer)
+    const pipeline = sharp(buffer)
       .resize({ width: maxDimension, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toBuffer();
+      .jpeg({ quality: 80 });
+    try {
+      return await pipeline.toBuffer();
+    } finally {
+      pipeline.destroy();
+    }
   } catch (err) {
     throw new Error(
       `Image resize failed: ${err instanceof Error ? err.message : String(err)}`,

@@ -105,10 +105,17 @@ export class DescriptionCache {
     return this.savePromise;
   }
 
-  /** Build a cache key for a code chunk. */
-  static codeKey(content: string, descConfigHash: string): string {
+  /**
+   * Build a cache key for a code chunk.
+   *
+   * The optional `context` (relative path + line range) is included because
+   * the description prompt contains the file path — identical chunk content
+   * in two different files must not reuse a contextually wrong description.
+   */
+  static codeKey(content: string, descConfigHash: string, context?: string): string {
     const contentHash = createHash("sha256").update(content).digest("hex").slice(0, 16);
-    return contentHash + "_" + descConfigHash.slice(0, 16);
+    const contextHash = context ? createHash("sha256").update(context).digest("hex").slice(0, 8) : "";
+    return contentHash + "_" + descConfigHash.slice(0, 16) + (contextHash ? "_" + contextHash : "");
   }
 
   /** Build a cache key for an image file. */

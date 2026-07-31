@@ -96,10 +96,27 @@ export function getProviderDefault(provider: string): ProviderDefaults | undefin
   return PROVIDER_DEFAULTS[provider];
 }
 
+/** OpenAI-compatible providers (embedding + chat via /v1-style APIs). */
+const OPENAI_COMPATIBLE_PROVIDERS = new Set([
+  "openai",
+  "nvidia",
+  "azure",
+  "mistral",
+  "together",
+  "groq",
+  "deepseek",
+  "fireworks",
+]);
+
 /** Check whether a given provider uses an OpenAI-compatible API format. */
 export function isOpenAiCompatible(provider: string): boolean {
-  if (provider === "ollama" || provider === "anthropic" || provider === "google" || provider === "cohere") {
-    return false;
-  }
-  return true;
+  // Only KNOWN OpenAI-compatible providers qualify — an unknown/typo'd
+  // provider name must fail fast instead of silently attempting
+  // OpenAI-style calls against a nonsense base URL.
+  return OPENAI_COMPATIBLE_PROVIDERS.has(provider);
+}
+
+/** Whether the given provider can produce embeddings. */
+export function supportsEmbedding(provider: string): boolean {
+  return PROVIDER_DEFAULTS[provider]?.supportsEmbedding ?? false;
 }
