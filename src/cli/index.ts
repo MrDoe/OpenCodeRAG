@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * @fileoverview CLI entry point creating the Commander program, wiring all command modules, and handling auto-run detection.
  */
