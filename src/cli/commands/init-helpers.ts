@@ -432,10 +432,22 @@ export async function installPluginFromGlobal(
     rmSync(workspaceTarget, { recursive: true, force: true });
   }
 
-  // Create directory junction from workspace → global runtime
+  // Create directory junction from workspace → global runtime.
+  // Junction creation can throw (EPERM, cross-drive on Windows) — fall back
+  // to a copy instead of aborting `init`.
   console.log(`  ${c.created("Linking:")} ${packageName} from global cache...`);
   mkdirSync(path.dirname(workspaceTarget), { recursive: true });
-  createJunction(globalPluginDir, workspaceTarget);
+  try {
+    createJunction(globalPluginDir, workspaceTarget);
+  } catch (err) {
+    console.log(`  ${c.warn("Junction failed, falling back to copy...")}`);
+    rmSync(workspaceTarget, { recursive: true, force: true });
+    const { cpSync } = await import("node:fs");
+    mkdirSync(path.dirname(workspaceTarget), { recursive: true });
+    cpSync(globalPluginDir, workspaceTarget, { recursive: true });
+    console.log(`  ${c.success("Copied:")} ${packageName} from global cache`);
+    return;
+  }
 
   const cliEntry = path.join(workspaceTarget, "dist", "cli.js");
   if (!existsSync(cliEntry)) {

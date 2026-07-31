@@ -71,11 +71,17 @@ function normalizeVersion(tag: string): string {
 
 /**
  * Compare two semver-ish strings.
+ *
+ * Pre-release suffixes are stripped before comparison — "1.2.3-beta.1"
+ * must compare equal to "1.2.3" (parseInt would turn "3-beta.1" into 3,
+ * and non-numeric segments into NaN which compares equal).
+ *
  * @returns 1 if a > b, -1 if a < b, 0 if equal.
  */
 export function compareVersions(a: string, b: string): number {
-  const pa = a.split(".").map((s) => parseInt(s, 10));
-  const pb = b.split(".").map((s) => parseInt(s, 10));
+  const clean = (s: string): string => s.split("-", 1)[0] ?? s;
+  const pa = clean(a).split(".").map((s) => parseInt(s, 10));
+  const pb = clean(b).split(".").map((s) => parseInt(s, 10));
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const na = pa[i] ?? 0;
     const nb = pb[i] ?? 0;

@@ -768,6 +768,21 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   if (config.memory?.autoInjectTopK != null && config.memory.autoInjectTopK < 1) {
     warnings.push("memory.autoInjectTopK must be >= 1");
   }
+  if (config.memory?.minConfidence != null) {
+    const r = config.memory.minConfidence;
+    if (r < 0 || r > 1) warnings.push("memory.minConfidence must be between 0 and 1");
+  }
+  if (config.memory?.autoCaptureDedupThreshold != null) {
+    const t = config.memory.autoCaptureDedupThreshold;
+    // > 1 would make dedup reject every candidate; < 0 disables it silently
+    if (t < 0 || t > 1) warnings.push("memory.autoCaptureDedupThreshold must be between 0 and 1");
+  }
+  if (config.memory?.decay && config.memory.decay.halfLifeDays <= 0) {
+    warnings.push("memory.decay.halfLifeDays must be > 0");
+  }
+  if (config.openCode.maxReadOutputChars != null && config.openCode.maxReadOutputChars <= 0) {
+    warnings.push("openCode.maxReadOutputChars must be > 0");
+  }
 
   if (config.openCode.maxContextChunks <= 0) {
     warnings.push("openCode.maxContextChunks must be > 0");
@@ -882,6 +897,16 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
           (parsed.retrieval as Record<string, unknown> | undefined)?.hybridSearch
         ) ?? {}),
       } as { enabled: boolean; keywordWeight: number },
+      // contextOptimization MUST be nested-merged too — a shallow spread
+      // would replace the whole default object with a partial user object,
+      // silently leaving maxPerFile/mergeAdjacent/similarityThreshold etc.
+      // undefined (which disables the features via NaN comparisons).
+      contextOptimization: {
+        ...DEFAULT_CONFIG.retrieval.contextOptimization,
+        ...(safeObj<typeof DEFAULT_CONFIG.retrieval.contextOptimization>(
+          (parsed.retrieval as Record<string, unknown> | undefined)?.contextOptimization
+        ) ?? {}),
+      } as ContextOptimizationConfig,
     },
     openCode: (() => {
       const base = DEFAULT_CONFIG.openCode;
@@ -930,6 +955,14 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
     memory: {
       ...DEFAULT_CONFIG.memory,
       ...(safeObj<MemoryConfig>((parsed as { memory?: unknown }).memory) ?? {}),
+      // decay is a nested object — a user config with only
+      // `memory.decay.enabled` must not lose the halfLifeDays default.
+      decay: {
+        ...(DEFAULT_CONFIG.memory as { decay: MemoryConfig["decay"] }).decay,
+        ...(safeObj<MemoryConfig["decay"]>(
+          (safeObj<MemoryConfig>((parsed as { memory?: unknown }).memory) ?? {})?.decay
+        ) ?? {}),
+      },
     } as MemoryConfig,
     ui: {
       ...DEFAULT_CONFIG.ui,

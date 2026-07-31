@@ -36,10 +36,10 @@ export function registerUpdateCommand(program: Command): void {
       console.log(`  ${c.label("Current version:")} ${c.value(currentVersion)}`);
       console.log(`  ${c.label("Checking...")}     `);
 
-      let info;
-      try {
-        info = await checkForUpdate(currentVersion);
-      } catch {
+      // checkForUpdate never throws (all failures collapse to "no update"),
+      // so the try/catch below is defensive only.
+      const info = await checkForUpdate(currentVersion).catch(() => null);
+      if (!info) {
         console.log(`\n  ${c.warn("Could not reach the update server. Check your network and try again.")}\n`);
         process.exit(1);
         return;
