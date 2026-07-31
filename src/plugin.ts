@@ -24,6 +24,8 @@ import {
   createDescribeImageTool,
   createRecallQuirksTool,
   createAddQuirkTool,
+  createUpdateQuirkTool,
+  createDeleteQuirkTool,
 } from "./opencode/tools.js";
 import { resolveApiKey } from "./core/resolve-api-key.js";
 import { consumePendingRagInjection } from "./core/rag-injection-flag.js";
@@ -798,6 +800,40 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     appendDebugLog(options.logFilePath, {
       scope: "plugin",
       message: "Failed to register add_quirk tool",
+      error: err,
+    });
+  }
+
+  try {
+    const updateQuirkTool = createUpdateQuirkTool({
+      store,
+      embedder,
+      cfg: effectiveCfg,
+      keywordIndex: keywordIndex!,
+      storePath: options.storePath,
+    });
+    tools["update_quirk"] = updateQuirkTool;
+  } catch (err) {
+    appendDebugLog(options.logFilePath, {
+      scope: "plugin",
+      message: "Failed to register update_quirk tool",
+      error: err,
+    });
+  }
+
+  try {
+    const deleteQuirkTool = createDeleteQuirkTool({
+      store,
+      embedder,
+      cfg: effectiveCfg,
+      keywordIndex: keywordIndex!,
+      storePath: options.storePath,
+    });
+    tools["delete_quirk"] = deleteQuirkTool;
+  } catch (err) {
+    appendDebugLog(options.logFilePath, {
+      scope: "plugin",
+      message: "Failed to register delete_quirk tool",
       error: err,
     });
   }

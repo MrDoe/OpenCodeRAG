@@ -3,7 +3,7 @@
  */
 import type { Command } from "commander";
 import { resolveCliContext, cleanupContext, logCliInfo, logCliError, c } from "../format.js";
-import { addQuirk, listQuirks, lintQuirks, recallQuirks, removeQuirk } from "../../quirks/quirk-store.js";
+import { addQuirk, listQuirks, lintQuirks, recallQuirks, removeQuirk, updateQuirk } from "../../quirks/quirk-store.js";
 
 /**
  * Register the `quirk` command on the given Commander program.
@@ -44,6 +44,46 @@ export function registerQuirkCommand(program: Command): void {
         await cleanupContext(ctx);
       } catch (err) {
         logCliError(resolveLogPath(), "quirk add", `Failed to add quirk: ${(err as Error).message}`, err);
+        process.exit(1);
+      }
+    });
+
+  quirkCmd
+    .command("update")
+    .description("Update a quirk by ID (content, type, tags, confidence, source ref)")
+    .argument("<id>", "quirk ID")
+    .option("--content <text>", "replacement quirk text")
+    .option("-t, --type <type>", "quirk type: gotcha, preference, decision, environment-constraint")
+    .option("--tag <tags...>", "replacement tags for filtering")
+    .option("--confidence <0-1>", "replacement confidence", parseFloat)
+    .option("--source-ref <path>", "source file path reference")
+    .option("-c, --config <path>", "path to config file")
+    .action(async (id: string, options: Record<string, unknown>) => {
+      try {
+        const ctx = await resolveCliContext(options, resolveLogPath());
+        const { config, embedder, store, keywordIndex } = ctx;
+        const tags = options.tag as string | string[] | undefined;
+
+        const quirk = await updateQuirk(
+          { embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath },
+          id,
+          {
+            content: options.content as string | undefined,
+            quirkType: options.type as string | undefined,
+            tags: tags ? (Array.isArray(tags) ? tags : [tags]) : undefined,
+            confidence: options.confidence as number | undefined,
+            sourceRef: options.sourceRef as string | undefined,
+          },
+        );
+
+        logCliInfo(ctx.logFilePath, "quirk update", `\n${c.success("Quirk updated:")}`);
+        logCliInfo(ctx.logFilePath, "quirk update", `  ${c.label("ID:")} ${quirk.id}`);
+        logCliInfo(ctx.logFilePath, "quirk update", `  ${c.label("Type:")} ${quirk.quirkType ?? "general"}`);
+        logCliInfo(ctx.logFilePath, "quirk update", `  ${c.label("Confidence:")} ${(quirk.confidence * 100).toFixed(0)}%`);
+        logCliInfo(ctx.logFilePath, "quirk update", `  ${c.label("Content:")} ${quirk.content}`);
+        await cleanupContext(ctx);
+      } catch (err) {
+        logCliError(resolveLogPath(), "quirk update", `Failed to update quirk: ${(err as Error).message}`, err);
         process.exit(1);
       }
     });
