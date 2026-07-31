@@ -203,18 +203,29 @@ function splitOversized(chunks: Chunk[], filePath: string): Chunk[] {
   return result;
 }
 
-/** Apply config overrides to a chunker before it's used. */
-function applyChunkerConfig(
-  chunker: Chunker,
-  _filePath: string,
-  options?: { maxSvgSizeBytes?: number },
-): void {
-  if (options?.maxSvgSizeBytes && chunker instanceof TreeSitterChunker) {
-    const ext = _filePath.toLowerCase();
-    if (ext.endsWith(".svg") || ext.endsWith(".xml") || ext.endsWith(".csproj")) {
-      chunker.maxContentBytes = options.maxSvgSizeBytes;
-    }
-  }
+/**
+ * Wrap a chunker with a per-file byte limit.
+ *
+ * Previously the limit was assigned onto the shared chunker singleton
+ * (`chunker.maxContentBytes = ...`) — under pLimit concurrency one file's
+ * limit could bleed into unrelated concurrent files, and it was never
+ * reset, so a later large XML/SVG file was silently skipped.
+ */
+function withByteLimit(
+  chunker: TreeSitterChunker,
+  limit: number,
+): Chunker {
+  const language = chunker.language;
+  return {
+    language,
+    fileExtensions: chunker.fileExtensions,
+    async chunk(filePath: string, content: string): Promise<Chunk[]> {
+      if (limit > 0 && Buffer.byteLength(content, "utf-8") > limit) {
+        throw new Error(`File exceeds ${limit} byte limit for ${language} chunker`);
+      }
+      return chunker.chunk(filePath, content);
+    },
+  };
 }
 
 /**
@@ -244,7 +255,13 @@ export async function chunkFile(
     }
   }
 
-  applyChunkerConfig(chunker, filePath, options);
+  // Per-file byte limit (SVG/XML/csproj) without mutating the shared singleton
+  if (options?.maxSvgSizeBytes && chunker instanceof TreeSitterChunker) {
+    const ext = filePath.toLowerCase();
+    if (ext.endsWith(".svg") || ext.endsWith(".xml") || ext.endsWith(".csproj")) {
+      chunker = withByteLimit(chunker, options.maxSvgSizeBytes);
+    }
+  }
 
   const chunks = await chunker.chunk(filePath, content);
 

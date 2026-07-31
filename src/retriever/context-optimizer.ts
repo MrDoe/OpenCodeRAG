@@ -52,10 +52,20 @@ function toOptimized(r: SearchResult): OptimizedSearchResult {
 
 /**
  * Compute Jaccard similarity between two strings based on their token sets.
+ * Accepts a per-call token cache so repeated comparisons (the dedup loop is
+ * O(n²) over same-file pairs) don't re-tokenize the same content every time.
  */
-function jaccardSimilarity(a: string, b: string): number {
-  const tokensA = new Set(tokenize(a));
-  const tokensB = new Set(tokenize(b));
+function jaccardSimilarity(a: string, b: string, tokenCache: Map<string, Set<string>>): number {
+  let tokensA = tokenCache.get(a);
+  if (!tokensA) {
+    tokensA = new Set(tokenize(a));
+    tokenCache.set(a, tokensA);
+  }
+  let tokensB = tokenCache.get(b);
+  if (!tokensB) {
+    tokensB = new Set(tokenize(b));
+    tokenCache.set(b, tokensB);
+  }
   if (tokensA.size === 0 && tokensB.size === 0) return 1;
   let intersection = 0;
   for (const t of tokensA) {
@@ -137,6 +147,10 @@ function dedupeSimilar(
   if (results.length <= 1) return results;
 
   const kept: OptimizedSearchResult[] = [...results];
+  // Token cache shared across all pair comparisons of this group — the
+  // dedup loop is O(n²) over pairs and was re-tokenizing full chunk
+  // contents on every comparison.
+  const tokenCache = new Map<string, Set<string>>();
   let changed = true;
 
   while (changed) {
@@ -145,7 +159,8 @@ function dedupeSimilar(
       for (let j = i + 1; j < kept.length; j++) {
         const sim = jaccardSimilarity(
           kept[i]!.chunk.content,
-          kept[j]!.chunk.content
+          kept[j]!.chunk.content,
+          tokenCache,
         );
         if (sim > threshold) {
           const [keepIdx, removeIdx] =

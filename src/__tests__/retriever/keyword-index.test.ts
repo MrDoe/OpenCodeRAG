@@ -139,6 +139,34 @@ describe("KeywordIndex", () => {
       index.removeByFilePath("/nonexistent.ts");
       assert.equal(index.count(), 1);
     });
+
+    it("matches paths with different separators/casing (Windows)", () => {
+      const index = new KeywordIndex();
+      // Chunks are stored with native separators; removal uses normalized
+      // (forward-slash) paths — both must resolve to the same file.
+      index.addChunks([
+        makeChunk("c1", "function foo", "C:\\work\\project\\a.ts"),
+        makeChunk("c2", "function bar", "C:\\work\\project\\b.ts"),
+      ]);
+      index.removeByFilePath("C:/work/project/a.ts");
+      assert.equal(index.count(), 1);
+      assert.equal(index.search("foo", 10).length, 0);
+      assert.equal(index.search("bar", 10).length, 1);
+    });
+
+    it("removes stale entries after re-index (new UUIDs, same path)", () => {
+      const index = new KeywordIndex();
+      index.addChunks([makeChunk("old-id-1", "function oldVersion", "/p/a.ts")]);
+      // Re-index of the same file produces NEW chunk IDs — the old ones must
+      // be removed before the new ones are added.
+      index.removeByFilePath("/p/a.ts");
+      index.addChunks([makeChunk("new-id-1", "function newVersion", "/p/a.ts")]);
+      assert.equal(index.count(), 1);
+      // "oldversion" exists only in the stale revision's tokens
+      const staleHits = index.search("oldversion", 10);
+      assert.equal(staleHits.length, 0, "stale revision must not be searchable");
+      assert.equal(index.search("newversion", 10).length, 1);
+    });
   });
 
   describe("search", () => {

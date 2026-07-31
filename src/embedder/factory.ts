@@ -3,7 +3,7 @@
  */
 import type { EmbeddingProvider } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
-import { isOpenAiCompatible } from "../core/provider-defaults.js";
+import { isOpenAiCompatible, supportsEmbedding } from "../core/provider-defaults.js";
 import { OllamaProvider } from "./ollama.js";
 import { OpenAIProvider } from "./openai.js";
 import { CohereProvider } from "./cohere.js";
@@ -23,6 +23,15 @@ import pLimit from "p-limit";
 export function createEmbedder(config: RagConfig): EmbeddingProvider {
   const { provider, baseUrl, model, apiKey, proxy, timeoutMs } = config.embedding;
   const effectiveTimeoutMs = timeoutMs ?? 120000;
+
+  // Fail fast for chat-only providers (groq, deepseek, anthropic, google)
+  // — proceeding would surface a cryptic failure at index time.
+  if (!supportsEmbedding(provider)) {
+    throw new Error(
+      `Provider "${provider}" does not support embeddings. ` +
+      "Use an embedding-capable provider (ollama, openai, cohere, nvidia, azure, mistral, together, fireworks).",
+    );
+  }
 
   if (provider === "ollama") {
     return new OllamaProvider(baseUrl, model, apiKey, effectiveTimeoutMs, proxy, config.logging.level);

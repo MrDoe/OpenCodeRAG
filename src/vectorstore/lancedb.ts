@@ -806,6 +806,18 @@ export class LanceDbStore implements VectorStore {
         // GC deleted fragments that the current version still referenced.
         const threshold = new Date(Date.now() - 60 * 60 * 1000);
         await table.optimize({ cleanupOlderThan: threshold, deleteUnverified: false });
+
+        // Build the ANN vector index — without it every vectorSearch() is a
+        // brute-force O(N) flat scan (slow at 50k+ chunks).
+        try {
+          const count = await table.countRows().catch(() => 0);
+          const numPartitions = count > 0 ? Math.max(16, Math.min(256, Math.floor(count / 256))) : 16;
+          await table.createIndex("embedding", {
+            config: lancedb.Index.ivfFlat({ numPartitions }),
+          } as never);
+        } catch {
+          // Index creation is best-effort — queries still work, just slower.
+        }
       } catch {
         // Optimize is best-effort �?" must not break indexing.
       }

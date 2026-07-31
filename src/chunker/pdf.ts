@@ -29,20 +29,19 @@ function getStandardFontsUrl(): string {
  * Create a pdfjs-dist PDF document from a buffer.
  * Uses `@thednp/dommatrix` for DOMMatrix polyfill (lighter alternative to native canvas).
  * @param buffer - Raw buffer of the PDF file.
- * @returns A promise resolving to a pdfjs-dist PDFDocumentProxy.
+ * @returns The pdfjs LoadingTask for the document.
  */
-async function createPdfDocument(buffer: Buffer) {
+async function getPdfLoadingTask(buffer: Buffer) {
   const { default: CSSMatrix } = await import("@thednp/dommatrix");
   globalThis.DOMMatrix ??= CSSMatrix as unknown as typeof globalThis.DOMMatrix;
   globalThis.DOMMatrixReadOnly ??= CSSMatrix as unknown as typeof globalThis.DOMMatrixReadOnly;
 
   const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const loadingTask = getDocument({
+  return getDocument({
     data: new Uint8Array(buffer),
     standardFontDataUrl: getStandardFontsUrl(),
     verbosity: 0,
   });
-  return loadingTask.promise;
 }
 
 /**
@@ -58,21 +57,34 @@ export async function extractPdfText(buffer: Buffer): Promise<string> {
     throw new Error(`PDF too large: ${(buffer.length / 1024 / 1024).toFixed(1)} MB (max 100 MB)`);
   }
 
-  const pdf = await createPdfDocument(buffer);
-  const texts: string[] = [];
-  const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
+  // loadingTask.destroy() releases the pdfjs worker/document resources —
+  // without it long-running watch/plugin processes leak them per PDF.
+  const loadingTask = await getPdfLoadingTask(buffer);
+  try {
+    const pdf = await loadingTask.promise;
+    const texts: string[] = [];
+    const pageCount = Math.min(pdf.numPages, MAX_PDF_PAGES);
 
-  for (let i = 1; i <= pageCount; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const textItems = content.items.filter(
-      (item) => typeof item === "object" && item !== null && "str" in item
-    ) as { str: string }[];
-    const strings = textItems.map((item) => item.str);
-    texts.push(strings.join(" "));
+    for (let i = 1; i <= pageCount; i++) {
+      const page = await pdf.getPage(i);
+      try {
+        const content = await page.getTextContent();
+        const strings: string[] = [];
+        for (const item of content.items) {
+          if (typeof item === "object" && item !== null && "str" in item) {
+            strings.push((item as { str: string }).str);
+          }
+        }
+        texts.push(strings.join(" "));
+      } finally {
+        page.cleanup();
+      }
+    }
+
+    return texts.join("\n\n");
+  } finally {
+    await loadingTask.destroy().catch(() => {});
   }
-
-  return texts.join("\n\n");
 }
 
 /**

@@ -75,7 +75,7 @@ describe("createEmbedder", () => {
     });
   });
 
-  it("treats unknown provider as OpenAI-compatible and requires apiKey", () => {
+  it("throws for unknown provider (no apiKey needed to reject)", () => {
     const config = makeConfig({
       embedding: {
         provider: "unknown" as "ollama",
@@ -85,11 +85,11 @@ describe("createEmbedder", () => {
       },
     });
     assert.throws(() => createEmbedder(config), {
-      message: /requires an apiKey/,
+      message: /does not support embeddings/,
     });
   });
 
-  it("creates OpenAIProvider for unknown provider with apiKey", () => {
+  it("throws for unknown provider even with apiKey", () => {
     const config = makeConfig({
       embedding: {
         provider: "custom" as "ollama",
@@ -98,7 +98,8 @@ describe("createEmbedder", () => {
         apiKey: "custom-key",
       },
     });
-    const embedder = createEmbedder(config);
-    assert.equal(embedder.name, "openai");
+    // Unknown provider names must fail fast instead of silently attempting
+    // OpenAI-style calls against a nonsense base URL.
+    assert.throws(() => createEmbedder(config), /does not support embeddings/);
   });
 });
