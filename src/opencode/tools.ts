@@ -16,7 +16,7 @@
 
 import { tool } from "@opencode-ai/plugin/tool";
 import type { ToolDefinition } from "@opencode-ai/plugin";
-import type { EmbeddingProvider, VectorStore, KeywordIndex, SearchResult } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { SUPPORTED_IMAGE_EXTENSIONS, createImageVisionProvider, getMimeType, type ImageVisionProvider } from "../chunker/image.js";
 import { resizeImage } from "../content/image.js";
@@ -473,7 +473,7 @@ export function createFindUsagesTool(
     topK: number
   ): Promise<SearchResult[]> {
     if (!keywordIndex) return [];
-    return keywordIndex.search(symbol, topK);
+    return keywordIndex.search(symbol, topK, CODE_SEARCH_FILTER);
   }
 
   async function searchViaVectorStore(
@@ -488,6 +488,7 @@ export function createFindUsagesTool(
       minScore: 0,
       keywordIndex: undefined,
       queryPrefix: cfg.embedding.queryPrefix,
+      filter: CODE_SEARCH_FILTER,
     });
   }
 

@@ -12,7 +12,7 @@ import { analyzeTokenUsage, compareTokenAnalyses, projectTokenSavings } from "..
 import { listQuirks, lintQuirks, removeQuirk, type QuirkStoreDeps } from "../quirks/quirk-store.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
 import type { RagConfig } from "../core/config.js";
-import type { EmbeddingProvider } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider } from "../core/interfaces.js";
 
 const FILE_MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -334,7 +334,7 @@ async function handleSearch(
     return { status: 200, body: { results: [] } };
   }
 
-  const results = keywordIndex.search(query, topK);
+  const results = keywordIndex.search(query, topK, CODE_SEARCH_FILTER);
 
   return {
     status: 200,
@@ -403,6 +403,7 @@ async function handleRetrieve(
       filter: {
         pathPatterns: pathFilter ? pathFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         languages: langFilter ? langFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+        kinds: CODE_SEARCH_FILTER.kinds,
       },
     } satisfies RetrieveOptions);
 

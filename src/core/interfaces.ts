@@ -215,6 +215,15 @@ export interface MetadataFilter {
   kinds?: string[];
 }
 
+/**
+ * Filter for general code/document retrieval that excludes quirk memory
+ * chunks. Regular indexed chunks store `kind: ""`, quirk chunks `kind: "quirk"`.
+ * All code-search paths (search_semantic, hotkey injection, CLI query, web UI,
+ * read-tool context) must pass this so quirks never surface as code results —
+ * quirks are only reachable through recall_quirks / the quirk CLI.
+ */
+export const CODE_SEARCH_FILTER: MetadataFilter = { kinds: [""] };
+
 /** Callback interface for reporting indexing progress to the UI or CLI. */
 export interface IndexProgress {
   /** Set the total number of files to be indexed. */

@@ -8,6 +8,7 @@
 import type { Command } from "commander";
 import path from "node:path";
 import pc from "picocolors";
+import { CODE_SEARCH_FILTER } from "../../core/interfaces.js";
 import { retrieve } from "../../retriever/retriever.js";
 import { c, resolveCliContext, cleanupContext, logCliError, logCliInfo, formatDuration } from "../format.js";
 import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "../../retriever/context-optimizer.js";
@@ -62,6 +63,7 @@ export function registerQueryCommand(program: Command): void {
           hybridEnabled: hybridCfg?.enabled,
           queryPrefix: config.embedding.queryPrefix,
           explain: options.explain ?? false,
+          filter: CODE_SEARCH_FILTER,
         });
         const optCfg = config.retrieval.contextOptimization ?? DEFAULT_CONTEXT_OPTIMIZATION;
         const results = optimizeContext(rawResults, { topK, config: optCfg });

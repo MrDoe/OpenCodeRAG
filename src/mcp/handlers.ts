@@ -1,7 +1,7 @@
 /**
  * @fileoverview Handler implementations for all MCP tools: semantic search, file skeleton, symbol usage lookup, and image description.
  */
-import type { EmbeddingProvider, VectorStore, KeywordIndex, SearchResult } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { SUPPORTED_IMAGE_EXTENSIONS, type ImageVisionProvider } from "../chunker/image.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
@@ -225,6 +225,7 @@ export async function handleSearchSemantic(
     keywordWeight: cfg.retrieval.hybridSearch?.keywordWeight,
     hybridEnabled: cfg.retrieval.hybridSearch?.enabled,
     queryPrefix: cfg.embedding.queryPrefix,
+    filter: CODE_SEARCH_FILTER,
   };
 
   const rawResults = await retrieveFn_(query, embedder, store, retrieveOpts);
@@ -392,7 +393,7 @@ export async function handleFindUsages(
   const topK = params.topK ?? 30;
 
   const kwResults: SearchResult[] = keywordIndex
-    ? keywordIndex.search(symbolName, topK)
+    ? keywordIndex.search(symbolName, topK, CODE_SEARCH_FILTER)
     : [];
 
   const count = await store.count();
@@ -402,6 +403,7 @@ export async function handleFindUsages(
         minScore: 0,
         keywordIndex: undefined,
         queryPrefix: cfg.embedding.queryPrefix,
+        filter: CODE_SEARCH_FILTER,
       } satisfies RetrieveOptions)
     : [];
 

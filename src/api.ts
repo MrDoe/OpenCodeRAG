@@ -9,7 +9,7 @@ import type { RetrieveOptions } from "./retriever/retriever.js";
 import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "./retriever/context-optimizer.js";
 import { runIndexPass, type IndexRunStats } from "./indexer.js";
 import { scanWorkspaceFiles, type WorkspaceFile } from "./content/reader.js";
-import type { SearchResult } from "./core/interfaces.js";
+import { CODE_SEARCH_FILTER, type SearchResult } from "./core/interfaces.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
 
 /** Options controlling a semantic search query. */
@@ -102,6 +102,7 @@ export async function search(
       filter: {
         pathPatterns: options.pathHints,
         languages: options.languageHints,
+        kinds: CODE_SEARCH_FILTER.kinds,
       },
     } satisfies RetrieveOptions);
 

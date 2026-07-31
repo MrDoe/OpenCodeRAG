@@ -4,7 +4,7 @@
 
 import fs from "node:fs/promises";
 import { tool } from "@opencode-ai/plugin/tool";
-import type { EmbeddingProvider, KeywordIndex, VectorStore, SearchResult } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type KeywordIndex, type VectorStore, type SearchResult } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { retrieve } from "../retriever/retriever.js";
 import { normalizeReadArgs, resolveWorkspacePath } from "./tool-args.js";
@@ -100,7 +100,7 @@ export function createRagReadTool(
                 rawResults = cached.rawResults;
               } else {
                 const retrievalQuery = buildSessionQuery(messageText, resolvedPath, normalized);
-                rawResults = await retrieve(retrievalQuery, embedder, store, { topK: retrievalTopK, keywordIndex, hybridEnabled: config.retrieval.hybridSearch?.enabled, queryPrefix: config.embedding.queryPrefix });
+                rawResults = await retrieve(retrievalQuery, embedder, store, { topK: retrievalTopK, keywordIndex, hybridEnabled: config.retrieval.hybridSearch?.enabled, queryPrefix: config.embedding.queryPrefix, filter: CODE_SEARCH_FILTER });
                 const maxSize = options.maxSessionCacheSize ?? 50;
                 if (!sessionRetrievalCache.has(sessionID) && sessionRetrievalCache.size >= maxSize) {
                   const oldest = sessionRetrievalCache.keys().next().value;
@@ -115,7 +115,7 @@ export function createRagReadTool(
                 startLine: normalized.startLine,
                 endLine: normalized.endLine,
               });
-              rawResults = await retrieve(retrievalQuery, embedder, store, { topK: retrievalTopK, keywordIndex, hybridEnabled: config.retrieval.hybridSearch?.enabled, queryPrefix: config.embedding.queryPrefix });
+              rawResults = await retrieve(retrievalQuery, embedder, store, { topK: retrievalTopK, keywordIndex, hybridEnabled: config.retrieval.hybridSearch?.enabled, queryPrefix: config.embedding.queryPrefix, filter: CODE_SEARCH_FILTER });
             }
 
             // Collect related files from raw results (before filtering)

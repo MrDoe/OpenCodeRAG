@@ -6,7 +6,7 @@
 
 import type { Plugin, PluginInput, Hooks, ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
-import type { EmbeddingProvider, DescriptionProvider, KeywordIndex, VectorStore, SearchResult } from "./core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type VectorStore, type SearchResult } from "./core/interfaces.js";
 import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
 import { createEmbedder } from "./embedder/factory.js";
 import { createDescriptionProvider } from "./describer/factory.js";
@@ -1427,6 +1427,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             keywordIndex,
             keywordWeight: hybridCfg?.keywordWeight,
             queryPrefix: effectiveCfg.embedding.queryPrefix,
+            // Never surface quirk chunks in hotkey file lists / chunk injections.
+            filter: CODE_SEARCH_FILTER,
           });
           const retrievalTimeMs = Date.now() - retrievalStart;
 
