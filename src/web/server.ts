@@ -4,6 +4,7 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, extname, join, sep } from "node:path";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { LanceDbStore } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
@@ -29,7 +30,12 @@ const MIME_TYPES: Record<string, string> = {
 
 /** Serve an HTML string as the HTTP response with UTF-8 content type. */
 function serveStatic(res: ServerResponse, html: string): void {
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  res.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-cache",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+  });
   res.end(html);
 }
 
@@ -39,7 +45,13 @@ function serveUiAsset(res: ServerResponse, filePath: string): void {
     const data = readFileSync(filePath);
     const ext = extname(filePath);
     const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-    res.writeHead(200, { "Content-Type": contentType });
+    // Vite emits hashed filenames, so assets can be cached aggressively
+    const cacheControl = /[.-][a-f0-9]{8,}\./.test(filePath) ? "public, max-age=31536000, immutable" : "no-cache";
+    res.writeHead(200, {
+      "Content-Type": contentType,
+      "Cache-Control": cacheControl,
+      "X-Content-Type-Options": "nosniff",
+    });
     res.end(data);
   } catch {
     res.writeHead(404, { "Content-Type": "text/plain" });
@@ -51,6 +63,8 @@ function serveUiAsset(res: ServerResponse, filePath: string): void {
 export interface WebUiServer {
   /** The port the HTTP server is listening on. */
   port: number;
+  /** Random per-run token required on every `/api/*` request (Bearer header or `?token=`). */
+  token: string;
   /** Gracefully shut down the HTTP server. */
   close: () => Promise<void>;
 }
@@ -89,46 +103,64 @@ export async function startWebUi(
   }
 
   const html = getStaticHtml();
-  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg, getEmbedder);
+  const token = randomBytes(24).toString("hex");
+  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg, getEmbedder, token);
 
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-    const url = req.url ?? "/";
+    try {
+      const url = req.url ?? "/";
 
-    if (url === "/" || url === "/index.html") {
-      serveStatic(res, html);
-      return;
-    }
+      if (url === "/" || url === "/index.html") {
+        serveStatic(res, html);
+        return;
+      }
 
-    if (url.startsWith("/ui/")) {
-      const decoded = decodeURIComponent(url.slice("/ui/".length));
-      if (decoded.includes("..") || decoded === "") {
-        res.writeHead(403, { "Content-Type": "text/plain" });
-        res.end("Forbidden");
+      if (url.startsWith("/ui/")) {
+        let decoded: string;
+        try {
+          decoded = decodeURIComponent(url.slice("/ui/".length));
+        } catch {
+          res.writeHead(400, { "Content-Type": "text/plain" });
+          res.end("Bad Request");
+          return;
+        }
+        if (decoded.includes("..") || decoded === "") {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Forbidden");
+          return;
+        }
+        // Try production build output first, fall back to dev source
+        const distAsset = resolveDistAsset(decoded);
+        if (distAsset) {
+          serveUiAsset(res, distAsset);
+          return;
+        }
+        const devPath = join(uiDir, decoded);
+        if (devPath.startsWith(uiDir + sep) && existsSync(devPath)) {
+          serveUiAsset(res, devPath);
+          return;
+        }
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not Found");
         return;
       }
-      // Try production build output first, fall back to dev source
-      const distAsset = resolveDistAsset(decoded);
-      if (distAsset) {
-        serveUiAsset(res, distAsset);
-        return;
+
+      if (url.startsWith("/api/")) {
+        const handled = await apiHandler(req, res);
+        if (handled) return;
       }
-      const devPath = join(uiDir, decoded);
-      if (devPath.startsWith(uiDir + sep) && existsSync(devPath)) {
-        serveUiAsset(res, devPath);
-        return;
-      }
+
       res.writeHead(404, { "Content-Type": "text/plain" });
       res.end("Not Found");
-      return;
+    } catch (err) {
+      // Never let a malformed request crash the process
+      if (!res.headersSent) {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Internal Server Error");
+      } else {
+        res.end();
+      }
     }
-
-    if (url.startsWith("/api/")) {
-      const handled = await apiHandler(req, res);
-      if (handled) return;
-    }
-
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Not Found");
   });
 
   return new Promise((resolve, reject) => {
@@ -136,8 +168,11 @@ export async function startWebUi(
     server.listen(port, "127.0.0.1", () => {
       resolve({
         port,
+        token,
         close: () =>
           new Promise<void>((resolveClose) => {
+            // Close idle keep-alive connections so `server.close()` cannot hang
+            server.closeAllConnections();
             server.close(() => {
               store.close().catch(() => {});
               keywordIndex.close();

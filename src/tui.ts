@@ -6,7 +6,7 @@
 import type { TuiPluginModule, TuiDialogSelectProps, TuiDialogPromptProps, TuiToast, TuiState } from "@opencode-ai/plugin/tui";
 import type { JSX } from "@opentui/solid";
 import { createElement, insert, setProp } from "@opentui/solid";
-import { readFileSync, existsSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Provider } from "@opencode-ai/sdk/v2";
@@ -362,7 +362,9 @@ function resolveProviderBaseUrl(provider: Provider): string {
  */
 function saveConfigValue(configPath: string, path: string[], value: unknown): void {
   try {
-    const data: Record<string, unknown> = JSON.parse(readFileSync(configPath, "utf-8"));
+    let raw = readFileSync(configPath, "utf-8");
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    const data: Record<string, unknown> = JSON.parse(raw);
     let target = data;
     for (let i = 0; i < path.length - 1; i++) {
       const key = path[i]!;
@@ -374,6 +376,25 @@ function saveConfigValue(configPath: string, path: string[], value: unknown): vo
     target[path[path.length - 1]!] = value;
     writeFileSync(configPath, JSON.stringify(data, null, 2), "utf-8");
   } catch {
+  }
+}
+
+/**
+ * Mirror the watcher status file that the server plugin maintains, so the
+ * sidebar reflects a watcher toggle from the settings dialog immediately:
+ * - enabled  → write the same initial status the background indexer writes on startup
+ * - disabled → remove the file (same cleanup the plugin does when auto-index is off)
+ */
+function syncWatcherStatusFile(storePath: string, enabled: boolean): void {
+  const statusPath = join(storePath, "watcher-status.json");
+  try {
+    if (enabled) {
+      writeFileSync(statusPath, JSON.stringify({ running: false }, null, 2), "utf-8");
+    } else if (existsSync(statusPath)) {
+      unlinkSync(statusPath);
+    }
+  } catch {
+    // best-effort mirror; the server plugin reconciles on its next load
   }
 }
 
@@ -414,8 +435,9 @@ function saveModelSelection(
 
   const apiKey = (provider?.options?.apiKey as string) ?? "";
   if (apiKey) {
+    // Persist the key only in the store-dir overrides, never in the workspace
+    // config file — `opencode-rag.json` is routinely committed to git.
     saveRuntimeOverride(storePath, [section, "apiKey"], apiKey);
-    saveConfigValue(configPath, [section, "apiKey"], apiKey);
   }
 
   return selectionValue;
@@ -725,6 +747,8 @@ async function openSettingsDialog(api: {
     toast: (input: TuiToast) => void;
   };
   state: Pick<TuiState, "path" | "provider">;
+  /** Invoked after a setting is saved so the caller can refresh cached UI state. */
+  onSettingsChanged?: () => void;
 }): Promise<void> {
   const worktree = api.state.path.worktree;
   if (!worktree) return;
@@ -819,7 +843,12 @@ async function openSettingsDialog(api: {
               if (entry.path[0] === "indexing" || entry.path[0] === "chunking") {
                 api.ui.toast({ variant: "warning", title: "Settings", message: "Chunking changed. Re-index required." });
               }
+              if (entry.path.join(".") === "openCode.autoIndex.enabled") {
+                syncWatcherStatusFile(storePath, newVal);
+                api.ui.toast({ variant: "warning", title: "Settings", message: "Watcher changes take effect after an OpenCode restart" });
+              }
               entry.currentValue = newVal;
+              api.onSettingsChanged?.();
               showSettingMenu(cat);
             } else if (entry.type === "number") {
               api.ui.dialog.replace(
@@ -842,6 +871,7 @@ async function openSettingsDialog(api: {
                           api.ui.toast({ variant: "warning", title: "Settings", message: "Chunking changed. Re-index required." });
                         }
                         entry.currentValue = num;
+                        api.onSettingsChanged?.();
                       }
                       showSettingMenu(cat);
                     },
@@ -876,6 +906,7 @@ async function openSettingsDialog(api: {
                           api.ui.toast({ variant: "warning", title: "Settings", message: "Chunking changed. Re-index required." });
                         }
                         entry.currentValue = parsed as Record<string, unknown>;
+                        api.onSettingsChanged?.();
                       } catch {
                         api.ui.toast({ variant: "error", title: "Settings", message: "Invalid JSON" });
                       }
@@ -902,6 +933,7 @@ async function openSettingsDialog(api: {
                         message: `${entry.label}: ${input}`,
                       });
                       entry.currentValue = input;
+                      api.onSettingsChanged?.();
                       showSettingMenu(cat);
                     },
                     onCancel: () => {
@@ -939,6 +971,7 @@ async function openSettingsDialog(api: {
                         saveConfigValue(configPath!, entry.path, input);
                         entry.currentValue = input;
                       }
+                      api.onSettingsChanged?.();
                       showSettingMenu(cat);
                     },
                     onCancel: () => showSettingMenu(cat),
@@ -962,6 +995,7 @@ async function openSettingsDialog(api: {
                   message: "Embedding changed. Re-index may be required. Restart OpenCode for changes.",
                 });
               }
+              api.onSettingsChanged?.();
             }
             showSettingMenu(cat);
           },
@@ -985,7 +1019,7 @@ const plugin: TuiPluginModule & { id: string } = {
     const version = meta.version ?? getVersion();
     let cachedStatus: RagStatus = DEFAULT_STATUS;
     let lastRefresh = 0;
-    const REFRESH_INTERVAL_MS = Number(process.env.OPENCODE_RAG_TUI_REFRESH_MS) || 3600000;
+    const REFRESH_INTERVAL_MS = Number(process.env.OPENCODE_RAG_TUI_REFRESH_MS) || 30000;
 
     // Load tui config for keybinding display
     let tuiConfig: { fileListKeybinding: string; chunksKeybinding: string } | undefined;
@@ -1095,6 +1129,9 @@ const plugin: TuiPluginModule & { id: string } = {
               openSettingsDialog({
                 ui: api.ui,
                 state: api.state,
+                onSettingsChanged: () => {
+                  refreshStatus();
+                },
               });
               return undefined;
             },

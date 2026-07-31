@@ -46,15 +46,28 @@ export function createEmbedder(config: RagConfig): EmbeddingProvider {
 }
 
 /**
+ * HTTP statuses that indicate a permanent failure — retrying cannot help
+ * (auth errors, bad requests, missing resources). Providers raise these as
+ * Error objects whose messages contain the status code.
+ */
+const PERMANENT_STATUS_RE = /\(?(400|401|403|404|422)\)?/;
+
+function isPermanentError(err: unknown): boolean {
+  return PERMANENT_STATUS_RE.test(err instanceof Error ? err.message : String(err));
+}
+
+/**
  * Embed a list of texts in batches with optional concurrency control and per-batch retry.
  *
  * Splits the input texts into chunks of `batchSize` and embeds them sequentially
  * (or concurrently when `concurrency > 1`). When concurrency is limited, uses
  * `p-limit` to cap the number of in-flight requests.
  *
- * Each batch is retried up to `retryMax` times with exponential backoff. If all
- * retries are exhausted, the batch is skipped and empty arrays are returned for
- * those texts so the caller can still process successfully embedded batches.
+ * Each batch is retried up to `retryMax` times with exponential backoff (only
+ * for transient failures — auth/validation errors are not retried). If all
+ * retries are exhausted or the provider returns a mismatched embedding count,
+ * the batch is skipped and empty arrays are returned for those texts so the
+ * caller can still process successfully embedded batches.
  *
  * @param embedder - The embedding provider to use
  * @param texts - Array of text strings to embed
@@ -88,11 +101,28 @@ export async function embedBatch(
   async function embedWithRetry(batchTexts: string[]): Promise<number[][] | null> {
     for (let attempt = 0; attempt <= retryMax; attempt++) {
       try {
-        return await embedder.embed(batchTexts, purpose);
+        const embeddings = await embedder.embed(batchTexts, purpose);
+        // Validate the response shape: a count mismatch would silently attach
+        // vectors to the wrong chunks downstream; a dimension mismatch would
+        // poison the store. Treat both as a retryable batch failure.
+        if (embeddings.length !== batchTexts.length) {
+          throw new Error(
+            `Embedding provider returned ${embeddings.length} vectors for ${batchTexts.length} texts`,
+          );
+        }
+        const dims = new Set(embeddings.map((v) => v.length));
+        if (dims.size > 1 || dims.has(0)) {
+          throw new Error(
+            `Embedding provider returned inconsistent vector dimensions: ${[...dims].join(", ")}`,
+          );
+        }
+        return embeddings;
       } catch (err) {
-        if (attempt < retryMax) {
-          const delay = retryBaseDelayMs * Math.pow(2, attempt);
+        if (attempt < retryMax && !isPermanentError(err)) {
+          const delay = retryBaseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4);
           await new Promise(resolve => setTimeout(resolve, delay));
+        } else if (attempt >= retryMax || isPermanentError(err)) {
+          return null;
         }
       }
     }
@@ -122,7 +152,9 @@ export async function embedBatch(
       limit(async () => {
         const embeddings = await embedWithRetry(batch.texts);
         const flatResult = embeddings ?? batch.texts.map(() => []);
-        completedCount += embeddings?.length ?? 0;
+        // Count processed TEXTS (not returned vectors) so failed batches
+        // still advance progress towards the total.
+        completedCount += batch.texts.length;
         onProgress?.(completedCount, texts.length);
         return { index: batch.index, embeddings: flatResult };
       }),

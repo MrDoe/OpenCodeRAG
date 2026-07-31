@@ -430,7 +430,7 @@ export async function handleFindUsages(
   type UsageGroup = {
     filePath: string;
     language: string;
-    usages: { line: number; content: string; context: string[] }[];
+    usages: { line: number; content: string; context: string[]; matchedIndex: number }[];
   };
   const fileGroups = new Map<string, UsageGroup>();
 
@@ -450,7 +450,10 @@ export async function handleFindUsages(
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!;
-      const lineNum = i + 1;
+      // tree-sitter line numbers are absolute file lines (startLine + offset),
+      // NOT chunk-relative — chunk-relative numbers were wrong for every
+      // chunk not starting at line 1 and broke the definition skip.
+      const lineNum = m.startLine + i;
       if (definitionLine !== undefined && lineNum === definitionLine) continue;
 
       const symbolPattern = new RegExp(`\\b${escapeRegex(symbolName)}\\b`);
@@ -466,7 +469,12 @@ export async function handleFindUsages(
         fileGroups.set(m.filePath, group);
       }
       if (!group.usages.some((g) => g.line === lineNum)) {
-        group.usages.push({ line: lineNum, content: line.trimEnd(), context: contextLines });
+        group.usages.push({
+          line: lineNum,
+          content: line.trimEnd(),
+          context: contextLines,
+          matchedIndex: i - ctxStart,
+        });
       }
     }
   }
@@ -492,7 +500,8 @@ export async function handleFindUsages(
     formattedLines.push("|------|------|");
     for (const usage of group.usages) {
       const ctx = usage.context;
-      const codeLine = ctx[Math.min(2, ctx.length - 1)] ?? usage.content;
+      // Show the actual matched line (not an arbitrary middle context line)
+      const codeLine = ctx[usage.matchedIndex] ?? usage.content;
       const escaped = codeLine.length > 100 ? codeLine.slice(0, 97) + "..." : codeLine;
       formattedLines.push(`| ${usage.line} | \`${escaped}\` |`);
       allMatches.push({ ...usage, filePath, language: group.language });

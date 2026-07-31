@@ -214,18 +214,29 @@ export async function scanWorkspaceFiles(
         const stat = await fs.stat(filePath);
         const entry = manifest.files[normalizedPath]!;
         if (entry.mtime === stat.mtimeMs && entry.size === stat.size) {
-          completed++;
-          return {
-            filePath,
-            normalizedPath,
-            content: "",
-            hash: entry.hash,
-            isEmpty: false,
-            isTooSmall: false,
-            extractionStatus: "ok" as const,
-            mtime: stat.mtimeMs,
-            size: stat.size,
-          } satisfies WorkspaceFile;
+          // Fast path — BUT only when the description config is unchanged:
+          // when descHash differs, the worker needs the full content to
+          // re-chunk and re-describe the file. Returning empty content here
+          // would make chunkFile() yield zero chunks and the pipeline would
+          // DELETE the file from the index instead of re-describing it.
+          // Mirrors pipeline.ts: `descriptionProvider ? computeDescriptionConfigHash(config) : undefined`.
+          const currentDescHash = config.description?.enabled
+            ? (computeDescriptionConfigHash(config) ?? "")
+            : "";
+          if (!currentDescHash || entry.descHash === currentDescHash) {
+            completed++;
+            return {
+              filePath,
+              normalizedPath,
+              content: "",
+              hash: entry.hash,
+              isEmpty: false,
+              isTooSmall: false,
+              extractionStatus: "ok" as const,
+              mtime: stat.mtimeMs,
+              size: stat.size,
+            } satisfies WorkspaceFile;
+          }
         }
       } catch {
         /* stat failed, fall through to full read */
@@ -292,6 +303,27 @@ export async function scanWorkspaceFiles(
 
     if (!result.ok) {
       logger?.warn(`  ${filePath} (extraction failed: ${result.error})`);
+
+      // A transient extraction failure (file lock, antivirus, timeout) must
+      // NOT delete a previously-good index entry. Report the file as
+      // unchanged with the OLD hash so the worker keeps the old chunks;
+      // the entry stays and the file is re-attempted on a later pass.
+      const previous = manifest?.files[normalizedPath];
+      if (previous) {
+        completed++;
+        return {
+          filePath,
+          normalizedPath,
+          content: "",
+          hash: previous.hash,
+          isEmpty: false,
+          isTooSmall: false,
+          extractionStatus: "failed" as const,
+          extractionError: result.error,
+          mtime: previous.mtime,
+          size: previous.size,
+        } satisfies WorkspaceFile;
+      }
     }
 
     const content = result.content;

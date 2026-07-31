@@ -2,7 +2,7 @@
  * @fileoverview Abstract base class for tree-sitter based language chunkers.
  */
 import { Parser } from "web-tree-sitter";
-import { loadLanguage, loadLanguageFromPath, walkTree, type AstNode } from "./grammar.js";
+import { loadLanguage, loadLanguageFromPath, walkTree, buildByteOffsetMap, type AstNode } from "./grammar.js";
 import type { Chunker, Chunk } from "../core/interfaces.js";
 import { uuid } from "./uuid.js";
 
@@ -53,7 +53,9 @@ export abstract class TreeSitterChunker implements Chunker {
         const parser = await original._createParser();
         const tree = parser.parse(content);
         if (!tree) { return []; }
-        const nodes = walkTree(tree.rootNode, types, content);
+        // tree-sitter ranges are UTF-8 byte offsets; translate for slicing
+        const offsetMap = buildByteOffsetMap(content);
+        const nodes = walkTree(tree.rootNode, types, content, 10, 0, offsetMap);
         tree.delete();
         return nodes.map((node: AstNode) => ({
           id: uuid(),
@@ -119,7 +121,9 @@ export abstract class TreeSitterChunker implements Chunker {
     const tree = parser.parse(content);
     if (!tree) { return []; }
 
-    const nodes = walkTree(tree.rootNode, this.nodeTypes, content);
+    // tree-sitter ranges are UTF-8 byte offsets; translate for slicing
+    const offsetMap = buildByteOffsetMap(content);
+    const nodes = walkTree(tree.rootNode, this.nodeTypes, content, 10, 0, offsetMap);
     tree.delete();
     return nodes.map((node: AstNode) => ({
       id: uuid(),

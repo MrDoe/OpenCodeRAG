@@ -98,6 +98,49 @@ function destroyAllPooledConnections(): void {
 export { destroyAllPooledConnections };
 
 /**
+ * Fetch a URL through the configured proxy, applying the proxy to
+ * HTTP(S)_PROXY env vars for the duration of the request (serialized).
+ *
+ * Used by health checks and other one-off requests that do not go
+ * through {@link postJson}.
+ */
+export async function fetchWithProxy(
+  urlString: string,
+  init: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal },
+  proxy?: ProxyConfig,
+): Promise<Response> {
+  const authHeader = buildProxyAuthHeader(proxy);
+  const envOverride = applyProxyEnv(proxy);
+  const [savedHttpProxy, savedHttpsProxy] = [process.env.HTTP_PROXY, process.env.HTTPS_PROXY];
+
+  return proxyRequestQueue.then(async () => {
+    try {
+      if (envOverride) {
+        process.env.HTTP_PROXY = envOverride.httpProxy;
+        process.env.HTTPS_PROXY = envOverride.httpsProxy;
+      }
+      const headers: Record<string, string> = { ...init.headers };
+      if (authHeader) {
+        headers["Proxy-Authorization"] = authHeader;
+      }
+      return await fetch(urlString, {
+        method: init.method ?? "GET",
+        headers,
+        body: init.body,
+        signal: init.signal,
+      });
+    } finally {
+      if (envOverride) {
+        if (savedHttpProxy === undefined) delete process.env.HTTP_PROXY;
+        else process.env.HTTP_PROXY = savedHttpProxy;
+        if (savedHttpsProxy === undefined) delete process.env.HTTPS_PROXY;
+        else process.env.HTTPS_PROXY = savedHttpsProxy;
+      }
+    }
+  });
+}
+
+/**
  * Check whether a hostname refers to the local machine.
  *
  * Matches "localhost", "::1", "127.0.0.1", and any 127.x.x.x address.
@@ -190,9 +233,10 @@ export function directRequest(
   body: unknown,
   headers: Record<string, string>,
   timeoutMs: number,
-  redirectCount: number = 0
+  redirectCount: number = 0,
+  signal?: AbortSignal,
 ): Promise<HttpResponseLike> {
-  return sendRawHttpRequest(url, body, headers, timeoutMs, redirectCount);
+  return sendRawHttpRequest(url, body, headers, timeoutMs, redirectCount, signal);
 }
 
 const CRLF = Buffer.from("\r\n");
@@ -306,7 +350,8 @@ async function sendRawHttpRequest(
   body: unknown,
   headers: Record<string, string>,
   timeoutMs: number,
-  redirectCount: number
+  redirectCount: number,
+  signal?: AbortSignal,
 ): Promise<HttpResponseLike> {
   const requestBuffer = buildRequestPayload(body, headers, url);
   const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
@@ -327,6 +372,7 @@ async function sendRawHttpRequest(
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      signal?.removeEventListener("abort", onAbort);
       fn();
     };
 
@@ -336,6 +382,16 @@ async function sendRawHttpRequest(
         reject(new Error(`Request timed out after ${timeoutMs}ms`));
       });
     }, timeoutMs);
+
+    // Wire the caller's AbortSignal through to the raw socket (F2.1)
+    const onAbort = () => {
+      if (settled) return;
+      settle(() => {
+        socket.destroy();
+        reject(new DOMException("The operation was aborted.", "AbortError"));
+      });
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     const releaseOrDestroy = () => {
       if (responseConnectionClose) {
@@ -449,7 +505,8 @@ async function sendRawHttpRequest(
     location.length > 0
   ) {
     if (redirectCount >= 5) {
-      const text = `Redirect limit exceeded for ${url.toString()}`;
+      // Strip the query string — it may contain API keys (e.g. `?key=...`)
+      const text = `Redirect limit exceeded for ${url.origin}${url.pathname}`;
       return {
         ok: false,
         status: response.status,
@@ -478,7 +535,7 @@ async function sendRawHttpRequest(
           )
         );
 
-    return sendRawHttpRequest(redirectUrl, body, safeHeaders, timeoutMs, redirectCount + 1);
+    return sendRawHttpRequest(redirectUrl, body, safeHeaders, timeoutMs, redirectCount + 1, signal);
   }
 
   const text = response.body.toString("utf8");
@@ -521,7 +578,7 @@ export async function postJson(
   const bypassProxy = isLocalhost(url.hostname) || matchesNoProxy(url.hostname, proxy?.noProxy);
 
   if (bypassProxy || !proxy?.url) {
-    return directRequest(url, body, headers, timeoutMs);
+    return directRequest(url, body, headers, timeoutMs, 0, signal);
   }
 
   return postJsonViaFetch(urlString, body, headers, timeoutMs, proxy, signal);

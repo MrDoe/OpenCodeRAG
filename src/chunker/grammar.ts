@@ -159,6 +159,49 @@ const COMMENT_NODE_TYPES = new Set([
   "Comment",
 ]);
 
+/**
+ * Build a byte-offset → UTF-16-index map for a source string.
+ *
+ * tree-sitter reports node ranges as UTF-8 BYTE offsets, but JavaScript
+ * `String.prototype.slice` counts UTF-16 code units. For any file containing
+ * multi-byte characters the two disagree, so slicing with raw node indices
+ * truncates/garbles chunk content and doc comments. Tree-sitter node
+ * boundaries always align to code-point boundaries, so an exact map from
+ * byte offset to UTF-16 index is sufficient.
+ *
+ * Returns `null` for pure-ASCII sources (byte offsets == UTF-16 offsets),
+ * which is the common case and avoids the allocation.
+ *
+ * @param source - The full source text.
+ * @returns A Map from UTF-8 byte offset to UTF-16 index, or `null` for ASCII.
+ */
+export function buildByteOffsetMap(source: string): Map<number, number> | null {
+  if (!/[\u0080-\uffff]/u.test(source)) return null;
+  const map = new Map<number, number>();
+  let byteOffset = 0;
+  let utf16Index = 0;
+  for (const ch of source) {
+    map.set(byteOffset, utf16Index);
+    byteOffset += Buffer.byteLength(ch, "utf-8");
+    utf16Index += ch.length;
+  }
+  map.set(byteOffset, utf16Index);
+  return map;
+}
+
+/** Slice `source` by tree-sitter byte offsets, translating through the map when present. */
+function sliceByBytes(
+  source: string,
+  startByte: number,
+  endByte: number,
+  offsetMap?: Map<number, number> | null,
+): string {
+  if (!offsetMap) return source.slice(startByte, endByte);
+  const start = offsetMap.get(startByte) ?? startByte;
+  const end = offsetMap.get(endByte) ?? endByte;
+  return source.slice(start, end);
+}
+
 function cleanCommentText(text: string): string {
   const lines = text.split("\n");
 
@@ -196,19 +239,23 @@ function cleanCommentText(text: string): string {
   return cleaned.filter((l) => l.trim().length > 0).join("\n");
 }
 
-function extractLeadingComments(node: Node, source: string): string | undefined {
+function extractLeadingComments(
+  node: Node,
+  source: string,
+  offsetMap?: Map<number, number> | null,
+): string | undefined {
   const comments: string[] = [];
   let sibling = node.previousSibling;
 
   while (sibling) {
     if (COMMENT_NODE_TYPES.has(sibling.type)) {
-      const raw = source.slice(sibling.startIndex, sibling.endIndex);
+      const raw = sliceByBytes(source, sibling.startIndex, sibling.endIndex, offsetMap);
       comments.unshift(cleanCommentText(raw));
       sibling = sibling.previousSibling;
     } else if (sibling.type === "expression_statement") {
       const firstChild = sibling.namedChildren[0];
       if (firstChild?.type === "string") {
-        const raw = source.slice(firstChild.startIndex, firstChild.endIndex);
+        const raw = sliceByBytes(source, firstChild.startIndex, firstChild.endIndex, offsetMap);
         comments.unshift(cleanCommentText(raw));
         sibling = sibling.previousSibling;
       } else {
@@ -223,7 +270,11 @@ function extractLeadingComments(node: Node, source: string): string | undefined 
   return comments.join("\n\n");
 }
 
-function extractDocstringFromBody(node: Node, source: string): string | undefined {
+function extractDocstringFromBody(
+  node: Node,
+  source: string,
+  offsetMap?: Map<number, number> | null,
+): string | undefined {
   if (node.type !== "function_definition" && node.type !== "class_definition") {
     return undefined;
   }
@@ -237,7 +288,7 @@ function extractDocstringFromBody(node: Node, source: string): string | undefine
   const stringNode = firstStmt.namedChildren[0];
   if (!stringNode || stringNode.type !== "string") return undefined;
 
-  return cleanCommentText(source.slice(stringNode.startIndex, stringNode.endIndex));
+  return cleanCommentText(sliceByBytes(source, stringNode.startIndex, stringNode.endIndex, offsetMap));
 }
 
 /**
@@ -263,19 +314,20 @@ export function walkTree(
   nodeTypes: Set<string>,
   source: string,
   maxDepth: number = 10,
-  depth: number = 0
+  depth: number = 0,
+  offsetMap?: Map<number, number> | null,
 ): AstNode[] {
   const results: AstNode[] = [];
 
   if (nodeTypes.has(node.type) && depth > 0) {
-    const leadingComments = extractLeadingComments(node, source);
-    const bodyDocstring = extractDocstringFromBody(node, source);
+    const leadingComments = extractLeadingComments(node, source, offsetMap);
+    const bodyDocstring = extractDocstringFromBody(node, source, offsetMap);
     const leadingDoc = [leadingComments, bodyDocstring]
       .filter((d): d is string => d !== undefined && d.length > 0)
       .join("\n\n");
 
     results.push({
-      text: source.slice(node.startIndex, node.endIndex),
+      text: sliceByBytes(source, node.startIndex, node.endIndex, offsetMap),
       startLine: node.startPosition.row + 1,
       endLine: node.endPosition.row + 1,
       startIndex: node.startIndex,
@@ -289,7 +341,7 @@ export function walkTree(
   if (depth < maxDepth) {
     for (const child of node.children) {
       results.push(
-        ...walkTree(child, nodeTypes, source, maxDepth, depth + 1)
+        ...walkTree(child, nodeTypes, source, maxDepth, depth + 1, offsetMap)
       );
     }
   }

@@ -227,7 +227,22 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         const changedSet = new Set<string>();
         for (const f of diffResult.changedFiles) changedSet.add(f);
         for (const f of untracked) changedSet.add(f);
-        filterPaths = Array.from(changedSet);
+        // Git paths are relative to the REPO ROOT. When the workspace is a
+        // subdirectory of the repo (monorepos), convert them to workspace-
+        // relative paths before passing them to the scan — resolving repo-root
+        // paths against `cwd` would silently miss every change.
+        const toCwdRelative = (p: string): string | null => {
+          const abs = path.resolve(repoRoot, p);
+          const rel = path.relative(options.cwd, abs);
+          if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
+          return rel;
+        };
+        const cwdRelative: string[] = [];
+        for (const p of changedSet) {
+          const rel = toCwdRelative(p);
+          if (rel !== null) cwdRelative.push(rel);
+        }
+        filterPaths = cwdRelative;
         gitDeletedPaths = diffResult.deletedFiles;
         logger.debug(`Git incremental: ${filterPaths.length} changed/untracked, ${gitDeletedPaths.length} deleted since ${manifest.lastGitCommit.slice(0, 8)}`);
       }
@@ -798,6 +813,15 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         const validChunks = (prep.chunks ?? []).filter(
           (c) => c.embedding && c.embedding.length > 0,
         );
+        // Partial embed failure: some chunks have no vector. Do NOT record the
+        // file as complete — keep the previous manifest entry (or none, for
+        // new files) so the next pass retries the missing chunks.
+        const allEmbedded = validChunks.length === (prep.chunks?.length ?? 0);
+        if (!allEmbedded && (prep.chunks?.length ?? 0) > 0) {
+          options.logger?.warn?.(
+            `  ${prep.fileLabel}: ${validChunks.length}/${prep.chunks?.length} chunks embedded — marking for retry on next pass`,
+          );
+        }
         if (validChunks.length > 0) {
           await effectiveStore.addChunks(validChunks);
         }
@@ -818,8 +842,10 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           descHash: prep.descHash,
         };
 
-        // Update manifest
-        if (result.chunkCount > 0 && !result.isRemoved) {
+        // Update manifest — only when ALL chunks were embedded. A partial
+        // write must not bump the hash/chunkCount, otherwise the missing
+        // chunks would never be retried (hash match on the next pass).
+        if (result.chunkCount > 0 && !result.isRemoved && allEmbedded) {
           const meta = fileMeta.get(result.normalizedPath);
           const entry: {
             hash: string;

@@ -2,6 +2,7 @@
  * @fileoverview In-memory inverted keyword index with stemming, tokenization, and optional serialization.
  */
 import type { Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
+import { normalizeFilePath } from "../core/manifest.js";
 
 const INDEX_VERSION = 2;
 
@@ -95,6 +96,9 @@ export class KeywordIndex {
   private chunkMap = new Map<string, Chunk>();
   private readonly storePath?: string;
 
+  /** filePath (normalized) → chunk IDs, for O(chunks-in-file) removal. */
+  private fileToIds = new Map<string, Set<string>>();
+
   constructor(storePath?: string) {
     this.storePath = storePath;
   }
@@ -103,6 +107,14 @@ export class KeywordIndex {
     for (const chunk of chunks) {
       const id = chunk.id;
       this.chunkMap.set(id, chunk);
+
+      const fileKey = normalizeFilePath(chunk.metadata.filePath);
+      let ids = this.fileToIds.get(fileKey);
+      if (!ids) {
+        ids = new Set();
+        this.fileToIds.set(fileKey, ids);
+      }
+      ids.add(id);
 
       const tokens = tokenize(chunk.content);
 
@@ -130,11 +142,21 @@ export class KeywordIndex {
   }
 
   removeByFilePath(filePath: string): void {
-    const idsToRemove: string[] = [];
+    const fileKey = normalizeFilePath(filePath);
 
-    for (const [id, chunk] of this.chunkMap) {
-      if (chunk.metadata.filePath === filePath) {
-        idsToRemove.push(id);
+    // Fast path: per-file id index. Falls back to a full chunkMap scan when
+    // the path is not tracked (entries loaded from an older persisted index).
+    let idsToRemove: string[];
+    const tracked = this.fileToIds.get(fileKey);
+    if (tracked) {
+      idsToRemove = [...tracked];
+      this.fileToIds.delete(fileKey);
+    } else {
+      idsToRemove = [];
+      for (const [id, chunk] of this.chunkMap) {
+        if (normalizeFilePath(chunk.metadata.filePath) === fileKey) {
+          idsToRemove.push(id);
+        }
       }
     }
 
@@ -192,11 +214,13 @@ export class KeywordIndex {
   close(): void {
     this.invertedIndex.clear();
     this.chunkMap.clear();
+    this.fileToIds.clear();
   }
 
   clear(): void {
     this.invertedIndex.clear();
     this.chunkMap.clear();
+    this.fileToIds.clear();
   }
 
   count(): number {
@@ -290,6 +314,18 @@ export class KeywordIndex {
           tags,
         },
       });
+    }
+
+    // Rebuild the per-file id index from the loaded chunk map so removals
+    // work even for entries persisted by older versions.
+    for (const [id, chunk] of index.chunkMap) {
+      const fileKey = normalizeFilePath(chunk.metadata.filePath);
+      let ids = index.fileToIds.get(fileKey);
+      if (!ids) {
+        ids = new Set();
+        index.fileToIds.set(fileKey, ids);
+      }
+      ids.add(id);
     }
 
     return index;

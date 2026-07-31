@@ -9,6 +9,7 @@
 import pc from "picocolors";
 import { resolveRagContext, type BootstrapOptions, type RagContext } from "../core/bootstrap.js";
 import { destroyAllPooledConnections } from "../embedder/http.js";
+import { appendDebugLog } from "../core/fileLogger.js";
 import type { RagConfig } from "../core/config.js";
 import type { SearchResult } from "../core/interfaces.js";
 import type { IndexRunStats } from "../indexer.js";
@@ -71,13 +72,13 @@ export const c = {
  * @param error - Optional error object for structured logging.
  */
 export function logCliError(
-  _logFilePath: string,
-  _scope: string,
+  logFilePath: string,
+  scope: string,
   message: string,
-  _error: unknown,
+  error?: unknown,
 ): void {
   console.error(c.error(message));
-  //appendDebugLog(logFilePath, { scope, message, error });
+  appendDebugLog(logFilePath, { scope, message, error });
 }
 
 /**
@@ -88,12 +89,12 @@ export function logCliError(
  * @param message - Human-readable info message.
  */
 export function logCliInfo(
-  _logFilePath: string,
-  _scope: string,
+  logFilePath: string,
+  scope: string,
   message: string,
 ): void {
   console.log(message);
-  //appendDebugLog(logFilePath, { scope, message });
+  appendDebugLog(logFilePath, { scope, message });
 }
 
 // ── Context resolution ──────────────────────────────────────────
@@ -136,10 +137,18 @@ function logConfigDetails(logFilePath: string, config: RagConfig): void {
 /**
  * Gracefully close a `RagContext` — closes the vector store and destroys pooled HTTP connections.
  *
+ * The store close is raced against a timeout because LanceDB's native `close()`
+ * can hang indefinitely on Windows; callers must never be blocked forever.
+ *
  * @param ctx - The `RagContext` to clean up.
  */
 export async function cleanupContext(ctx: RagContext): Promise<void> {
-  await ctx.store.close();
+  await Promise.race([
+    ctx.store.close(),
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, 5000).unref();
+    }),
+  ]);
   destroyAllPooledConnections();
 }
 

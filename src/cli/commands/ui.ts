@@ -7,7 +7,7 @@
 
 import type { Command } from "commander";
 import path from "node:path";
-import { c, resolveCliContext, logCliError, logCliInfo } from "../format.js";
+import { c, resolveCliContext, cleanupContext, logCliError, logCliInfo } from "../format.js";
 import type { CliOptions } from "../types.js";
 
 /**
@@ -46,9 +46,10 @@ export function registerUiCommand(program: Command): void {
           config,
         );
 
-        const url = `http://127.0.0.1:${server.port}`;
+        const url = `http://127.0.0.1:${server.port}/?token=${server.token}`;
         logCliInfo(logFilePath, "ui", `\n${c.heading("OpenCodeRAG Web UI")}`);
         logCliInfo(logFilePath, "ui", `  ${c.label("URL:")} ${c.value(url)}`);
+        logCliInfo(logFilePath, "ui", `  ${c.dim("The token in the URL authenticates this session — keep it private.")}`);
         logCliInfo(logFilePath, "ui", `  ${c.dim("Press Ctrl+C to stop")}\n`);
 
         if (openBrowser) {
@@ -65,15 +66,25 @@ export function registerUiCommand(program: Command): void {
           }
         }
 
-        process.on("SIGINT", async () => {
-          await server.close();
+        let shuttingDown = false;
+        const shutdown = async (): Promise<void> => {
+          if (shuttingDown) return;
+          shuttingDown = true;
+          try {
+            await server.close();
+          } catch {
+            // best-effort — the process is exiting anyway
+          }
+          try {
+            await cleanupContext(ctx);
+          } catch {
+            // best-effort cleanup
+          }
           process.exit(0);
-        });
+        };
 
-        process.on("SIGTERM", async () => {
-          await server.close();
-          process.exit(0);
-        });
+        process.on("SIGINT", shutdown);
+        process.on("SIGTERM", shutdown);
       } catch (err) {
         const message = (err as Error).message || String(err);
         const logFilePath = path.resolve(process.cwd(), ".opencode", "opencode-rag.log");

@@ -87,8 +87,8 @@ export class AnthropicDescriptionProvider implements DescriptionProvider {
 
   /**
    * Sends a request to the Anthropic Messages API with retry and exponential backoff.
-   * The system prompt is combined with all user messages into a single message payload, and
-   * the assistant placeholder is appended to elicit a completion.
+   * The system prompt is sent via the native `system` field (never concatenated into
+   * the user message, so chunk content cannot compete with it).
    *
    * @param messages - The user messages to send.
    * @param timeoutMs - Request timeout in milliseconds.
@@ -107,7 +107,8 @@ export class AnthropicDescriptionProvider implements DescriptionProvider {
     const body: Record<string, unknown> = {
       model: this.config.model,
       max_tokens: 4096,
-      messages: [{ role: "user", content: systemPrompt + "\n\n" + messages.map((m) => `${m.role}: ${m.content}`).join("\n\n") + "\n\nassistant:" }],
+      system: systemPrompt,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
     };
 
     const headers: Record<string, string> = {
@@ -121,13 +122,24 @@ export class AnthropicDescriptionProvider implements DescriptionProvider {
 
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= retryMax; attempt++) {
-      const response = await postJson(
-        `${baseUrl}/messages`,
-        body,
-        headers,
-        timeoutMs,
-        this.config.proxy,
-      );
+      let response: import("../embedder/http.js").HttpResponseLike;
+      try {
+        response = await postJson(
+          `${baseUrl}/messages`,
+          body,
+          headers,
+          timeoutMs,
+          this.config.proxy,
+        );
+      } catch (err) {
+        // Network-level failures (ECONNREFUSED, socket timeouts) are transient —
+        // treat them like retryable HTTP statuses.
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt === retryMax) throw lastError;
+        const delayMs = retryBaseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4);
+        await sleep(delayMs);
+        continue;
+      }
 
       if (response.ok) {
         const json = (await response.json()) as AnthropicResponse;
@@ -148,7 +160,7 @@ export class AnthropicDescriptionProvider implements DescriptionProvider {
       }
 
       lastError = error;
-      const delayMs = retryBaseDelayMs * Math.pow(2, attempt);
+      const delayMs = retryBaseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4);
       await sleep(delayMs);
     }
 

@@ -94,29 +94,41 @@ export class GeminiDescriptionProvider implements DescriptionProvider {
     const model = this.config.model;
     const systemPrompt = systemOverride ?? this.config.systemPrompt;
 
-    const allParts: Array<{ text: string }> = [{ text: systemPrompt }];
-    for (const c of contents) {
-      allParts.push(...c.parts);
-    }
-
     const body: Record<string, unknown> = {
-      contents: [{ role: "user", parts: allParts }],
+      // The system prompt goes into the native systemInstruction field, never
+      // into the same content parts as the chunk text.
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: contents.map((c) => ({ role: c.role, parts: c.parts })),
     };
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
+    // Send the key via header so it never appears in URLs (which are echoed in
+    // redirect-limit error messages) and cannot be mangled by URL encoding.
+    if (apiKey) {
+      headers["x-goog-api-key"] = apiKey;
+    }
 
-    const url = apiKey
-      ? `${baseUrl}/models/${model}:generateContent?key=${apiKey}`
-      : `${baseUrl}/models/${model}:generateContent`;
+    const url = `${baseUrl}/models/${model}:generateContent`;
 
     const retryMax = this.config.retryMax ?? 3;
     const retryBaseDelayMs = this.config.retryBaseDelayMs ?? 1000;
 
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= retryMax; attempt++) {
-      const response = await postJson(url, body, headers, timeoutMs);
+      let response: import("../embedder/http.js").HttpResponseLike;
+      try {
+        response = await postJson(url, body, headers, timeoutMs, this.config.proxy);
+      } catch (err) {
+        // Network-level failures (ECONNREFUSED, socket timeouts) are transient —
+        // treat them like retryable HTTP statuses.
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt === retryMax) throw lastError;
+        const delayMs = retryBaseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4);
+        await sleep(delayMs);
+        continue;
+      }
 
       if (response.ok) {
         const json = (await response.json()) as GeminiResponse;
@@ -137,7 +149,7 @@ export class GeminiDescriptionProvider implements DescriptionProvider {
       }
 
       lastError = error;
-      const delayMs = retryBaseDelayMs * Math.pow(2, attempt);
+      const delayMs = retryBaseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4);
       await sleep(delayMs);
     }
 

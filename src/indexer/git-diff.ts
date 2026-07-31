@@ -53,12 +53,15 @@ export function getCurrentCommit(cwd: string): string | null {
  *
  * @param cwd - A path inside the repository.
  * @param fromCommit - The commit SHA to diff against.
- * @returns A diff result, or `null` if the git command fails.
+ * @returns A diff result, or `null` if the git command fails or the commit is invalid.
  */
 export function getChangedFilesSince(
   cwd: string,
   fromCommit: string,
 ): GitDiffResult | null {
+  // The commit value originates from a manifest file — validate it strictly
+  // so a crafted manifest can never inject git options via argv.
+  if (!/^[0-9a-f]{7,40}$/i.test(fromCommit)) return null;
   try {
     const changedRaw = execFileSync("git", ["diff", "--name-only", "--diff-filter=ACMRT", fromCommit, "HEAD"], {
       cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
