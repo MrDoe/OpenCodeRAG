@@ -47,14 +47,50 @@ function parseQuery(url: string): { path: string; params: URLSearchParams } {
   };
 }
 
-/** Serialise an {@link ApiResponse} as JSON and write it to the HTTP response with CORS headers. */
-function sendJson(res: ServerResponse, response: ApiResponse): void {
-  res.writeHead(response.status, {
+/**
+ * Determine whether a browser Origin header may call the API.
+ *
+ * Only same-machine origins are allowed (the server binds to 127.0.0.1). Any
+ * other origin — e.g. a random website doing a drive-by fetch — is rejected.
+ * Returns the origin to echo in `Access-Control-Allow-Origin`, or `null`.
+ */
+function isAllowedOrigin(origin: string | undefined): string | null {
+  if (!origin) return null;
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.hostname === "127.0.0.1" || u.hostname === "localhost" || u.hostname === "[::1]" ? origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Compare two tokens in constant time to avoid timing side-channels. */
+function tokensEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Serialise an {@link ApiResponse} as JSON and write it to the HTTP response.
+ *
+ * CORS headers are only emitted for allowed (localhost) origins; cross-origin
+ * callers get no CORS headers at all, so browsers block reading the response.
+ */
+function sendJson(res: ServerResponse, response: ApiResponse, origin: string | null): void {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-  });
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "X-Content-Type-Options": "nosniff",
+  };
+  if (origin) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Vary"] = "Origin";
+  }
+  res.writeHead(response.status, headers);
   res.end(JSON.stringify(response.body));
 }
 
@@ -81,12 +117,49 @@ export function createApiHandler(
   storePath: string,
   cwd?: string,
   cfg?: RagConfig,
-  getEmbedder?: () => Promise<EmbeddingProvider>
+  getEmbedder?: () => Promise<EmbeddingProvider>,
+  token?: string
 ) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
     const { path, params } = parseQuery(url);
+
+    const origin = isAllowedOrigin(req.headers.origin);
+
+    // CORS preflight — only answer for allowed localhost origins
+    if (method === "OPTIONS") {
+      if (!origin) {
+        res.writeHead(403, { "Content-Type": "text/plain" });
+        res.end("Forbidden");
+        return true;
+      }
+      res.writeHead(204, {
+        "Access-Control-Allow-Origin": origin,
+        "Vary": "Origin",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      });
+      res.end();
+      return true;
+    }
+
+    // Same-machine-only: reject cross-origin requests outright (defeats drive-by
+    // website fetches and DNS rebinding even where CORS headers would block reads).
+    if (origin && !isAllowedOrigin(origin)) {
+      sendJson(res, { status: 403, body: { error: "Forbidden origin" } }, null);
+      return true;
+    }
+
+    // Token auth for every API request when a token is configured
+    if (token) {
+      const header = req.headers.authorization;
+      const supplied = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : params.get("token");
+      if (!supplied || !tokensEqual(supplied, token)) {
+        sendJson(res, { status: 401, body: { error: "Unauthorized — missing or invalid token" } }, origin);
+        return true;
+      }
+    }
 
     // Quirk store dependencies (embedder is a no-op stub for the read-only UI context).
     const quirkDeps: QuirkStoreDeps = {
@@ -96,17 +169,6 @@ export function createApiHandler(
       cfg: cfg ?? ({} as RagConfig),
       storePath,
     };
-
-    // CORS preflight
-    if (method === "OPTIONS") {
-      res.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      });
-      res.end();
-      return true;
-    }
 
     let response: ApiResponse;
 
@@ -169,19 +231,19 @@ export function createApiHandler(
       // Eval endpoints
       else if (path === "/api/eval/sessions" && method === "GET") {
         response = await handleEvalSessions(storePath);
+      } else if (path === "/api/eval/compare" && method === "GET") {
+        response = await handleEvalCompare(storePath, params);
+      }
+      // Token analysis endpoints — must precede the generic `/api/eval/sessions/:id` route
+      else if (path.startsWith("/api/eval/sessions/") && path.endsWith("/analysis") && method === "GET") {
+        const id = path.slice("/api/eval/sessions/".length, -"/analysis".length);
+        response = await handleEvalAnalysis(storePath, id);
       } else if (path.startsWith("/api/eval/sessions/") && method === "GET") {
         const id = path.slice("/api/eval/sessions/".length);
         response = await handleEvalSession(storePath, id);
       } else if (path.startsWith("/api/eval/sessions/") && method === "DELETE") {
         const id = path.slice("/api/eval/sessions/".length);
         response = await handleEvalDeleteSession(storePath, id);
-      }       else if (path === "/api/eval/compare" && method === "GET") {
-        response = await handleEvalCompare(storePath, params);
-      }
-      // Token analysis endpoints
-      else if (path.startsWith("/api/eval/sessions/") && path.endsWith("/analysis") && method === "GET") {
-        const id = path.slice("/api/eval/sessions/".length, -"/analysis".length);
-        response = await handleEvalAnalysis(storePath, id);
       } else if (path === "/api/eval/token-compare" && method === "GET") {
         response = await handleEvalTokenCompare(storePath, params);
       } else if (path === "/api/eval/project-savings" && method === "POST") {
@@ -204,11 +266,19 @@ export function createApiHandler(
         return false;
       }
 
-      sendJson(res, response);
+      sendJson(res, response, origin);
       return true;
     } catch (err) {
+      if (err instanceof BodyTooLargeError) {
+        if (!res.destroyed) {
+          sendJson(res, { status: 413, body: { error: err.message } }, origin);
+        }
+        return true;
+      }
       const message = err instanceof Error ? err.message : String(err);
-      sendJson(res, { status: 500, body: { error: message } });
+      if (!res.destroyed) {
+        sendJson(res, { status: 500, body: { error: message } }, origin);
+      }
       return true;
     }
   };
@@ -552,7 +622,7 @@ function handleConfig(cfg: import("../core/config.js").RagConfig): ApiResponse {
 
 function redactKeys(obj: Record<string, unknown>): void {
   for (const key of Object.keys(obj)) {
-    if (key.toLowerCase().includes("apikey") || key === "apiKey") {
+    if (/api\s*key|apikey|password|passwd|secret|token|authorization|credential/i.test(key)) {
       obj[key] = "***";
     } else if (typeof obj[key] === "object" && obj[key] !== null) {
       redactKeys(obj[key] as Record<string, unknown>);
@@ -746,6 +816,14 @@ export function handleEvalProjectSavings(body: unknown): ApiResponse {
 /** Collect the full request body as a Buffer and parse it as JSON. Returns `{}` on empty or invalid input. */
 const MAX_BODY_BYTES = 1_048_576; // 1 MB
 
+/** Thrown when the request body exceeds {@link MAX_BODY_BYTES}; mapped to a 413 response. */
+export class BodyTooLargeError extends Error {
+  constructor() {
+    super(`Request body exceeds ${MAX_BODY_BYTES} byte limit`);
+    this.name = "BodyTooLargeError";
+  }
+}
+
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
   let totalSize = 0;
@@ -753,8 +831,8 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
     const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
     totalSize += buf.length;
     if (totalSize > MAX_BODY_BYTES) {
-      req.destroy(new Error("Request body too large"));
-      throw new Error(`Request body exceeds ${MAX_BODY_BYTES} byte limit`);
+      req.destroy();
+      throw new BodyTooLargeError();
     }
     chunks.push(buf);
   }

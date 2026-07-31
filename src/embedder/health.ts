@@ -3,7 +3,7 @@
  */
 import type { RagConfig } from "../core/config.js";
 import type { ProxyConfig } from "../core/config.js";
-import { postJson } from "./http.js";
+import { fetchWithProxy, postJson } from "./http.js";
 
 /** Result of a single provider health check. */
 export interface HealthCheckResult {
@@ -74,11 +74,11 @@ async function checkDescriptionModel(config: RagConfig, _timeoutMs: number): Pro
   }
 
   if (provider === "anthropic") {
-    return checkAnthropicChat(baseUrl, model, apiKey, descTimeout);
+    return checkAnthropicChat(baseUrl, model, apiKey, descTimeout, desc.proxy);
   }
 
   if (provider === "google") {
-    return checkGoogleChat(baseUrl, model, apiKey, descTimeout);
+    return checkGoogleChat(baseUrl, model, apiKey, descTimeout, desc.proxy);
   }
 
   // OpenAI-compatible chat endpoint
@@ -99,11 +99,11 @@ async function checkImageDescriptionModel(config: RagConfig, _timeoutMs: number)
   }
 
   if (provider === "anthropic") {
-    return checkAnthropicChat(baseUrl, model, apiKey, imgTimeout, "image_description");
+    return checkAnthropicChat(baseUrl, model, apiKey, imgTimeout, img.proxy, "image_description");
   }
 
   if (provider === "google") {
-    return checkGoogleChat(baseUrl, model, apiKey, imgTimeout, "image_description");
+    return checkGoogleChat(baseUrl, model, apiKey, imgTimeout, img.proxy, "image_description");
   }
 
   // OpenAI-compatible chat endpoint
@@ -202,7 +202,7 @@ async function checkOpenAiEmbed(
   model: string,
   apiKey?: string,
   timeoutMs?: number,
-  _proxy?: RagConfig["embedding"]["proxy"]
+  proxy?: RagConfig["embedding"]["proxy"]
 ): Promise<HealthCheckResult> {
   if (!apiKey) {
     return { provider: "openai", model, type: "embedding", status: "error", error: "No API key configured" };
@@ -210,10 +210,10 @@ async function checkOpenAiEmbed(
 
   const url = `${baseUrl.replace(/\/+$/, "")}/models`;
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithProxy(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(Math.min(timeoutMs ?? 15000, 15000)),
-    });
+    }, proxy);
 
     if (response.ok) {
       return { provider: "openai", model, type: "embedding", status: "ok" };
@@ -237,7 +237,7 @@ async function checkOpenAiChat(
   model: string,
   apiKey?: string,
   timeoutMs?: number,
-  _proxy?: { url?: string; username?: string; password?: string; noProxy?: string },
+  proxy?: { url?: string; username?: string; password?: string; noProxy?: string },
   type: "description" | "image_description" = "description"
 ): Promise<HealthCheckResult> {
   if (!apiKey) {
@@ -246,10 +246,10 @@ async function checkOpenAiChat(
 
   const url = `${baseUrl.replace(/\/+$/, "")}/models`;
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithProxy(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: AbortSignal.timeout(Math.min(timeoutMs ?? 15000, 15000)),
-    });
+    }, proxy);
 
     if (response.ok) {
       return { provider: "openai", model, type, status: "ok" };
@@ -311,6 +311,7 @@ async function checkAnthropicChat(
   model: string,
   apiKey?: string,
   timeoutMs?: number,
+  proxy?: { url?: string; username?: string; password?: string; noProxy?: string },
   type: "description" | "image_description" = "description"
 ): Promise<HealthCheckResult> {
   if (!apiKey) {
@@ -319,7 +320,7 @@ async function checkAnthropicChat(
 
   const url = `${baseUrl.replace(/\/+$/, "")}/messages`;
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithProxy(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -332,7 +333,7 @@ async function checkAnthropicChat(
         messages: [{ role: "user", content: "hi" }],
       }),
       signal: AbortSignal.timeout(Math.min(timeoutMs ?? 15000, 15000)),
-    });
+    }, proxy);
 
     if (response.ok) {
       return { provider: "anthropic", model, type, status: "ok" };
@@ -358,22 +359,23 @@ async function checkGoogleChat(
   model: string,
   apiKey?: string,
   timeoutMs?: number,
+  proxy?: { url?: string; username?: string; password?: string; noProxy?: string },
   type: "description" | "image_description" = "description"
 ): Promise<HealthCheckResult> {
   if (!apiKey) {
     return { provider: "google", model, type, status: "error", error: "No API key configured" };
   }
 
-  const url = `${baseUrl.replace(/\/+$/, "")}/models/${model}:generateContent?key=${apiKey}`;
+  const url = `${baseUrl.replace(/\/+$/, "")}/models/${model}:generateContent`;
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithProxy(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [{ parts: [{ text: "hi" }] }],
       }),
       signal: AbortSignal.timeout(Math.min(timeoutMs ?? 15000, 15000)),
-    });
+    }, proxy);
 
     if (response.ok) {
       return { provider: "google", model, type, status: "ok" };

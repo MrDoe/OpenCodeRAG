@@ -1,5 +1,27 @@
 const BASE = "/api";
 
+const TOKEN_STORAGE_KEY = "opencode-rag-token";
+
+/**
+ * Resolve the UI session token from `?token=` in the URL (persisted to
+ * sessionStorage and stripped from the address bar) or a previously stored one.
+ */
+function getToken(): string | null {
+  const fromUrl = new URLSearchParams(window.location.search).get("token");
+  if (fromUrl) {
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, fromUrl);
+    const cleanUrl = window.location.pathname + window.location.hash;
+    window.history.replaceState(null, "", cleanUrl);
+    return fromUrl;
+  }
+  return sessionStorage.getItem(TOKEN_STORAGE_KEY);
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 function toQuery(params: Record<string, string | number | boolean>): string {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -9,7 +31,8 @@ function toQuery(params: Record<string, string | number | boolean>): string {
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  const r = await fetch(BASE + url, options);
+  const headers = { ...(options?.headers ?? {}), ...authHeaders() };
+  const r = await fetch(BASE + url, { ...options, headers });
   const body = await r.json();
   if (!r.ok) {
     throw new Error(body.error ?? r.statusText);

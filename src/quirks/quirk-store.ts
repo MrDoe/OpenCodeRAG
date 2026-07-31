@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { EmbeddingProvider, VectorStore, KeywordIndex, SearchResult } from "../core/interfaces.js";
@@ -27,14 +27,32 @@ function isMemoryStore(storePath: string): boolean {
   return storePath.startsWith("memory:");
 }
 
-/** In-memory backup for memory:// stores. */
-const memQuirks = new Map<string, Quirk>();
+/** In-memory backup for memory:// stores, keyed by store path. */
+const memQuirksByStore = new Map<string, Map<string, Quirk>>();
+
+function memQuirksFor(storePath: string): Map<string, Quirk> {
+  let store = memQuirksByStore.get(storePath);
+  if (!store) {
+    store = new Map();
+    memQuirksByStore.set(storePath, store);
+  }
+  return store;
+}
 
 function readJsonl(filePath: string): Quirk[] {
   if (!existsSync(filePath)) return [];
   const raw = readFileSync(filePath, "utf-8").trim();
   if (!raw) return [];
-  return raw.split("\n").map((l) => JSON.parse(l) as Quirk);
+  const quirks: Quirk[] = [];
+  for (const line of raw.split("\n")) {
+    try {
+      quirks.push(JSON.parse(line) as Quirk);
+    } catch {
+      // Skip corrupt lines â€” a single bad line must never break
+      // every quirk operation (readJsonl feeds get/update/remove/list).
+    }
+  }
+  return quirks;
 }
 
 function appendJsonl(filePath: string, q: Quirk): void {
@@ -50,7 +68,22 @@ function rewriteJsonl(filePath: string, quirks: Quirk[]): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(filePath, quirks.map((q) => JSON.stringify(q)).join("\n") + "\n", "utf-8");
+  // Atomic write: tmp file + rename, so a crash or concurrent process
+  // can never leave a truncated/empty quirks.jsonl behind.
+  const tmpPath = `${filePath}.tmp`;
+  writeFileSync(tmpPath, quirks.map((q) => JSON.stringify(q)).join("\n") + "\n", "utf-8");
+  try {
+    renameSync(tmpPath, filePath);
+  } catch {
+    // Windows: rename can fail with EPERM when another process holds the file;
+    // fall back to a direct write (best-effort) rather than losing data.
+    writeFileSync(filePath, quirks.map((q) => JSON.stringify(q)).join("\n") + "\n", "utf-8");
+    try {
+      renameSync(tmpPath, `${filePath}.bak`);
+    } catch {
+      // ignore
+    }
+  }
 }
 
 function nowISO(): string {
@@ -80,7 +113,7 @@ export async function getQuirk(deps: QuirkStoreDeps, id: string): Promise<Quirk 
     }
     return undefined;
   }
-  return memQuirks.get(id);
+  return memQuirksFor(deps.storePath).get(id);
 }
 
 /**
@@ -123,9 +156,10 @@ export async function updateQuirk(deps: QuirkStoreDeps, id: string, patch: Parti
   };
 
   const filePath = QUIRK_FILE_PREFIX + id;
-  await deps.store.deleteByFilePath(filePath);
-  deps.keywordIndex.removeByFilePath(filePath);
 
+  // Embed FIRST — if embedding fails, the old index entries are untouched
+  // (previously the delete happened before the embed, permanently removing
+  // the quirk from search while the JSONL still listed it).
   const prefix = deps.cfg.embedding.documentPrefix ?? "";
   const chunkContent = prefix + content;
   const embeddings = await deps.embedder.embed([chunkContent], "document");
@@ -133,6 +167,9 @@ export async function updateQuirk(deps: QuirkStoreDeps, id: string, patch: Parti
   if (!embedding || embedding.length === 0) {
     throw new Error("Embedding returned empty vector for quirk content");
   }
+
+  await deps.store.deleteByFilePath(filePath);
+  deps.keywordIndex.removeByFilePath(filePath);
 
   const chunk = {
     id,
@@ -160,7 +197,7 @@ export async function updateQuirk(deps: QuirkStoreDeps, id: string, patch: Parti
     const all = readJsonl(jp).map((q) => (q.id === id ? updated : q));
     rewriteJsonl(jp, all);
   } else {
-    memQuirks.set(id, updated);
+    memQuirksFor(deps.storePath).set(id, updated);
   }
 
   return updated;
@@ -219,7 +256,7 @@ export async function addQuirk(deps: QuirkStoreDeps, input: QuirkInput): Promise
   if (!isMemoryStore(deps.storePath)) {
     appendJsonl(jsonlPath(deps.storePath), quirk);
   } else {
-    memQuirks.set(id, quirk);
+    memQuirksFor(deps.storePath).set(id, quirk);
   }
 
   return quirk;
@@ -241,7 +278,7 @@ export async function removeQuirk(deps: QuirkStoreDeps, id: string): Promise<voi
     const all = readJsonl(jp).filter((q) => q.id !== id);
     rewriteJsonl(jp, all);
   } else {
-    memQuirks.delete(id);
+    memQuirksFor(deps.storePath).delete(id);
   }
 }
 
@@ -275,7 +312,7 @@ export async function listQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
     result.sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
     return result;
   }
-  const all = [...memQuirks.values()];
+  const all = [...memQuirksFor(deps.storePath).values()];
   all.sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
   return all;
 }
@@ -294,10 +331,11 @@ export async function recallQuirks(
 ): Promise<SearchResult[]> {
   const topK = options?.topK ?? 10;
   const minConfidence = deps.cfg.memory?.minConfidence ?? 0.5;
-  const filter: { kinds: string[]; languages?: string[] } = { kinds: ["quirk"] };
-  if (options?.quirkType) {
-    filter.languages = [options.quirkType];
-  }
+  // NOTE: do NOT put quirkType into `filter.languages` — quirk chunks store
+  // the type in metadata.quirkType, not metadata.language ("quirk").
+  // A languages filter would exclude every quirk chunk and return zero hits.
+  // Type filtering happens in the post-filter below instead.
+  const filter: { kinds: string[] } = { kinds: ["quirk"] };
 
   const recallMinScore = options?.minScore ?? deps.cfg.memory?.recallMinScore ?? 0.72;
   const raw = await retrieve(query, deps.embedder, deps.store, {
@@ -357,7 +395,7 @@ export async function lintQuirks(deps: QuirkStoreDeps): Promise<string[]> {
       const sim = lexicalSimilarity(quirks[i]!.content, quirks[j]!.content);
       if (sim > 0.85) {
         issues.push(
-          `Near-duplicate (${(sim * 100).toFixed(0)}% similar): "${quirks[i]!.content}" ↔ "${quirks[j]!.content}"`,
+          `Near-duplicate (${(sim * 100).toFixed(0)}% similar): "${quirks[i]!.content}" â†” "${quirks[j]!.content}"`,
         );
       }
     }
@@ -379,7 +417,7 @@ export function lexicalSimilarity(a: string, b: string): number {
  * Count of meaningful word tokens shared between two texts (Jaccard numerator).
  *
  * Tokens are whitespace/punctuation-split, lowercased, and filtered to those
- * with length ≥ `minTokenLen` (default 3 — skips short filler like "the").
+ * with length â‰¥ `minTokenLen` (default 3 â€” skips short filler like "the").
  *
  * Used by the quirk auto-inject gate: candidate quirks that share no tokens
  * with the user's *current* message (i.e. they matched only against the prior

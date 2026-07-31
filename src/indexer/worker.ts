@@ -236,6 +236,21 @@ export async function prepareFile(
         },
       };
     }
+    // No chunks from non-empty content: file may genuinely be chunk-less.
+    // BUT if the content is empty and the file is unchanged (hash matches),
+    // this is the re-describe fast-path edge — keep the old index entry
+    // instead of deleting it (a delete would wipe previously-indexed chunks
+    // just because we lacked content to re-chunk).
+    if (previous && previous.hash === file.hash && file.content.trim().length === 0) {
+      return {
+        normalizedPath: file.normalizedPath, hash: file.hash, fileLabel,
+        isModified: false,
+        earlyResult: {
+          normalizedPath: file.normalizedPath, hash: file.hash, chunkCount: previous.chunkCount, fileLabel,
+          isNew: false, isModified: false, isUnchanged: true, isEmpty: false, isTooSmall: false, isRemoved: false, hadChunks: previous.chunkCount > 0,
+        },
+      };
+    }
     return {
       normalizedPath: file.normalizedPath, hash: file.hash, fileLabel,
       isModified: false,
@@ -247,6 +262,12 @@ export async function prepareFile(
   }
 
   logger.debug(`  ${fileLabel}: ${chunks.length} chunks produced`);
+  // Remove stale keyword entries for a previously-indexed revision of this
+  // file (new UUIDs are generated for every chunk) so hybrid search never
+  // surfaces old content and the persisted index stops growing unboundedly.
+  if (previous) {
+    keywordIndex?.removeByFilePath(file.normalizedPath);
+  }
   keywordIndex?.addChunks(chunks);
 
   const docPrefix = config.embedding.documentPrefix ?? "";

@@ -121,7 +121,18 @@ export class LlmDescriptionProvider implements DescriptionProvider {
 
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= retryMax; attempt++) {
-      const response = await postJson(url, body, headers, timeoutMs, this.config.proxy);
+      let response: import("../embedder/http.js").HttpResponseLike;
+      try {
+        response = await postJson(url, body, headers, timeoutMs, this.config.proxy);
+      } catch (err) {
+        // Network-level failures (ECONNREFUSED, socket timeouts) are transient —
+        // treat them like retryable HTTP statuses.
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (attempt === retryMax) throw lastError;
+        const delayMs = retryBaseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4);
+        await sleep(delayMs);
+        continue;
+      }
 
       if (response.ok) {
         const json = (await response.json()) as ChatResponse;
@@ -138,7 +149,7 @@ export class LlmDescriptionProvider implements DescriptionProvider {
       }
 
       lastError = error;
-      const delayMs = retryBaseDelayMs * Math.pow(2, attempt);
+      const delayMs = retryBaseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4);
       await sleep(delayMs);
     }
 
