@@ -101,18 +101,18 @@ async function dispatchExtraction(
   imagePrompt: string | undefined,
   resizeMaxDimension?: number,
 ): Promise<ExtractResult> {
-  const lower = filePath.toLowerCase();
+  const ext = path.extname(filePath).toLowerCase();
 
-  if (pdfExtractor.PDF_EXTENSIONS.has(lower)) {
+  if (pdfExtractor.PDF_EXTENSIONS.has(ext)) {
     return pdfExtractor.extract(filePath, buffer);
   }
-  if (docxExtractor.DOCX_EXTENSIONS.has(lower)) {
+  if (docxExtractor.DOCX_EXTENSIONS.has(ext)) {
     return docxExtractor.extract(filePath, buffer);
   }
-  if (docExtractor.DOC_EXTENSIONS.has(lower)) {
+  if (docExtractor.DOC_EXTENSIONS.has(ext)) {
     return docExtractor.extract(filePath, buffer);
   }
-  if (excelExtractor.EXCEL_EXTENSIONS.has(lower)) {
+  if (excelExtractor.EXCEL_EXTENSIONS.has(ext)) {
     return excelExtractor.extract(filePath, buffer);
   }
   if (imageVisionProvider && imageExtractor.isImageFile(filePath)) {
@@ -234,11 +234,12 @@ export async function scanWorkspaceFiles(
 
     const isImage = imageVisionProvider !== null && imageExtractor.isImageFile(filePath);
 
+    const ext = path.extname(filePath).toLowerCase();
     const isBinary =
-      pdfExtractor.PDF_EXTENSIONS.has(filePath.toLowerCase()) ||
-      docxExtractor.DOCX_EXTENSIONS.has(filePath.toLowerCase()) ||
-      docExtractor.DOC_EXTENSIONS.has(filePath.toLowerCase()) ||
-      excelExtractor.EXCEL_EXTENSIONS.has(filePath.toLowerCase()) ||
+      pdfExtractor.PDF_EXTENSIONS.has(ext) ||
+      docxExtractor.DOCX_EXTENSIONS.has(ext) ||
+      docExtractor.DOC_EXTENSIONS.has(ext) ||
+      excelExtractor.EXCEL_EXTENSIONS.has(ext) ||
       isImage;
 
     logger?.info(`Reading: ${filePath}`);

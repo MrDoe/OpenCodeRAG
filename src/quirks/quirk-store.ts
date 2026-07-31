@@ -57,6 +57,115 @@ function nowISO(): string {
   return new Date().toISOString();
 }
 
+/** Look up a single quirk by its ID, or `undefined` when not found. */
+export async function getQuirk(deps: QuirkStoreDeps, id: string): Promise<Quirk | undefined> {
+  if (!isMemoryStore(deps.storePath)) {
+    const jp = jsonlPath(deps.storePath);
+    if (existsSync(jp)) {
+      const found = readJsonl(jp).find((q) => q.id === id);
+      if (found) return found;
+    }
+    const chunks = await deps.store.getChunksByFilePath(QUIRK_FILE_PREFIX + id);
+    const c = chunks[0];
+    if (c) {
+      return {
+        id: c.id,
+        content: c.content,
+        quirkType: c.metadata.quirkType,
+        tags: c.metadata.tags ?? [],
+        confidence: c.metadata.confidence ?? 1,
+        lastObserved: c.metadata.lastObserved ?? "",
+        sourceRef: undefined,
+      };
+    }
+    return undefined;
+  }
+  return memQuirks.get(id);
+}
+
+/**
+ * Update an existing quirk by ID. Fields in `patch` override the stored values.
+ *
+ * When `content` changes, the new text must pass the trust monitor, the quirk
+ * is re-embedded, and the vector-store chunk + keyword index entry are replaced
+ * (same ID, new embedding). The audit log entry is rewritten in place.
+ *
+ * @throws If no quirk with the given ID exists, or the new content is rejected
+ * by the trust monitor.
+ */
+export async function updateQuirk(deps: QuirkStoreDeps, id: string, patch: Partial<QuirkInput>): Promise<Quirk> {
+  const existing = await getQuirk(deps, id);
+  if (!existing) {
+    throw new Error(`Quirk not found: ${id}`);
+  }
+
+  const content = patch.content ?? existing.content;
+  const quirkType = patch.quirkType ?? existing.quirkType;
+  const tags = patch.tags ?? existing.tags;
+  const confidence = patch.confidence ?? existing.confidence;
+  const sourceRef = patch.sourceRef ?? existing.sourceRef;
+
+  if (content !== existing.content) {
+    const allowed = isQuirkAllowed(content);
+    if (!allowed.ok) {
+      throw new Error(`Quirk rejected by trust monitor: ${allowed.reason}`);
+    }
+  }
+
+  const updated: Quirk = {
+    id,
+    content,
+    quirkType,
+    tags,
+    confidence,
+    lastObserved: existing.lastObserved,
+    sourceRef,
+  };
+
+  const filePath = QUIRK_FILE_PREFIX + id;
+  await deps.store.deleteByFilePath(filePath);
+  deps.keywordIndex.removeByFilePath(filePath);
+
+  const prefix = deps.cfg.embedding.documentPrefix ?? "";
+  const chunkContent = prefix + content;
+  const embeddings = await deps.embedder.embed([chunkContent], "document");
+  const embedding = embeddings[0];
+  if (!embedding || embedding.length === 0) {
+    throw new Error("Embedding returned empty vector for quirk content");
+  }
+
+  const chunk = {
+    id,
+    content,
+    description: "",
+    embedding,
+    metadata: {
+      filePath,
+      startLine: 0,
+      endLine: 0,
+      language: "quirk",
+      kind: "quirk",
+      quirkType,
+      tags,
+      confidence,
+      lastObserved: updated.lastObserved,
+    },
+  };
+
+  await deps.store.addChunks([chunk]);
+  deps.keywordIndex.addChunks([chunk]);
+
+  if (!isMemoryStore(deps.storePath)) {
+    const jp = jsonlPath(deps.storePath);
+    const all = readJsonl(jp).map((q) => (q.id === id ? updated : q));
+    rewriteJsonl(jp, all);
+  } else {
+    memQuirks.set(id, updated);
+  }
+
+  return updated;
+}
+
 /** Add a new quirk to the vector store, keyword index, and audit log. */
 export async function addQuirk(deps: QuirkStoreDeps, input: QuirkInput): Promise<Quirk> {
   const allowed = isQuirkAllowed(input.content);
@@ -116,8 +225,13 @@ export async function addQuirk(deps: QuirkStoreDeps, input: QuirkInput): Promise
   return quirk;
 }
 
-/** Remove a quirk by its ID. */
+/** Remove a quirk by its ID. Throws if no quirk with the given ID exists. */
 export async function removeQuirk(deps: QuirkStoreDeps, id: string): Promise<void> {
+  const existing = await getQuirk(deps, id);
+  if (!existing) {
+    throw new Error(`Quirk not found: ${id}`);
+  }
+
   const filePath = QUIRK_FILE_PREFIX + id;
   await deps.store.deleteByFilePath(filePath);
   deps.keywordIndex.removeByFilePath(filePath);

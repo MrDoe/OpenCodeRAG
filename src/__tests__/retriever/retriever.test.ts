@@ -2,12 +2,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { retrieve } from "../../retriever/retriever.js";
 import { KeywordIndex } from "../../retriever/keyword-index.js";
-import type {
-  EmbeddingProvider,
-  KeywordIndex as KeywordIndexInterface,
-  VectorStore,
-  SearchResult,
-  Chunk,
+import {
+  CODE_SEARCH_FILTER,
+  type EmbeddingProvider,
+  type KeywordIndex as KeywordIndexInterface,
+  type VectorStore,
+  type SearchResult,
+  type Chunk,
 } from "../../core/interfaces.js";
 
 function makeEmbedder(vectors: number[][]): EmbeddingProvider {
@@ -447,6 +448,29 @@ describe("retrieve", () => {
       ]);
       const results = await retrieve("code", embedder, store, { filter: { kinds: ["quirk"] } });
       assert.equal(results.length, 0, "should return no results when filter excludes all");
+    });
+
+    it("CODE_SEARCH_FILTER excludes quirk chunks but keeps regular chunks", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "q1", content: "quirk content", metadata: { filePath: "q1", startLine: 0, endLine: 0, language: "quirk", kind: "quirk", quirkType: "gotcha" } } },
+        { score: 0.8, chunk: { id: "c1", content: "code content", metadata: { filePath: "c1.ts", startLine: 1, endLine: 5, language: "typescript" } } },
+        { score: 0.7, chunk: { id: "d1", content: "doc content", metadata: { filePath: "doc.md", startLine: 1, endLine: 5, language: "markdown" } } },
+      ]);
+      const ki = new KeywordIndex();
+      ki.addChunks([
+        { id: "q1", content: "quirk content", metadata: { filePath: "q1", startLine: 0, endLine: 0, language: "quirk", kind: "quirk" } },
+        { id: "c1", content: "code content", metadata: { filePath: "c1.ts", startLine: 1, endLine: 5, language: "typescript" } },
+        { id: "d1", content: "doc content", metadata: { filePath: "doc.md", startLine: 1, endLine: 5, language: "markdown" } },
+      ]);
+      const results = await retrieve("content", embedder, store, {
+        keywordIndex: ki,
+        keywordWeight: 0.4,
+        minScore: 0,
+        filter: CODE_SEARCH_FILTER,
+      });
+      const ids = results.map((r) => r.chunk.id).sort();
+      assert.deepEqual(ids, ["c1", "d1"], "should keep regular chunks, never quirks");
     });
   });
 });

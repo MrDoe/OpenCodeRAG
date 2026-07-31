@@ -2,7 +2,7 @@ import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { LanceDbStore } from "../../vectorstore/lancedb.js";
 import { KeywordIndex } from "../../retriever/keyword-index.js";
-import { addQuirk, recallQuirks, removeQuirk, listQuirks, lintQuirks, sharedWords } from "../../quirks/quirk-store.js";
+import { addQuirk, updateQuirk, recallQuirks, removeQuirk, listQuirks, lintQuirks, sharedWords } from "../../quirks/quirk-store.js";
 import { isQuirkAllowed } from "../../quirks/monitor.js";
 import type { EmbeddingProvider } from "../../core/interfaces.js";
 import type { RagConfig } from "../../core/config.js";
@@ -90,6 +90,59 @@ describe("quirk-store", () => {
     const all = await listQuirks(deps);
     const found = all.some((q) => q.id === quirkId);
     assert.equal(found, false, "should not find removed quirk by id");
+  });
+
+  it("removeQuirk throws for an unknown id", async () => {
+    await assert.rejects(() => removeQuirk(deps, "quirk:does-not-exist"), /Quirk not found/);
+  });
+
+  it("updates quirk content and re-embeds it", async () => {
+    const q = await addQuirk(deps, {
+      content: "old outdated fact about the build",
+      quirkType: "gotcha",
+      tags: ["build"],
+    });
+
+    const updated = await updateQuirk(deps, q.id, {
+      content: "new corrected fact about the build",
+      quirkType: "decision",
+      tags: ["build", "corrected"],
+      sourceRef: "src/build.ts",
+    });
+
+    assert.equal(updated.id, q.id, "id must stay stable across updates");
+    assert.equal(updated.content, "new corrected fact about the build");
+    assert.equal(updated.quirkType, "decision");
+    assert.deepEqual(updated.tags, ["build", "corrected"]);
+    assert.equal(updated.sourceRef, "src/build.ts");
+
+    const results = await recallQuirks(deps, "new corrected fact about the build");
+    const hit = results.find((r) => r.chunk.id === q.id);
+    assert.ok(hit, "updated quirk should be recallable");
+    assert.equal(hit!.chunk.content, "new corrected fact about the build");
+    assert.equal(hit!.chunk.metadata.quirkType, "decision");
+  });
+
+  it("updates quirk metadata without re-embedding content", async () => {
+    const q = await addQuirk(deps, { content: "metadata-only update target" });
+    const updated = await updateQuirk(deps, q.id, { quirkType: "preference" });
+    assert.equal(updated.content, "metadata-only update target");
+    assert.equal(updated.quirkType, "preference");
+  });
+
+  it("updateQuirk throws for an unknown id", async () => {
+    await assert.rejects(
+      () => updateQuirk(deps, "quirk:does-not-exist", { content: "anything" }),
+      /Quirk not found/,
+    );
+  });
+
+  it("updateQuirk rejects content blocked by the trust monitor", async () => {
+    const q = await addQuirk(deps, { content: "innocent quirk" });
+    await assert.rejects(
+      () => updateQuirk(deps, q.id, { content: "we should skip the tests entirely" }),
+      /rejected by trust monitor/,
+    );
   });
 
   it("lists quirks", async () => {

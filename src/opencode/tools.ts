@@ -16,7 +16,7 @@
 
 import { tool } from "@opencode-ai/plugin/tool";
 import type { ToolDefinition } from "@opencode-ai/plugin";
-import type { EmbeddingProvider, VectorStore, KeywordIndex, SearchResult } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { SUPPORTED_IMAGE_EXTENSIONS, createImageVisionProvider, getMimeType, type ImageVisionProvider } from "../chunker/image.js";
 import { resizeImage } from "../content/image.js";
@@ -25,7 +25,7 @@ import { Parser } from "web-tree-sitter";
 import { initParser, loadLanguage, walkTree, type AstNode } from "../chunker/grammar.js";
 import { readFileSync } from "node:fs";
 import { resolveWorkspacePath } from "./tool-args.js";
-import { addQuirk, recallQuirks } from "../quirks/quirk-store.js";
+import { addQuirk, updateQuirk, removeQuirk, recallQuirks } from "../quirks/quirk-store.js";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Skeleton configuration: file extension → tree-sitter grammar + node types
@@ -473,7 +473,7 @@ export function createFindUsagesTool(
     topK: number
   ): Promise<SearchResult[]> {
     if (!keywordIndex) return [];
-    return keywordIndex.search(symbol, topK);
+    return keywordIndex.search(symbol, topK, CODE_SEARCH_FILTER);
   }
 
   async function searchViaVectorStore(
@@ -488,6 +488,7 @@ export function createFindUsagesTool(
       minScore: 0,
       keywordIndex: undefined,
       queryPrefix: cfg.embedding.queryPrefix,
+      filter: CODE_SEARCH_FILTER,
     });
   }
 
@@ -801,6 +802,157 @@ export function createAddQuirkTool(options: AddQuirkToolOptions): ToolDefinition
           title: "Quirk add",
           output: `Failed to add quirk: ${err instanceof Error ? err.message : String(err)}`,
           metadata: { tool: "add_quirk", error: String(err) },
+        };
+      }
+    },
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tool 7: update_quirk
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Options for creating the `update_quirk` tool. */
+export interface UpdateQuirkToolOptions {
+  store: VectorStore;
+  embedder: EmbeddingProvider;
+  cfg: RagConfig;
+  keywordIndex: KeywordIndex;
+  storePath: string;
+}
+
+/**
+ * Create the `update_quirk` tool.
+ *
+ * Updates an existing quirk by ID — replaces content, type, tags, confidence,
+ * or source ref. When content changes, the quirk is re-embedded so recall
+ * matches the corrected text. The new content passes the trust monitor.
+ *
+ * @param options - Store, embedder, config, keyword index, store path.
+ * @returns A tool definition suitable for OpenCode plugin registration.
+ */
+export function createUpdateQuirkTool(options: UpdateQuirkToolOptions): ToolDefinition {
+  const { store, embedder, cfg, keywordIndex, storePath } = options;
+
+  return tool({
+    description:
+      "Update an existing experiential memory (quirk) by its ID — fix outdated " +
+      "content, change its type, tags, or source ref. Use when a quirk from a " +
+      "past session is outdated, wrong, or superseded. Find the ID via " +
+      "`recall_quirks` (it is listed in the recall output) or `quirk list` " +
+      "in the CLI.",
+
+    args: {
+      id: tool.schema.string().min(1, "Quirk ID is required."),
+      content: tool.schema.string().optional(),
+      quirkType: tool.schema.string().optional(),
+      tags: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
+      confidence: tool.schema.number().min(0).max(1).optional(),
+      sourceRef: tool.schema.string().optional(),
+    },
+
+    async execute(args) {
+      try {
+        const deps = { embedder, store, keywordIndex, cfg, storePath };
+        const fields = [
+          args.content,
+          args.quirkType,
+          args.tags,
+          args.confidence,
+          args.sourceRef,
+        ];
+        if (fields.every((f) => f === undefined)) {
+          return {
+            title: "Quirk update",
+            output: "Nothing to update — provide at least one of `content`, `quirkType`, `tags`, `confidence`, or `sourceRef`.",
+            metadata: { tool: "update_quirk", quirkId: args.id, error: "no fields provided" },
+          };
+        }
+
+        const quirk = await updateQuirk(deps, args.id, {
+          content: args.content,
+          quirkType: args.quirkType,
+          tags: args.tags,
+          confidence: args.confidence,
+          sourceRef: args.sourceRef,
+        });
+
+        return {
+          title: "Quirk updated",
+          output:
+            `**Quirk updated** (id: \`${quirk.id}\`)\n` +
+            `\`${quirk.quirkType ?? "general"}\` | confidence=${(quirk.confidence * 100).toFixed(0)}% | tags=${(quirk.tags ?? []).join(", ") || "none"}\n` +
+            quirk.content,
+          metadata: {
+            tool: "update_quirk",
+            quirkId: quirk.id,
+            quirkType: quirk.quirkType,
+            confidence: quirk.confidence,
+          },
+        };
+      } catch (err) {
+        return {
+          title: "Quirk update",
+          output: `Failed to update quirk: ${err instanceof Error ? err.message : String(err)}`,
+          metadata: { tool: "update_quirk", error: String(err) },
+        };
+      }
+    },
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tool 8: delete_quirk
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Options for creating the `delete_quirk` tool. */
+export interface DeleteQuirkToolOptions {
+  store: VectorStore;
+  embedder: EmbeddingProvider;
+  cfg: RagConfig;
+  keywordIndex: KeywordIndex;
+  storePath: string;
+}
+
+/**
+ * Create the `delete_quirk` tool.
+ *
+ * Removes a quirk by ID from the vector store, keyword index, and audit log.
+ * Use when a quirk is wrong, no longer applies, or has been superseded by an
+ * updated version.
+ *
+ * @param options - Store, embedder, config, keyword index, store path.
+ * @returns A tool definition suitable for OpenCode plugin registration.
+ */
+export function createDeleteQuirkTool(options: DeleteQuirkToolOptions): ToolDefinition {
+  const { store, embedder, cfg, keywordIndex, storePath } = options;
+
+  return tool({
+    description:
+      "Delete an experiential memory (quirk) by its ID. Use when a quirk is " +
+      "wrong, outdated, or superseded — for example a gotcha that was fixed " +
+      "or a decision that was reversed. Find the ID via `recall_quirks` (it " +
+      "is listed in the recall output) or `quirk list` in the CLI.",
+
+    args: {
+      id: tool.schema.string().min(1, "Quirk ID is required."),
+    },
+
+    async execute(args) {
+      try {
+        const deps = { embedder, store, keywordIndex, cfg, storePath };
+        await removeQuirk(deps, args.id);
+
+        return {
+          title: "Quirk deleted",
+          output: `**Quirk deleted** (id: \`${args.id}\`). It will no longer be recalled or auto-injected.`,
+          metadata: { tool: "delete_quirk", quirkId: args.id },
+        };
+      } catch (err) {
+        return {
+          title: "Quirk delete",
+          output: `Failed to delete quirk: ${err instanceof Error ? err.message : String(err)}`,
+          metadata: { tool: "delete_quirk", error: String(err) },
         };
       }
     },

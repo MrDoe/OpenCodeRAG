@@ -6,7 +6,7 @@
 
 import type { Plugin, PluginInput, Hooks, ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
-import type { EmbeddingProvider, DescriptionProvider, KeywordIndex, VectorStore, SearchResult } from "./core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type VectorStore, type SearchResult } from "./core/interfaces.js";
 import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
 import { createEmbedder } from "./embedder/factory.js";
 import { createDescriptionProvider } from "./describer/factory.js";
@@ -24,6 +24,8 @@ import {
   createDescribeImageTool,
   createRecallQuirksTool,
   createAddQuirkTool,
+  createUpdateQuirkTool,
+  createDeleteQuirkTool,
 } from "./opencode/tools.js";
 import { resolveApiKey } from "./core/resolve-api-key.js";
 import { consumePendingRagInjection } from "./core/rag-injection-flag.js";
@@ -802,6 +804,40 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     });
   }
 
+  try {
+    const updateQuirkTool = createUpdateQuirkTool({
+      store,
+      embedder,
+      cfg: effectiveCfg,
+      keywordIndex: keywordIndex!,
+      storePath: options.storePath,
+    });
+    tools["update_quirk"] = updateQuirkTool;
+  } catch (err) {
+    appendDebugLog(options.logFilePath, {
+      scope: "plugin",
+      message: "Failed to register update_quirk tool",
+      error: err,
+    });
+  }
+
+  try {
+    const deleteQuirkTool = createDeleteQuirkTool({
+      store,
+      embedder,
+      cfg: effectiveCfg,
+      keywordIndex: keywordIndex!,
+      storePath: options.storePath,
+    });
+    tools["delete_quirk"] = deleteQuirkTool;
+  } catch (err) {
+    appendDebugLog(options.logFilePath, {
+      scope: "plugin",
+      message: "Failed to register delete_quirk tool",
+      error: err,
+    });
+  }
+
   if (readOverride) {
     const readTool = createRagReadTool({
       worktree: options.worktree,
@@ -1391,6 +1427,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             keywordIndex,
             keywordWeight: hybridCfg?.keywordWeight,
             queryPrefix: effectiveCfg.embedding.queryPrefix,
+            // Never surface quirk chunks in hotkey file lists / chunk injections.
+            filter: CODE_SEARCH_FILTER,
           });
           const retrievalTimeMs = Date.now() - retrievalStart;
 

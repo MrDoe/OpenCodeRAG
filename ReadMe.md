@@ -153,12 +153,16 @@ OpenCodeRAG gives your agent **persistent, cross-session memory** of non-obvious
 |------|----------|
 | `recall_quirks(query)` | You hit an error or need to remember a gotcha, preference, or decision from past sessions |
 | `add_quirk(content, { type, tags })` | You just discovered a non-obvious fact, workaround, or convention worth remembering |
+| `update_quirk(id, { content, type, tags })` | A recalled quirk is outdated or wrong — fix it instead of adding a duplicate |
+| `delete_quirk(id)` | A quirk is fixed, obsolete, or no longer applies — remove it |
 
 **CLI — manage quirks directly:**
 
 ```bash
 opencode-rag quirk add "npm needs --legacy-peer-deps" --type gotcha --tag installation
 opencode-rag quirk list
+opencode-rag quirk update <id> --content "..." --type decision
+opencode-rag quirk rm <id>
 opencode-rag quirk lint            # flag low-confidence / stale / duplicate quirks
 opencode-rag quirk test "npm needs --legacy-peer-deps"
 # ✓ Quirk has been appended:
@@ -166,7 +170,7 @@ opencode-rag quirk test "npm needs --legacy-peer-deps"
 #   99% confidence
 ```
 
-When `memory.autoInject` is `true`, the plugin checks for relevant quirks on every user message using the combined agent-response + user-query as the search query. Quirks are only injected when their relevance score exceeds the threshold — `recallMinScore` (default 0.72) for the user message, `autoInjectMinScore` (default 0.45) for the system prompt. A latency budget (`autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections. Every `add_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
+When `memory.autoInject` is `true`, the plugin checks for relevant quirks on every user message using the combined agent-response + user-query as the search query. Quirks are only injected when their relevance score exceeds the threshold — `recallMinScore` (default 0.72) for the user message, `autoInjectMinScore` (default 0.45) for the system prompt. A latency budget (`autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections. Every `add_quirk` and every content-changing `update_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Outdated or fixed quirks should be corrected with `update_quirk` / `delete_quirk` rather than left to contradict newer memory. See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
 
 ## MCP Server (Optional)
 

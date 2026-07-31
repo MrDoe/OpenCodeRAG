@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @fileoverview Configuration types and defaults for OpenCodeRAG. Defines RagConfig,
  * all sub-config interfaces, DEFAULT_CONFIG, validateConfig, and loadConfig.
  */
@@ -635,14 +635,14 @@ export const DEFAULT_CONFIG: RagConfig = {
   },
   memory: {
     enabled: true,
-    autoInject: false,
+    autoInject: true,
     minConfidence: 0.5,
-    recallMinScore: 0.72,
-    autoInjectMinScore: 0.6,
+    recallMinScore: 0.6,
+    autoInjectMinScore: 0.5,
     autoInjectLatencyBudgetMs: 2000,
     autoInjectTopK: 2,
     autoInjectMinTokenOverlap: 1,
-    passiveCapture: false,
+    passiveCapture: true,
     promptEnforcement: true,
     sessionEndExtraction: true,
     autoCaptureMaxPerTurn: 2,

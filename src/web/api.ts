@@ -12,7 +12,7 @@ import { analyzeTokenUsage, compareTokenAnalyses, projectTokenSavings } from "..
 import { listQuirks, lintQuirks, removeQuirk, type QuirkStoreDeps } from "../quirks/quirk-store.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
 import type { RagConfig } from "../core/config.js";
-import type { EmbeddingProvider } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider } from "../core/interfaces.js";
 
 const FILE_MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -260,7 +260,15 @@ async function handleQuirkLint(deps: QuirkStoreDeps): Promise<ApiResponse> {
 
 /** Delete a single quirk by its ID from the store, index, and audit log. */
 async function handleQuirkDelete(deps: QuirkStoreDeps, id: string): Promise<ApiResponse> {
-  await removeQuirk(deps, id);
+  try {
+    await removeQuirk(deps, id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/Quirk not found/.test(message)) {
+      return { status: 404, body: { error: message } };
+    }
+    throw err;
+  }
   return { status: 200, body: { deleted: true, id } };
 }
 
@@ -326,7 +334,7 @@ async function handleSearch(
     return { status: 200, body: { results: [] } };
   }
 
-  const results = keywordIndex.search(query, topK);
+  const results = keywordIndex.search(query, topK, CODE_SEARCH_FILTER);
 
   return {
     status: 200,
@@ -395,6 +403,7 @@ async function handleRetrieve(
       filter: {
         pathPatterns: pathFilter ? pathFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         languages: langFilter ? langFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+        kinds: CODE_SEARCH_FILTER.kinds,
       },
     } satisfies RetrieveOptions);
 

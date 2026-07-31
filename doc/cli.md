@@ -243,6 +243,7 @@ opencode-rag quirk <subcommand> [options]
 |---|---|
 | `add` | Add a new quirk |
 | `list` | List all quirks |
+| `update` | Update a quirk by ID (content, type, tags, confidence, source ref) |
 | `rm` | Remove a quirk by ID |
 | `lint` | Health-check quirks (low confidence, stale, duplicates) |
 | `test` | Test whether a quirk with similar content already exists |
@@ -275,6 +276,29 @@ opencode-rag quirk list [options]
 | Flag | Default | Description |
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
+
+#### `quirk update`
+
+```bash
+opencode-rag quirk update <id> [options]
+```
+
+Update an existing quirk by ID. When `--content` changes, the new text must pass the trust monitor, the quirk is re-embedded, and the vector-store chunk + keyword index entry are replaced under the same ID. At least one update option is required.
+
+**Arguments:**
+| Arg | Description |
+|---|---|
+| `<id>` | Quirk ID to update (shown in `quirk list` and `recall_quirks` output) |
+
+**Options:**
+| Flag | Description |
+|---|---|
+| `--content <text>` | Replacement quirk text |
+| `-t, --type <type>` | Quirk type: gotcha, preference, decision, environment-constraint |
+| `--tag <tags...>` | Replacement tags for filtering |
+| `--confidence <0-1>` | Replacement confidence value |
+| `--source-ref <path>` | Source file path reference |
+| `-c, --config <path>` | Path to config file (default: auto-detected) |
 
 #### `quirk rm`
 
