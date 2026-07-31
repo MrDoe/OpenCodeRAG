@@ -34,6 +34,8 @@ function buildExchangeText(exchanges: CaptureExchange[]): string {
   return lines.join("\n");
 }
 
+const VALID_QUIRK_TYPES = new Set(["gotcha", "preference", "decision", "environment-constraint"]);
+
 function parseExtractionOutput(text: string): { quirkType: string; content: string }[] {
   const results: { quirkType: string; content: string }[] = [];
   for (const line of text.split("\n")) {
@@ -44,6 +46,9 @@ function parseExtractionOutput(text: string): { quirkType: string; content: stri
     const quirkType = trimmed.slice(0, pipeIdx).trim();
     const content = trimmed.slice(pipeIdx + 1).trim();
     if (!quirkType || !content || content.length > 200) continue;
+    // An LLM emitting a garbage type would otherwise pollute recall filters —
+    // skip unknown types (or default them to "gotcha").
+    if (!VALID_QUIRK_TYPES.has(quirkType)) continue;
     results.push({ quirkType, content });
   }
   return results;

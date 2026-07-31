@@ -157,14 +157,22 @@ export function registerStatusCommand(program: Command): void {
           }
         }
 
-        // Async GitHub update check (fire-and-forget, 5s timeout).
-        // Runs unless autoUpdate is explicitly disabled.
+        // GitHub update check. Runs unless autoUpdate is explicitly disabled.
+        // Awaited (raced against 3s) so the result can actually print —
+        // process.exit(0) below would previously kill the promise before it
+        // resolved, making the Update: line dead code.
         if (config.autoUpdate?.enabled) {
-          checkForUpdate(pkg.version).then((info) => {
-            if (info.updateAvailable) {
+          try {
+            const info = await Promise.race([
+              checkForUpdate(pkg.version),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+            ]);
+            if (info && info.updateAvailable) {
               process.stdout.write(`  ${c.label("Update:")}            ${c.warn(`v${info.latestVersion} available — run \`opencode-rag update\` to install`)}\n`);
             }
-          }).catch(() => { /* ignore network errors */ });
+          } catch {
+            /* ignore network errors */
+          }
         }
 
         // Force exit — avoid LanceDB close() hanging on Windows native bindings.

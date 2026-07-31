@@ -13,7 +13,7 @@
 import type { Command } from "commander";
 import path from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
-import { loadConfig } from "../../core/config.js";
+import { loadConfig, findConfigFile } from "../../core/config.js";
 import { checkProviderHealth, pullOllamaModels } from "../../embedder/health.js";
 import { destroyAllPooledConnections } from "../../embedder/http.js";
 import { c } from "../format.js";
@@ -49,9 +49,12 @@ export function registerInitCommand(program: Command): void {
     .option("--skip-health-check", "skip provider connectivity and model availability check")
     .action(async (options: InitOptions) => {
       try {
-        const cwd = process.cwd();
-        const packageMetadata = getPackageMetadata();
-      const configPath = path.join(cwd, "opencode-rag.json");
+      const cwd = process.cwd();
+      const packageMetadata = getPackageMetadata();
+      // Use findConfigFile so an existing config in .opencode/rag.json (or
+      // .opencode/opencode-rag.json) is respected instead of being shadowed
+      // by a new root-level opencode-rag.json.
+      const configPath = findConfigFile(cwd) ?? path.join(cwd, "opencode-rag.json");
       const opencodeDir = path.join(cwd, ".opencode");
       const gitignorePath = path.join(opencodeDir, ".gitignore");
       const opencodeConfigPath = path.join(opencodeDir, "opencode.json");
@@ -273,26 +276,32 @@ export function registerInitCommand(program: Command): void {
           });
           console.log(`\n  ${c.warn("Models not found:")} ${pullEntries.map((e) => e.model).join(", ")}`);
 
-          const readline = await import("node:readline");
-          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-          const answer = await new Promise<string>((resolve) => {
-            rl.question(`  Pull ${pullEntries.length === 1 ? "this model" : "these models"} now? (y/n) `, resolve);
-          });
-          rl.close();
-
-          if (answer.toLowerCase() === "y" || answer.toLowerCase() === "yes") {
-            console.log();
-            try {
-              await pullOllamaModels(pullEntries, (model, line) => {
-                console.log(`  ${c.value(model)}: ${line}`);
-              });
-              console.log(`\n  ${c.success("Models pulled successfully.")}`);
-            } catch (err) {
-              console.error(`\n  ${c.error("Pull failed:")} ${(err as Error).message}`);
-              console.log(`  ${c.dim("Pull manually with: ollama pull <model>")}`);
-            }
+          // Non-TTY guard: rl.question would block forever with a still-open
+          // stdin pipe (e.g. `echo y | opencode-rag init`, CI runners).
+          if (!process.stdin.isTTY) {
+            console.log(`  ${c.dim("Non-interactive shell — skipping. Pull manually with: ollama pull <model>")}`);
           } else {
-            console.log(`  ${c.dim("Skipped. Pull manually with: ollama pull <model>")}`);
+            const readline = await import("node:readline");
+            const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+            const answer = await new Promise<string>((resolve) => {
+              rl.question(`  Pull ${pullEntries.length === 1 ? "this model" : "these models"} now? (y/n) `, resolve);
+            });
+            rl.close();
+
+            if (answer.toLowerCase() === "y" || answer.toLowerCase() === "yes") {
+              console.log();
+              try {
+                await pullOllamaModels(pullEntries, (model, line) => {
+                  console.log(`  ${c.value(model)}: ${line}`);
+                });
+                console.log(`\n  ${c.success("Models pulled successfully.")}`);
+              } catch (err) {
+                console.error(`\n  ${c.error("Pull failed:")} ${(err as Error).message}`);
+                console.log(`  ${c.dim("Pull manually with: ollama pull <model>")}`);
+              }
+            } else {
+              console.log(`  ${c.dim("Skipped. Pull manually with: ollama pull <model>")}`);
+            }
           }
         }
 

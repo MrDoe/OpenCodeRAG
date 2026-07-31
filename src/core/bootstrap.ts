@@ -4,7 +4,7 @@
  */
 
 import path from "node:path";
-import { loadConfig, findConfigFile, DEFAULT_CONFIG, type RagConfig } from "./config.js";
+import { loadConfig, findConfigFile, resolveLogConfig, DEFAULT_CONFIG, type RagConfig } from "./config.js";
 import { resolveApiKey } from "./resolve-api-key.js";
 import { loadChunkersFromConfig } from "../chunker/loader.js";
 import { createEmbedder } from "../embedder/factory.js";
@@ -62,6 +62,12 @@ async function probeDimension(embedder: EmbeddingProvider): Promise<number> {
   } catch {
     // fallback to 384
   }
+  // A wrong dimension is only discovered later as cryptic LanceDB errors —
+  // surface the fallback loudly so misconfigured providers are easy to spot.
+  console.warn(
+    "[bootstrap] Could not probe embedding dimension — falling back to 384. " +
+    "If indexing later fails with dimension errors, set embedding.vectorDimension explicitly.",
+  );
   return 384;
 }
 
@@ -94,12 +100,15 @@ export async function resolveRagContext(
     resolveApiKey(cfg, workDir);
     await loadChunkersFromConfig(cfg, path.dirname(configPath));
   } else {
-    cfg = { ...DEFAULT_CONFIG };
+    // Deep-clone so resolveApiKey (below) cannot mutate the shared
+    // DEFAULT_CONFIG singleton.
+    cfg = structuredClone(DEFAULT_CONFIG);
+    resolveApiKey(cfg, workDir);
   }
 
   const logFilePath = path.resolve(
     workDir,
-    cfg.logging?.logFilePath ?? ".opencode/opencode-rag.log"
+    resolveLogConfig(cfg).logFilePath,
   );
 
   const embedder = createEmbedder(cfg);

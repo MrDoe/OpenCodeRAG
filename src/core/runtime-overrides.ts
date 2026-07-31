@@ -24,12 +24,6 @@ export interface RuntimeOverrides {
       debounceMs?: number;
       watcher?: string;
     };
-    autoInject?: {
-      enabled?: boolean;
-      minScore?: number;
-      maxChunks?: number;
-      contentType?: string;
-    };
   };
   embedding?: {
     provider?: string;

@@ -22,6 +22,7 @@ export function registerQuirkCommand(program: Command): void {
     .option("-t, --type <type>", "quirk type: gotcha, preference, decision, environment-constraint")
     .option("--tag <tags...>", "tags for filtering")
     .option("--source-ref <path>", "source file path reference")
+    .option("-c, --config <path>", "path to config file")
     .action(async (content: string, options: Record<string, string | string[] | undefined>) => {
       try {
         const ctx = await resolveCliContext(options, resolveLogPath());
@@ -60,6 +61,12 @@ export function registerQuirkCommand(program: Command): void {
     .option("-c, --config <path>", "path to config file")
     .action(async (id: string, options: Record<string, unknown>) => {
       try {
+        const confidence = options.confidence as number | undefined;
+        if (confidence !== undefined && (Number.isNaN(confidence) || confidence < 0 || confidence > 1)) {
+          logCliError(resolveLogPath(), "quirk update", "Failed to update quirk: --confidence must be a number between 0 and 1");
+          process.exit(1);
+        }
+
         const ctx = await resolveCliContext(options, resolveLogPath());
         const { config, embedder, store, keywordIndex } = ctx;
         const tags = options.tag as string | string[] | undefined;
@@ -71,7 +78,7 @@ export function registerQuirkCommand(program: Command): void {
             content: options.content as string | undefined,
             quirkType: options.type as string | undefined,
             tags: tags ? (Array.isArray(tags) ? tags : [tags]) : undefined,
-            confidence: options.confidence as number | undefined,
+            confidence,
             sourceRef: options.sourceRef as string | undefined,
           },
         );
@@ -172,7 +179,7 @@ export function registerQuirkCommand(program: Command): void {
         );
 
         if (results.length > 0) {
-          logCliInfo(ctx.logFilePath, "quirk test", c.success("\n✓ Quirk has been appended:\n"));
+          logCliInfo(ctx.logFilePath, "quirk test", c.warn("\n✗ Similar quirk(s) already exist — quirk has NOT been appended:\n"));
           for (const r of results) {
             const badge = r.chunk.metadata.quirkType ? `[${r.chunk.metadata.quirkType}] ` : "";
             const tags = r.chunk.metadata.tags?.length ? ` (${r.chunk.metadata.tags.join(", ")})` : "";
@@ -182,7 +189,7 @@ export function registerQuirkCommand(program: Command): void {
             logCliInfo(ctx.logFilePath, "quirk test", "");
           }
         } else {
-          logCliInfo(ctx.logFilePath, "quirk test", c.warn("\n✗ No matching quirk found — quirk has not been appended\n"));
+          logCliInfo(ctx.logFilePath, "quirk test", c.success("\n✓ No matching quirk found — safe to append\n"));
         }
 
         await cleanupContext(ctx);

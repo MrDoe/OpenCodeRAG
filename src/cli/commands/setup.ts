@@ -93,9 +93,12 @@ export function registerSetupCommand(program: Command): void {
       if (options.uninstall) {
         console.log(`\n${c.heading("Removing OpenCodeRAG runtime...")}\n`);
         removeIfExists(runtimePluginDir);
-        removeIfExists(runtimeSdkDir);
+        // Only remove the @opencode-ai/plugin SDK package — the scope dir may
+        // be shared with other OpenCode plugins/tools.
+        removeIfExists(runtimeSdkPluginDir);
         removeIfExists(versionFile);
-        console.log(`  ${c.updated("Removed:")} ${c.file(runtimeDir)}`);
+        console.log(`  ${c.updated("Removed:")} ${c.file(runtimePluginDir)}`);
+        console.log(`  ${c.updated("Removed:")} ${c.file(runtimeSdkPluginDir)}`);
         console.log(`\n  ${c.success("Done.")} Run ${c.file("npm uninstall -g opencode-rag-plugin")} to remove the global package.\n`);
         return;
       }
