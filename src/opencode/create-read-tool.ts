@@ -165,9 +165,16 @@ export function createRagReadTool(
         };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const code = (err as NodeJS.ErrnoException | undefined)?.code;
+        // Distinguish path problems (ENOENT / outside workspace) from RAG
+        // retrieval failures — "OpenCodeRAG retrieval failed" was misleading
+        // for a simple missing file.
+        const isPathProblem = code === "ENOENT" || code === "EACCES" || /ENOENT|outside the workspace|does not exist/i.test(message);
         return {
           title: "Read",
-          output: retrievalErrorMessage(message),
+          output: isPathProblem
+            ? `Could not read file: ${message}`
+            : retrievalErrorMessage(message),
           metadata: {
             tool: "read",
             filePath: resolvedPath,

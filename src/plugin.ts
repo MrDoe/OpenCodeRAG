@@ -28,7 +28,7 @@ import {
   createDeleteQuirkTool,
 } from "./opencode/tools.js";
 import { resolveApiKey } from "./core/resolve-api-key.js";
-import { consumePendingRagInjection } from "./core/rag-injection-flag.js";
+import { consumePendingRagInjection, peekPendingRagInjection } from "./core/rag-injection-flag.js";
 import { loadDocProgress, markSubdirectoryDocumented } from "./core/doc-progress.js";
 import { loadManifest } from "./core/manifest.js";
 import { createSessionLogger, type SessionLogger } from "./eval/session-logger.js";
@@ -41,19 +41,18 @@ import { autoCaptureQuirks, type CaptureExchange } from "./quirks/auto-capture.j
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn, execSync } from "node:child_process";
-import { tmpdir } from "node:os";
 
 /** Maximum entries per session map before oldest entries are evicted. */
 const MAX_SESSION_MAP_SIZE = 50;
+/** Maximum tool results kept per session (for quirk extraction). */
+const MAX_SESSION_TOOL_RESULTS = 20;
 
 /** Cache of loaded RAG configurations keyed by workspace directory. */
 const configCache = new Map<string, RagConfig>();
 /** Active background indexer instances keyed by workspace directory. */
 const backgroundIndexers = new Map<string, { close: () => Promise<void> }>();
-/** Active MCP server instances keyed by workspace directory. */
-const mcpServers = new Map<string, { close: () => Promise<void> }>();
+/** Active vector stores keyed by workspace directory — closed on reload/shutdown. */
+const ragStores = new Map<string, { close: () => Promise<void> }>();
 /** Pending update notifications keyed by workspace directory. */
 const pendingUpdateInfo = new Map<string, UpdateInfo>();
 /** Workspace directories that have already been prompted about an update this session. */
@@ -64,15 +63,15 @@ const pendingRestartNotice = new Map<string, { fromVersion: string; toVersion: s
 /** Guard flag to prevent re-entrant shutdown. */
 let shutdownRegistered = false;
 
-/** Close all active background indexers and MCP servers, then destroy idle sockets. */
+/** Close all active background indexers and vector stores, then destroy idle sockets. */
 async function shutdownPluginResources(): Promise<void> {
   for (const [dir, indexer] of backgroundIndexers) {
     try { await indexer.close(); } catch { /* best-effort */ }
     backgroundIndexers.delete(dir);
   }
-  for (const [dir, server] of mcpServers) {
-    try { await server.close(); } catch { /* best-effort */ }
-    mcpServers.delete(dir);
+  for (const [dir, store] of ragStores) {
+    try { await store.close(); } catch { /* best-effort */ }
+    ragStores.delete(dir);
   }
   configCache.clear();
   pendingUpdateInfo.clear();
@@ -932,7 +931,10 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       try {
         const results = sessionToolResults.get(input.sessionID) ?? [];
         results.push({ tool: input.tool, output: output.output ?? "" });
-        boundedSet(sessionToolResults, input.sessionID, results, MAX_SESSION_MAP_SIZE);
+        // Cap the per-session list — long sessions accumulate full tool
+        // outputs; only the recent entries matter for quirk extraction.
+        const capped = results.length > MAX_SESSION_TOOL_RESULTS ? results.slice(-MAX_SESSION_TOOL_RESULTS) : results;
+        boundedSet(sessionToolResults, input.sessionID, capped, MAX_SESSION_MAP_SIZE);
       } catch {
         // Non-critical — must never throw
       }
@@ -1000,9 +1002,16 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             if (query.length > 0) {
               const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
               const budgetMs = memCfg.autoInjectLatencyBudgetMs ?? 2000;
+              let timer: ReturnType<typeof setTimeout> | undefined;
               let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 2, minScore: memCfg.autoInjectMinScore }),
-                new Promise<any>((resolve) => setTimeout(() => resolve([]), budgetMs)),
+                recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 2, minScore: memCfg.autoInjectMinScore })
+                  .then((r) => {
+                    if (timer) clearTimeout(timer);
+                    return r;
+                  }),
+                new Promise<any>((resolve) => {
+                  timer = setTimeout(() => resolve([]), budgetMs);
+                }),
               ]);
               // Dedup: skip quirks already injected into this session
               const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, sessionId, MAX_SESSION_MAP_SIZE);
@@ -1068,8 +1077,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             }
           }
         }
-        sessionPrevUserReq.set(input.sessionID, text);
-        sessionToolResults.set(input.sessionID, []);
+        boundedSet(sessionPrevUserReq, input.sessionID, text, MAX_SESSION_MAP_SIZE);
+        boundedSet(sessionToolResults, input.sessionID, [], MAX_SESSION_MAP_SIZE);
 
         boundedSet(sessionLastMessage, input.sessionID, text, MAX_SESSION_MAP_SIZE);
 
@@ -1357,9 +1366,16 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               // Use the stricter recallMinScore for user-prompt injection
               // (system prompt injection uses the lower autoInjectMinScore)
               const minScore = quirkMemoryCfg.recallMinScore ?? 0.72;
+              let timer: ReturnType<typeof setTimeout> | undefined;
               let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, quirkQuery, { topK: quirkMemoryCfg.autoInjectTopK ?? 2, minScore }),
-                new Promise<any>((resolve) => setTimeout(() => resolve([]), budgetMs)),
+                recallQuirks(quirkDeps, quirkQuery, { topK: quirkMemoryCfg.autoInjectTopK ?? 2, minScore })
+                  .then((r) => {
+                    if (timer) clearTimeout(timer);
+                    return r;
+                  }),
+                new Promise<any>((resolve) => {
+                  timer = setTimeout(() => resolve([]), budgetMs);
+                }),
               ]);
               // Dedup: skip quirks already injected into this session
               const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, input.sessionID, MAX_SESSION_MAP_SIZE);
@@ -1402,15 +1418,19 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         }
 
         // Handle hotkey-triggered RAG injection (Ctrl+Enter / Ctrl+Alt+Enter)
-        const pendingInjection = consumePendingRagInjection(options.storePath);
+        // Peek FIRST and only consume once we know the index is usable —
+        // otherwise the flag is dropped on an empty index and the hotkey
+        // press is silently lost.
+        const pendingInjection = peekPendingRagInjection(options.storePath);
         if (pendingInjection) {
+          const count = await store.count();
+          if (count === 0) return;
+
+          consumePendingRagInjection(options.storePath);
           appendDebugLog(options.logFilePath, {
             scope: "chat.message",
             message: `pending injection: ${pendingInjection}`,
           });
-
-          const count = await store.count();
-          if (count === 0) return;
 
           const effectiveCfg = getEffectiveCfg();
           const hybridCfg = effectiveCfg.retrieval.hybridSearch;
@@ -1523,143 +1543,13 @@ async function loadKeywordIndex(storePath: string, logFilePath: string, logLevel
   }
 }
 
+// NOTE: There is deliberately NO autostart of an MCP child process here.
+// A stdio MCP server can only be reached by the client that spawns it —
+// a plugin-spawned child with an unwired stdin would sit idle forever,
+// holding its own LanceDB connection (and locking the store directory on
+// Windows). External MCP clients must run `opencode-rag mcp` themselves;
+// the plugin's agent tools run in-process regardless.
 
-
-let _cachedNodeExecutable: string | null | undefined;
-
-/**
- * Resolve the path to the Node.js executable, caching the result.
- * Checks `process.execPath` first, then falls back to `where`/`which`.
- */
-function resolveNodeExecutable(): string | null {
-  if (_cachedNodeExecutable !== undefined) return _cachedNodeExecutable;
-
-  const execPath = process.execPath;
-  const basename = path.basename(execPath).toLowerCase();
-
-  if (basename === "node" || basename === "node.exe") {
-    _cachedNodeExecutable = execPath;
-    return _cachedNodeExecutable;
-  }
-
-  const tryCmd = (cmd: string): string | null => {
-    try {
-      const result = execSync(cmd, { encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] }).trim();
-      return result.split("\n")[0]?.trim() || null;
-    } catch {
-      return null;
-    }
-  };
-
-  const found = process.platform === "win32"
-    ? tryCmd("where node")
-    : tryCmd("which node");
-
-  _cachedNodeExecutable = found;
-  return _cachedNodeExecutable;
-}
-
-/**
- * Resolve the MCP CLI entry point script path.
- * Checks `dist/cli.js` first, then falls back to `src/cli.ts`.
- */
-function resolveMcpCliEntry(): string | null {
-  const selfDir = path.dirname(fileURLToPath(import.meta.url));
-  const packageRoot = path.resolve(selfDir, "..");
-
-  const distCli = path.join(packageRoot, "dist", "cli.js");
-  if (existsSync(distCli)) return distCli;
-
-  const srcCli = path.join(packageRoot, "src", "cli.ts");
-  if (existsSync(srcCli)) return srcCli;
-
-  return null;
-}
-
-/**
- * Start an MCP server process for the given workspace directory.
- * Spawns the CLI in MCP mode as a child process and wires stdout/stderr
- * to the debug log. Returns a handle for graceful shutdown.
- */
-function startMcpServerProcess(
-  cwd: string,
-  logFilePath: string,
-  logLevel?: string
-): { close: () => Promise<void> } {
-  const cliEntry = resolveMcpCliEntry();
-  if (!cliEntry) {
-    appendDebugLog(logFilePath, {
-      scope: "mcp",
-      message: "Could not resolve MCP CLI entry point; skipping autostart",
-    }, logLevel);
-    return { close: async () => {} };
-  }
-
-  const nodeExec = resolveNodeExecutable();
-  if (!nodeExec) {
-    appendDebugLog(logFilePath, {
-      scope: "mcp",
-      message: "Could not resolve Node.js executable; skipping MCP autostart",
-    }, logLevel);
-    return { close: async () => {} };
-  }
-
-  const args = cliEntry.endsWith(".ts")
-    ? ["--import", "tsx", cliEntry, "mcp"]
-    : [cliEntry, "mcp"];
-
-  appendDebugLog(logFilePath, {
-    scope: "mcp",
-    message: `Starting MCP server: ${nodeExec} ${args.join(" ")}`,
-  }, logLevel);
-
-  const child = spawn(nodeExec, args, {
-    cwd,
-    stdio: "pipe",
-    detached: false,
-  });
-
-  child.stdout?.on("data", (chunk: Buffer) => {
-    appendDebugLog(logFilePath, {
-      scope: "mcp",
-      message: `stdout: ${chunk.toString().trim()}`,
-    }, logLevel);
-  });
-
-  child.stderr?.on("data", (chunk: Buffer) => {
-    appendDebugLog(logFilePath, {
-      scope: "mcp",
-      message: `stderr: ${chunk.toString().trim()}`,
-    }, logLevel);
-  });
-
-  child.on("error", (err) => {
-    appendDebugLog(logFilePath, {
-      scope: "mcp",
-      message: "MCP server process error",
-      error: err,
-    }, logLevel);
-  });
-
-  child.on("exit", (code, signal) => {
-    appendDebugLog(logFilePath, {
-      scope: "mcp",
-      message: `MCP server exited (code=${code}, signal=${signal})`,
-    });
-    mcpServers.delete(cwd);
-  });
-
-  return {
-    close: async () => {
-      if (child.exitCode !== null || child.killed) return;
-      appendDebugLog(logFilePath, {
-        scope: "mcp",
-        message: "Shutting down MCP server",
-      });
-      child.kill("SIGTERM");
-    },
-  };
-}
 
 /**
  * OpenCodeRAG plugin factory — invoked by OpenCode's plugin system for each workspace.
@@ -1723,19 +1613,21 @@ export const ragPlugin: Plugin = async (
     backgroundIndexers.delete(input.directory);
   }
 
-  // Close existing MCP server for this directory if one exists (e.g. on plugin reload)
-  const existingMcp = mcpServers.get(input.directory);
-  if (existingMcp) {
+  // Close the previous plugin instance's vector store — without this every
+  // reload leaks a LanceDB connection (and on Windows holds the store
+  // directory open, breaking the atomic swap on `index --force`).
+  const existingStore = ragStores.get(input.directory);
+  if (existingStore) {
     try {
-      await existingMcp.close();
+      await existingStore.close();
     } catch (err) {
       appendDebugLog(logFilePath, {
         scope: "plugin",
-        message: "Failed to close existing MCP server",
+        message: "Failed to close existing vector store",
         error: err,
       }, logLevel);
     }
-    mcpServers.delete(input.directory);
+    ragStores.delete(input.directory);
   }
 
   // Clean up stale config cache and pending update info for this directory
@@ -1785,6 +1677,7 @@ export const ragPlugin: Plugin = async (
   }
 
   const store = createVectorStore(effectiveCfg, storePath, vectorDimension);
+  ragStores.set(input.directory, store);
 
   // Load or create keyword index for hybrid search
   const keywordIndex = await loadKeywordIndex(storePath, logFilePath, logLevel);
@@ -1834,15 +1727,14 @@ export const ragPlugin: Plugin = async (
     }
   }
 
-  // Auto-start standalone MCP server if enabled (default: off). Agent tools
-  // (search_semantic, get_file_skeleton, find_usages, describe_image) and the
-  // chat.message hook run in-process regardless. Enable only when an external
-  // MCP client connects to `opencode-rag mcp`.
-  const mcpCfg = effectiveCfg.mcp ?? { enabled: false };
-  const isTempDir = path.resolve(input.directory).startsWith(tmpdir());
-  if (mcpCfg.enabled && !isTempDir) {
-    const mcpInstance = startMcpServerProcess(input.directory, logFilePath, logLevel);
-    mcpServers.set(input.directory, mcpInstance);
+  // NOTE: no MCP child-process autostart — a stdio MCP server is only
+  // reachable by the client that spawns it. External MCP clients run
+  // `opencode-rag mcp` themselves; agent tools run in-process regardless.
+  if (effectiveCfg.mcp?.enabled) {
+    appendDebugLog(logFilePath, {
+      scope: "mcp",
+      message: "mcp.enabled is set, but the plugin does not autostart a child server — run `opencode-rag mcp` from your MCP client",
+    }, logLevel);
   }
 
   // Auto-update check (non-blocking, best-effort). On by default; can be

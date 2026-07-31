@@ -3,6 +3,7 @@
  */
 
 import path from "node:path";
+import { realpathSync } from "node:fs";
 
 /**
  * Raw argument variants accepted by the read tool.
@@ -106,13 +107,39 @@ export function resolveWorkspacePath(
   const normalizedWorktree = path.resolve(worktree);
   const normalizedResolved = path.resolve(resolved);
 
+  // Case-insensitive on win32: an absolute path with different casing must
+  // not be falsely rejected as "outside the workspace".
+  const cmp = (p: string): string => (process.platform === "win32" ? p.toLowerCase() : p);
+
   if (
-    !normalizedResolved.startsWith(normalizedWorktree + path.sep) &&
+    !cmp(normalizedResolved).startsWith(cmp(normalizedWorktree) + path.sep) &&
     normalizedResolved !== normalizedWorktree
   ) {
     throw new Error(
       `read path "${inputPath}" resolves outside the workspace "${normalizedWorktree}"`
     );
+  }
+
+  // Resolve symlinks/junctions: a link INSIDE the workspace pointing outside
+  // must not let the agent read arbitrary files (node_modules junctions are
+  // common on Windows). realpath failure (e.g. missing file) falls back to
+  // the lexical check above — the read itself will fail with ENOENT.
+  try {
+    const realResolved = realpathSync(normalizedResolved);
+    const realWorktree = realpathSync(normalizedWorktree);
+    if (
+      !cmp(realResolved).startsWith(cmp(realWorktree) + path.sep) &&
+      realResolved !== realWorktree
+    ) {
+      throw new Error(
+        `read path "${inputPath}" resolves outside the workspace "${normalizedWorktree}" (via symlink "${realResolved}")`
+      );
+    }
+  } catch (err) {
+    if (err instanceof Error && /outside the workspace/.test(err.message)) {
+      throw err;
+    }
+    // otherwise: realpath unavailable — keep the lexical result
   }
 
   return toForwardSlash(normalizedResolved);

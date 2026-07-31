@@ -141,9 +141,17 @@ export function createWatchIgnore(
   const dirMatcher = createExcludeMatcher(config.indexing.excludeDirs);
   const fileMatcher = createExcludeMatcher(config.indexing.excludeFiles ?? []);
 
+  // Prefix check with a trailing separator so sibling dirs like
+  // `<storePath>2` are NOT ignored; case-insensitive on win32 so a
+  // differently-cased store path cannot cause self-triggering watch loops.
+  const storePrefix = storePath.endsWith(path.sep) ? storePath : storePath + path.sep;
+  const win32 = process.platform === "win32";
+
   return (watchedPath: string): boolean => {
     const resolved = path.resolve(watchedPath);
-    if (resolved.startsWith(storePath)) return true;
+    const compareResolved = win32 ? resolved.toLowerCase() : resolved;
+    const compareStorePrefix = win32 ? storePrefix.toLowerCase() : storePrefix;
+    if (resolved === storePath || compareResolved.startsWith(compareStorePrefix)) return true;
     if (resolved === manifestPath) return true;
 
     const relative = path.relative(cwd, resolved);

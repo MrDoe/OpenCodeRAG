@@ -123,7 +123,12 @@ export async function retrieve(
       .slice(0, topK);
 
     return combinedResults;
-  } catch {
+  } catch (err) {
+    // Never silently mask retrieval failures as "no results" — an embedder
+    // outage or store bug must be visible, not indistinguishable from an
+    // empty index.
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[retriever] retrieve() failed (returning []): ${message}`);
     return [];
   }
 }

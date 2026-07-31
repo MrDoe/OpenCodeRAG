@@ -25,6 +25,9 @@ export function validateSessionID(sessionID: string): boolean {
 /** Append a single event to a session's JSONL log file. Creates the directory and file if needed. */
 export function appendSessionEvent(storePath: string, event: SessionEvent): void {
   try {
+    // Guard against path traversal / malformed IDs — never write outside the
+    // eval directory.
+    if (!validateSessionID(event.sessionID)) return;
     const dir = getEvalDir(storePath);
     mkdirSync(dir, { recursive: true });
     const filePath = getSessionPath(storePath, event.sessionID);
@@ -37,6 +40,7 @@ export function appendSessionEvent(storePath: string, event: SessionEvent): void
 /** Read all events for a session from its JSONL log file. Returns an empty array if the file does not exist or cannot be read. */
 export function readSessionEvents(storePath: string, sessionID: string): SessionEvent[] {
   try {
+    if (!validateSessionID(sessionID)) return [];
     const filePath = getSessionPath(storePath, sessionID);
     const content = readFileSync(filePath, "utf8");
     const lines = content.split("\n").filter((l) => l.trim().length > 0);
@@ -63,6 +67,7 @@ export function listSessionIDs(storePath: string): string[] {
 /** Delete a session's JSONL log file from disk. Silently succeeds if the file does not exist. */
 export function deleteSession(storePath: string, sessionID: string): void {
   try {
+    if (!validateSessionID(sessionID)) return;
     const filePath = getSessionPath(storePath, sessionID);
     if (existsSync(filePath)) {
       unlinkSync(filePath);
