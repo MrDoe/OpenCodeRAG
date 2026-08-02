@@ -57,9 +57,9 @@ The semantic search playground for interactively querying the vector database.
 
 ![Search Playground](assets/webui-search.png)
 
-**Query input:** Type a natural language query (e.g., "How does the retrieval pipeline find relevant code for my query?"). The search runs automatically with a 300ms debounce.
+**Query input:** Type a natural language query (e.g., "How does the retrieval pipeline find relevant code for my query?"). The search starts automatically.
 
-**Search Parameters** (collapsible panel):
+**Search Parameters**:
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -80,7 +80,7 @@ The semantic search playground for interactively querying the vector database.
 Shareable URLs: search parameters are encoded in the URL hash.
 Example: `#/search?query=auth+middleware&topK=15&minScore=0.5`
 
-**Keyboard shortcut:** `Ctrl/Cmd+K` opens the Search view from anywhere.
+**Keyboard shortcut:** `Ctrl+K` opens the Search view from anywhere.
 
 ### Chunks
 
@@ -160,7 +160,7 @@ Session analytics dashboard for tracking token usage, costs, and RAG performance
 - **RAG Overhead:** Context tokens injected + system guidance tokens
 - **Per-Query Breakdown:** Table showing input/output tokens, RAG context, chunk count, top score, and read/RAG tool calls per query. RAG-injected queries highlighted with cyan border.
 
-**Comparison (enhanced):** When comparing 2 sessions:
+**Comparison:** When comparing two sessions:
 
 - **Verdict Banner:** Prominent banner showing whether RAG saves or costs tokens (green/red)
 - **Delta Table:** All metrics with delta and percentage change columns
@@ -176,7 +176,7 @@ For CLI-based session analysis (`eval:sessions`, `eval:analyze`, `eval:compare`)
 
 ### Quirks
 
-Quirk memory management — gotchas, preferences, decisions, and environment constraints discovered during coding sessions.
+This sections shows the experiential memory stored in th vector database — gotchas, preferences, decisions, and environment constraints discovered during coding sessions.
 
 ![Quirks View](assets/webui-quirks.png)
 
@@ -204,7 +204,7 @@ A collapsible directory tree in the left sidebar:
 
 A quick keyword search input in the top-right header:
 
-- Debounced (300ms) keyword search against the TF×IDF index
+- Keyword search against the TF×IDF index
 - Results appear in a dropdown panel showing file path, line range, language badge, and a code snippet
 - Click a result to navigate to that chunk in the Chunks view
 
