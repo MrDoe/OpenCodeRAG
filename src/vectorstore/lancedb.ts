@@ -812,8 +812,11 @@ export class LanceDbStore implements VectorStore {
         try {
           const count = await table.countRows().catch(() => 0);
           const numPartitions = count > 0 ? Math.max(16, Math.min(256, Math.floor(count / 256))) : 16;
+          // The index metric MUST match the search metric ("cosine", see
+          // searchInternal).  The ivfFlat default is "l2", which makes LanceDB
+          // ignore the index and fall back to brute-force on every query.
           await table.createIndex("embedding", {
-            config: lancedb.Index.ivfFlat({ numPartitions }),
+            config: lancedb.Index.ivfFlat({ numPartitions, distanceType: "cosine" }),
           } as never);
         } catch {
           // Index creation is best-effort — queries still work, just slower.
