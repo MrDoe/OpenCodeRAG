@@ -108,7 +108,9 @@ export async function startWebUi(
 
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
-      const url = req.url ?? "/";
+      // Strip the query string before routing — the auth token arrives as
+      // `/?token=...` and must not break the root route match.
+      const url = (req.url ?? "/").split("?")[0] || "/";
 
       if (url === "/" || url === "/index.html") {
         serveStatic(res, html);
