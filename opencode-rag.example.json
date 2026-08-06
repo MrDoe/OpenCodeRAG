@@ -38,7 +38,8 @@
     "embedBatchSize": 100,
     "embedConcurrency": 3,
     "ollamaMaxBatchSize": 4000,
-    "descriptionConcurrency": 4
+    "descriptionConcurrency": 4,
+    "optimizeIntervalWindows": 8
   },
   "vectorStore": {
     "path": "./.opencode/rag_db"

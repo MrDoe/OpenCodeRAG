@@ -431,6 +431,99 @@ describe("LanceDbStore (memory)", () => {
     const finalCount = await store.count();
     assert.equal(finalCount, workers, "all chunks preserved after concurrent deletes");
   });
+
+  const makeChunk = (
+    id: string,
+    filePath: string,
+    startLine: number,
+    content: string,
+  ) => ({
+    id,
+    content,
+    embedding: new Array(384).fill(0.1).map((_, i) => (i % 2 === 0 ? 0.1 : -0.1)),
+    metadata: { filePath, startLine, endLine: startLine + 4, language: "typescript" },
+  });
+
+  it("dedups prior revision on re-add (single-delete semantics)", async () => {
+    await store.clear({ noBackup: true });
+
+    // Revision 1 of the file: chunks at lines 1, 2, 3
+    await store.addChunks([
+      makeChunk("rev1-1", "src/re.ts", 1, "old line 1"),
+      makeChunk("rev1-2", "src/re.ts", 2, "old line 2"),
+      makeChunk("rev1-3", "src/re.ts", 3, "old line 3"),
+    ]);
+    assert.equal(await store.count(), 3);
+
+    // Revision 2: same startLines 1-2 with new IDs, stale line 3 gone, new line 5
+    await store.addChunks([
+      makeChunk("rev2-1", "src/re.ts", 1, "new line 1"),
+      makeChunk("rev2-2", "src/re.ts", 2, "new line 2"),
+      makeChunk("rev2-5", "src/re.ts", 5, "new line 5"),
+    ]);
+
+    const chunks = await store.getChunksByFilePath("src/re.ts");
+    assert.equal(chunks.length, 3, "stale chunks from the prior revision must be removed");
+    const ids = chunks.map((c) => c.id).sort();
+    assert.deepEqual(ids, ["rev2-1", "rev2-2", "rev2-5"]);
+
+    // Unrelated files must be untouched
+    await store.addChunks([makeChunk("other-1", "src/other.ts", 1, "keep")]);
+    assert.equal((await store.getChunksByFilePath("src/other.ts")).length, 1);
+  });
+
+  it("keeps multiple new chunks sharing a startLine while removing the old revision", async () => {
+    await store.clear({ noBackup: true });
+
+    await store.addChunks([
+      makeChunk("a-1", "src/share.ts", 1, "one"),
+      makeChunk("a-2", "src/share.ts", 1, "two"),
+    ]);
+    assert.equal(await store.count(), 2);
+
+    // Re-add with DIFFERENT new IDs at the same startLine — the single
+    // per-file delete must remove the old revision without letting the new
+    // IDs sharing startLine 1 delete each other.
+    await store.addChunks([
+      makeChunk("b-1", "src/share.ts", 1, "one"),
+      makeChunk("b-2", "src/share.ts", 1, "two"),
+    ]);
+    const chunks = await store.getChunksByFilePath("src/share.ts");
+    assert.equal(chunks.length, 2, "new IDs sharing a startLine must not delete each other");
+    assert.deepEqual(chunks.map((c) => c.id).sort(), ["b-1", "b-2"]);
+  });
+
+  it("appends without dedup when dedup: false", async () => {
+    await store.clear({ noBackup: true });
+
+    await store.addChunks([makeChunk("v1", "src/append.ts", 1, "first")]);
+    await store.addChunks([makeChunk("v2", "src/append.ts", 1, "second")], { dedup: false });
+
+    // Append-only: both rows coexist (duplicates allowed by design)
+    assert.equal(await store.count(), 2);
+  });
+
+  it("addChunksBulk writes multiple files with per-file dedup", async () => {
+    await store.clear({ noBackup: true });
+
+    // Pre-existing revision of a modified file
+    await store.addChunks([makeChunk("m-old", "src/modified.ts", 1, "old")]);
+
+    await store.addChunksBulk([
+      { chunks: [makeChunk("m-new", "src/modified.ts", 1, "new")], dedup: true },
+      { chunks: [makeChunk("n-1", "src/newfile.ts", 1, "brand new")], dedup: false },
+    ]);
+
+    const modified = await store.getChunksByFilePath("src/modified.ts");
+    assert.deepEqual(
+      modified.map((c) => c.id),
+      ["m-new"],
+      "bulk dedup must remove the prior revision of the modified file",
+    );
+    const newfile = await store.getChunksByFilePath("src/newfile.ts");
+    assert.deepEqual(newfile.map((c) => c.id), ["n-1"]);
+    assert.equal(await store.count(), 2);
+  });
 });
 
 describe("l2Normalize", () => {

@@ -25,6 +25,7 @@ Full architecture: [doc/architecture.md](doc/architecture.md).
 
 - **npm install**: use `--legacy-peer-deps` (LanceDB peer dep conflicts)
 - **LanceDB types**: cast through `unknown` — `rows as unknown as Record<string, unknown>[]`
+- **LanceDB index metric**: the IVF index on `embedding` must use `distanceType: "cosine"` to match `searchInternal` (default is `l2`, which makes every query log "Requested metric Cosine is incompatible" and fall back to brute-force). `LanceDbStore.ensureCosineIndex()` self-heals stale L2 indexes on first search. When replacing an index, use a single `createIndex(..., replace: true, waitTimeoutSeconds)` — a `dropIndex` + `createIndex` sequence races and fails with "Retryable commit conflict".
 - **tree-sitter**: WASM-only (no native). `Parser` is a class, `Language` is top-level, use `Node` not `SyntaxNode`
 - **Plugin types**: `@opencode-ai/plugin` lives in `.opencode/node_modules/`, declared locally in `src/types/opencode-plugin.d.ts`
 - **Config loading**: `loadConfig()` deep-merges per section (not recursive). CLI auto-detects `./opencode-rag.json` and `./.opencode/rag.json`

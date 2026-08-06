@@ -288,6 +288,15 @@ export interface RagConfig {
      * @default 1_048_576 (1 MB)
      */
     maxSvgSizeBytes?: number;
+    /**
+     * Run vector-store compaction + version pruning every N windows during a
+     * long index pass. LanceDB keeps every committed version on disk, so
+     * without periodic maintenance the store phase slows down as the index
+     * grows (version-manifest accumulation). 0 disables mid-run optimization
+     * (the store is still optimized once at the end of a pass).
+     * @default 8
+     */
+    optimizeIntervalWindows?: number;
   };
   /** Vector storage backend configuration. */
   vectorStore: {
@@ -484,6 +493,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     ollamaMaxBatchSize: 500,
     descriptionConcurrency: 4,
     maxSvgSizeBytes: 1_048_576,
+    optimizeIntervalWindows: 8,
   },
   vectorStore: {
     path: "./.opencode/rag_db",
