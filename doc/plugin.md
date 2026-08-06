@@ -353,6 +353,13 @@ The plugin spawns one `BackgroundIndexer` per workspace directory (via `src/watc
 - **Error recovery**: Detects LanceDB corruption and triggers auto-rebuild
 - **Status file**: Writes `watcher-status.json` to the store path for observability
 
+**One watcher per workspace:** the plugin claims a cross-process lock at
+`{storePath}/watcher.lock` before starting a watcher. If another process
+already runs the watcher (a second OpenCode session, or `opencode-rag index
+--watch`), the new instance stays dormant — no chokidar watcher, no initial
+pass — and takes over ~60s after the owning process exits. This prevents
+multiple watchers from racing on the same store.
+
 ## TUI Settings Menu
 
 The TUI plugin (`src/tui.ts`) registers a settings panel in the OpenCode sidebar:

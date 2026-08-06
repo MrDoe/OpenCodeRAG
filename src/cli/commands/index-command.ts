@@ -20,6 +20,7 @@ import {
   type IndexRunStats,
   runIndexPass,
 } from "../../indexer.js";
+import { tryAcquireWatcherLock, releaseWatcherLock } from "../../watcher.js";
 import {
   c,
   resolveCliContext,
@@ -166,6 +167,20 @@ export function registerIndexCommand(program: Command): void {
           process.exit(sigReceived ? 130 : 0);
         }
 
+        // Only one watcher may run per workspace — a background auto-indexer
+        // in an OpenCode session (or another `index --watch`) may already own
+        // this store. The initial pass above still ran; just don't start a
+        // duplicate watcher.
+        if (!tryAcquireWatcherLock(storePath)) {
+          logCliInfo(
+            logFilePath,
+            "index",
+            c.warn("Another watcher is already running for this workspace (e.g. an OpenCode session with auto-index enabled) — not starting a second one. The index is up to date.")
+          );
+          await cleanupContext(ctx);
+          process.exit(0);
+        }
+
         logCliInfo(logFilePath, "index", `\n${c.heading("Watching for changes...")}`);
         const scheduler = createWatchPassScheduler(
           async (changedPaths?: string[]): Promise<void> => { await runPass(true, undefined, changedPaths); },
@@ -198,6 +213,7 @@ export function registerIndexCommand(program: Command): void {
             watcher.close(),
             new Promise((r) => setTimeout(r, 5000)),
           ]);
+          releaseWatcherLock(storePath);
           await cleanupContext(ctx);
           process.exit(0);
         };
