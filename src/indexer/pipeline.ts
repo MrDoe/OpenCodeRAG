@@ -508,20 +508,197 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     );
   }
 
+  /**
+   * Store one window's prepared files into the vector store and update the
+   * manifest. Runs as a standalone async step so the caller can overlap it
+   * with the next window's prepare/describe/embed phases (the store phase is
+   * I/O-bound; the embed phase is GPU/API-bound).
+   *
+   * All chunks in the window are written in ONE bulk transaction (a single
+   * table.add plus one delete per modified file) instead of per-file adds
+   * plus per-startLine deletes.  Per-file transactions caused LanceDB
+   * version-manifest accumulation (K+2 versions per file) that made the
+   * store phase degrade quadratically as the index grew.
+   */
+  async function storeWindow(prepared: PreparedFile[]): Promise<void> {
+    const filesToStore = prepared.filter((p) => !earlyWorkerResults.has(prepared.indexOf(p)) && p.chunks && (p.textToEmbed?.length ?? 0) > 0).length;
+    const storePhaseStart = Date.now();
+    logger.info(`Store phase: storing ${filesToStore} file(s) into vector database...`);
+    let storedFiles = 0;
+
+    // Compute per-file store payloads first (pure computation, no I/O).
+    const storePayloads: Array<{ prep: PreparedFile; validChunks: Chunk[]; allEmbedded: boolean }> = [];
+    for (const prep of prepared) {
+      if (aborted()) break;
+      if (earlyWorkerResults.has(prepared.indexOf(prep))) continue;
+      if (!prep.chunks || prep.textToEmbed?.length === 0) continue;
+      const validChunks = (prep.chunks ?? []).filter(
+        (c) => c.embedding && c.embedding.length > 0,
+      );
+      // Partial embed failure: some chunks have no vector. Do NOT record the
+      // file as complete — keep the previous manifest entry (or none, for
+      // new files) so the next pass retries the missing chunks.
+      const allEmbedded = validChunks.length === (prep.chunks?.length ?? 0);
+      if (!allEmbedded && (prep.chunks?.length ?? 0) > 0) {
+        options.logger?.warn?.(
+          `  ${prep.fileLabel}: ${validChunks.length}/${prep.chunks?.length} chunks embedded — marking for retry on next pass`,
+        );
+      }
+      storePayloads.push({ prep, validChunks, allEmbedded });
+    }
+
+    // One bulk write per window. Dedup (per-modified-file deletes) is skipped
+    // when the store provably has no prior rows: during a full rebuild the
+    // temp store starts empty, and on a first-time index the store counted 0
+    // chunks at the start of the pass. Nothing can collide there, so the
+    // delete transactions (which would each scan the table) are pure waste.
+    const skipDedup = tempStorePath !== undefined || existingCount === 0;
+    if (storePayloads.length > 0) {
+      const bulkItems = storePayloads.map(({ validChunks }) => ({
+        chunks: validChunks,
+        dedup: !skipDedup,
+      }));
+      if (effectiveStore.addChunksBulk) {
+        await effectiveStore.addChunksBulk(bulkItems);
+      } else {
+        // Fallback for stores without bulk-write support
+        for (const item of bulkItems) {
+          await effectiveStore.addChunks(item.chunks, { dedup: item.dedup });
+        }
+      }
+    }
+
+    // Manifest updates + progress reporting (per file, in-memory only).
+    const storeResults: Array<WorkerResult | { skipped: boolean; normalizedPath: string }> = [];
+    for (let fi = 0; fi < prepared.length; fi++) {
+      if (aborted()) {
+        storeResults.push({ normalizedPath: prepared[fi]!.normalizedPath, skipped: true } as const);
+        break;
+      }
+
+      // Return early results from phase 1
+      const earlyResult = earlyWorkerResults.get(fi);
+      if (earlyResult) {
+        storeResults.push(earlyResult);
+        continue;
+      }
+
+      const prep = prepared[fi]!;
+      // No-embed path (shouldn't reach here but guard anyway)
+      if (!prep.chunks || prep.textToEmbed?.length === 0) {
+        options.progress?.finishFile(prep.fileLabel);
+        storeResults.push({
+          normalizedPath: prep.normalizedPath, hash: prep.hash, chunkCount: 0,
+          fileLabel: prep.fileLabel,
+          isNew: false, isModified: false, isUnchanged: false, isEmpty: false,
+          isTooSmall: false, isRemoved: true, hadChunks: false,
+          descriptionFailed: prep.descriptionFailed,
+        });
+        continue;
+      }
+
+      const payload = storePayloads.find((p) => p.prep === prep);
+      const validChunks = payload?.validChunks ?? [];
+      const allEmbedded = payload?.allEmbedded ?? false;
+
+      const result: WorkerResult = {
+        normalizedPath: prep.normalizedPath,
+        hash: prep.hash,
+        chunkCount: validChunks.length,
+        fileLabel: prep.fileLabel,
+        isNew: !prep.isModified,
+        isModified: prep.isModified,
+        isUnchanged: false,
+        isEmpty: false,
+        isTooSmall: false,
+        isRemoved: (prep.chunks?.length ?? 0) > 0 && validChunks.length === 0 ? false : validChunks.length === 0,
+        hadChunks: (prep.chunks?.length ?? 0) > 0,
+        descriptionFailed: prep.descriptionFailed,
+        descHash: prep.descHash,
+      };
+
+      // Update manifest — only when ALL chunks were embedded. A partial
+      // write must not bump the hash/chunkCount, otherwise the missing
+      // chunks would never be retried (hash match on the next pass).
+      if (result.chunkCount > 0 && !result.isRemoved && allEmbedded) {
+        const meta = fileMeta.get(result.normalizedPath);
+        const entry: {
+          hash: string;
+          chunkCount: number;
+          indexedAt: number;
+          mtime?: number;
+          size?: number;
+          descriptionFailed?: boolean;
+          descHash?: string;
+        } = {
+          hash: result.hash,
+          chunkCount: result.chunkCount,
+          indexedAt: Date.now(),
+          mtime: meta?.mtime,
+          size: meta?.size,
+          descriptionFailed: result.descriptionFailed,
+        };
+        if (result.descHash) {
+          entry.descHash = result.descHash;
+        }
+        manifest.files[result.normalizedPath] = entry as import("../core/manifest.js").ManifestEntry;
+        enqueueManifestSave();
+      } else if (result.isRemoved) {
+        delete manifest.files[result.normalizedPath];
+        enqueueManifestSave();
+      }
+
+      options.progress?.finishFile(prep.fileLabel);
+      storedFiles++;
+      logChunkProgress("Storing", prep.fileLabel, storedFiles, filesToStore, storedFiles, filesToStore);
+      storeResults.push(result);
+    }
+
+    const workerResults = storeResults;
+    for (const r of workerResults) {
+      if ((r as { skipped?: boolean }).skipped) {
+        abortedInWindow = true;
+        break;
+      }
+      allFinalResults.push(r as WorkerResult);
+    }
+    aggregateStats(stats, allFinalResults.slice(-workerResults.length));
+
+    const storePhaseSec = ((Date.now() - storePhaseStart) / 1000).toFixed(1);
+    logger.info(`Store phase: ${storedFiles} files stored in ${storePhaseSec}s (running total ${stats.totalChunks} chunks)`);
+
+    // Free this window's chunk payloads so GC can reclaim them before the
+    // next window is prepared.
+    for (const prep of prepared) {
+      prep.chunks = undefined;
+      prep.textToEmbed = undefined;
+    }
+  }
+
   // ── Windowed pipeline ────────────────────────────────────────────────────
   // The prepare→describe→embed→store chain used to materialize ALL chunks,
   // embed texts, and vectors of the whole workspace simultaneously (hundreds
   // of MB on large repos). Processing bounded windows of files keeps peak
   // memory proportional to the window size instead of the workspace size.
+  //
+  // The store phase is launched as a non-awaited promise per window so it
+  // overlaps the next window's prepare/describe/embed (the store is I/O-bound,
+  // the embed is GPU/API-bound). Stores themselves stay serialized: the next
+  // window's store only starts after the previous one resolves.
   const WINDOW_SIZE = Math.max(50, (options.config.indexing.concurrency ?? 4) * 10);
   const allFinalResults: WorkerResult[] = [];
   let abortedInWindow = false;
+  const earlyWorkerResults = new Map<number, WorkerResult>();
+  let prevStore: Promise<void> | null = null;
+  let windowCount = 0;
+  const optimizeInterval = options.config.indexing.optimizeIntervalWindows ?? 8;
 
   for (let windowStart = 0; windowStart < workspaceFiles.length; windowStart += WINDOW_SIZE) {
     if (aborted()) {
       abortedInWindow = true;
       break;
     }
+    windowCount++;
     const windowFiles = workspaceFiles.slice(windowStart, windowStart + WINDOW_SIZE);
     const prepared = await prepareWindow(windowFiles);
     if (windowStart === 0) {
@@ -733,7 +910,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // ── Phase 1: Collect embed queue + handle early results ────────────────
   const embedQueue: Array<{ fileIdx: number; chunkIdx: number; text: string }> = [];
   let totalEmbedChunks = 0;
-  const earlyWorkerResults = new Map<number, WorkerResult>();
+  earlyWorkerResults.clear();
 
   for (let fi = 0; fi < prepared.length; fi++) {
     const prep = prepared[fi]!;
@@ -820,128 +997,28 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     }
   }
 
-  // ── Phase 3: Store + manifest update per file (parallel) ──────────────
-  const filesToStore = prepared.filter((p) => !earlyWorkerResults.has(prepared.indexOf(p)) && p.chunks && (p.textToEmbed?.length ?? 0) > 0).length;
-  const storePhaseStart = Date.now();
-  logger.info(`Store phase: storing ${filesToStore} file(s) into vector database...`);
-  let storedFiles = 0;
-  const storeLimit = pLimit(options.config.indexing.concurrency);
-  const storeResults = await Promise.all(
-    prepared.map((prep, fi) =>
-      storeLimit(async () => {
-        if (aborted()) {
-          return { normalizedPath: prep.normalizedPath, skipped: true as const } as const;
-        }
+  // ── Phase 3: Store + manifest update per file ─────────────────────────
+  // The store phase is I/O-bound, so it is launched without awaiting and
+  // overlaps the next window's prepare/describe/embed (GPU/API-bound)
+  // phases. Stores stay serialized: the previous window's store is drained
+  // before the next one starts.
+  if (prevStore) await prevStore;
+  prevStore = storeWindow(prepared);
 
-        // Return early results from phase 1
-        const earlyResult = earlyWorkerResults.get(fi);
-        if (earlyResult) return earlyResult;
-
-        // No-embed path (shouldn't reach here but guard anyway)
-        if (!prep.chunks || prep.textToEmbed?.length === 0) {
-          options.progress?.finishFile(prep.fileLabel);
-          return {
-            normalizedPath: prep.normalizedPath, hash: prep.hash, chunkCount: 0,
-            fileLabel: prep.fileLabel,
-            isNew: false, isModified: false, isUnchanged: false, isEmpty: false,
-            isTooSmall: false, isRemoved: true, hadChunks: false,
-            descriptionFailed: prep.descriptionFailed,
-          };
-        }
-
-        // Store chunks with pre-attached embeddings
-        const validChunks = (prep.chunks ?? []).filter(
-          (c) => c.embedding && c.embedding.length > 0,
-        );
-        // Partial embed failure: some chunks have no vector. Do NOT record the
-        // file as complete — keep the previous manifest entry (or none, for
-        // new files) so the next pass retries the missing chunks.
-        const allEmbedded = validChunks.length === (prep.chunks?.length ?? 0);
-        if (!allEmbedded && (prep.chunks?.length ?? 0) > 0) {
-          options.logger?.warn?.(
-            `  ${prep.fileLabel}: ${validChunks.length}/${prep.chunks?.length} chunks embedded — marking for retry on next pass`,
-          );
-        }
-        if (validChunks.length > 0) {
-          await effectiveStore.addChunks(validChunks);
-        }
-
-        const result: WorkerResult = {
-          normalizedPath: prep.normalizedPath,
-          hash: prep.hash,
-          chunkCount: validChunks.length,
-          fileLabel: prep.fileLabel,
-          isNew: !prep.isModified,
-          isModified: prep.isModified,
-          isUnchanged: false,
-          isEmpty: false,
-          isTooSmall: false,
-          isRemoved: (prep.chunks?.length ?? 0) > 0 && validChunks.length === 0 ? false : validChunks.length === 0,
-          hadChunks: (prep.chunks?.length ?? 0) > 0,
-          descriptionFailed: prep.descriptionFailed,
-          descHash: prep.descHash,
-        };
-
-        // Update manifest — only when ALL chunks were embedded. A partial
-        // write must not bump the hash/chunkCount, otherwise the missing
-        // chunks would never be retried (hash match on the next pass).
-        if (result.chunkCount > 0 && !result.isRemoved && allEmbedded) {
-          const meta = fileMeta.get(result.normalizedPath);
-          const entry: {
-            hash: string;
-            chunkCount: number;
-            indexedAt: number;
-            mtime?: number;
-            size?: number;
-            descriptionFailed?: boolean;
-            descHash?: string;
-          } = {
-            hash: result.hash,
-            chunkCount: result.chunkCount,
-            indexedAt: Date.now(),
-            mtime: meta?.mtime,
-            size: meta?.size,
-            descriptionFailed: result.descriptionFailed,
-          };
-          if (result.descHash) {
-            entry.descHash = result.descHash;
-          }
-          manifest.files[result.normalizedPath] = entry as import("../core/manifest.js").ManifestEntry;
-          enqueueManifestSave();
-        } else if (result.isRemoved) {
-          delete manifest.files[result.normalizedPath];
-          enqueueManifestSave();
-        }
-
-        options.progress?.finishFile(prep.fileLabel);
-        storedFiles++;
-        logChunkProgress("Storing", prep.fileLabel, storedFiles, filesToStore, storedFiles, filesToStore);
-        return result;
-      }),
-    ),
-  );
-
-  const workerResults = storeResults;
-  for (const r of workerResults) {
-    if ((r as { skipped?: boolean }).skipped) {
-      abortedInWindow = true;
-      break;
-    }
-    allFinalResults.push(r as WorkerResult);
+  // Periodically compact fragments and prune old versions so the store
+  // phase doesn't slow down as the index grows during long runs.
+  if (optimizeInterval > 0 && windowCount % optimizeInterval === 0) {
+    await prevStore;
+    prevStore = null;
+    logger.info("Optimizing vector store (mid-run compaction, pruning old versions)...");
+    await effectiveStore.optimize?.(tempStorePath ? { aggressive: true } : undefined);
   }
-  aggregateStats(stats, allFinalResults.slice(-workerResults.length));
 
-  const storePhaseSec = ((Date.now() - storePhaseStart) / 1000).toFixed(1);
-  logger.info(`Store phase: ${storedFiles} files stored in ${storePhaseSec}s (running total ${stats.totalChunks} chunks)`);
-
-  // Free this window's chunk payloads so GC can reclaim them before the
-  // next window is prepared.
-  for (const prep of prepared) {
-    prep.chunks = undefined;
-    prep.textToEmbed = undefined;
-  }
   if (abortedInWindow) break;
   } // end windowed pipeline loop
+
+  // Drain the final window's store before finishing.
+  if (prevStore) await prevStore;
 
   const finalResults = allFinalResults;
 
@@ -1004,12 +1081,16 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   await options.keywordIndex?.save(options.storePath);
 
   // Compact fragments and prune old version manifests so countRows() can't
-  // hang on accumulated versions from many add/delete cycles.
+  // hang on accumulated versions from many add/delete cycles. After a temp
+  // store rebuild, optimize the reopened real store handle (the temp handle
+  // was closed and its directory moved); use aggressive pruning since the
+  // swapped-in store is private to this process.
   if (!aborted()) {
     logger.info("Optimizing vector store (compacting fragments, pruning old versions)...");
     const optimizeStart = Date.now();
     try {
-      await effectiveStore.optimize?.();
+      const optimizeTarget = tempStorePath ? options.store : effectiveStore;
+      await optimizeTarget.optimize?.(tempStorePath ? { aggressive: true } : undefined);
       logger.info(`Vector store optimized in ${((Date.now() - optimizeStart) / 1000).toFixed(1)}s`);
     } catch (err) {
       logger.warn(`Vector store optimization failed: ${(err as Error).message}`);

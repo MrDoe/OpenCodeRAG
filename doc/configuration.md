@@ -94,6 +94,7 @@ Controls file discovery and chunking behavior.
 | `embedBatchSize` | `100` | Texts per embedding API call. Larger batches reduce round-trips. Ollama supports up to ~100 |
 | `embedConcurrency` | `3` | Number of embedding batch requests sent in parallel. Higher values speed up embedding but increase API pressure |
 | `descriptionConcurrency` | `4` | Number of files processed in parallel during description generation. Higher values speed up descriptions but increase LLM pressure |
+| `optimizeIntervalWindows` | `8` | Run vector-store compaction + version pruning every N processing windows during a long index pass. LanceDB keeps every committed version on disk, so without periodic maintenance the store phase slows down as the index grows (version-manifest accumulation). `0` disables mid-run optimization (the store is still optimized once at the end of a pass) |
 
 ### `vectorStore`
 
