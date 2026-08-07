@@ -29,7 +29,7 @@ For autonomous agent workflows, the plugin also registers smaller, focused tools
 |------|---------|------|
 | `get_file_skeleton` | Structural file overview via tree-sitter AST | `filePath` (req) |
 | `find_usages` | Find all references to a symbol | `symbolName` (req), `pathHint?`, `topK?` |
-| `describe_image` | Retrieve stored description of an indexed image | `filePath` (req) |
+| `describe_image` | Retrieve stored description of an indexed image | `filePath` (req), `systemPrompt?` |
 
 #### `search_semantic`
 Conceptual code search — answers questions like *"How does authentication work?"* or *"Where is the chunking logic?"*. Uses vector + hybrid keyword search and returns the most relevant code snippets with file paths, line numbers, and relevance scores.
@@ -81,12 +81,13 @@ Usages of "createRagHooks" — 5 references across 2 files
 
 #### `describe_image`
 
-Returns the pre-generated natural-language description for an indexed image file. Does not re-run the vision model — it retrieves the stored description created at index time.
+Returns the pre-generated natural-language description for an indexed image file. Does not re-run the vision model — it retrieves the stored description created at index time. An optional `systemPrompt` steers the vision model toward specific features when generating the description.
 
 **Parameters:**
 | Param | Required | Description |
 |-------|----------|-------------|
 | `filePath` | Yes | Path to the image file (relative or absolute) |
+| `systemPrompt` | No | Optional system prompt steering the description (e.g. "focus on colors and layout") |
 
 **Returns:** Markdown block with file path and the stored description text.
 

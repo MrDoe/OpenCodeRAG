@@ -82,6 +82,33 @@ Example: `#/search?query=auth+middleware&topK=15&minScore=0.5`
 
 **Keyboard shortcut:** `Ctrl+K` opens the Search view from anywhere.
 
+### Embeddings
+
+An interactive **2D/3D scatter plot** of the indexed chunk embeddings ("Embedding Space Explorer"). Projection is done server-side via **PCA** (2D or 3D, up to 5000 chunks); clustering is done client-side via **K-Means**. No other projection/clustering algorithms are included.
+
+**Controls:**
+
+| Control | Description |
+|---|---|
+| `2D / 3D` toggle | Switch between the 2D canvas scatter plot and the 3D WebGL point cloud |
+| Color by | `Language`, `File` (per-file color), or `Cluster` (K-Means assignment — enables clustering) |
+| K | Number of clusters (2–50, default 8; shown in Cluster color mode) |
+| Iterations | Maximum k-means iterations (5–200, default 20; shown in Cluster color mode) |
+| Outliers | Highlight points farther than 2σ from their cluster centroid in orange |
+| Search overlay | Highlight the current search results in cyan (shown when a search has been run) |
+| Point size (3D) | Slider for point radius |
+| Reset camera (3D) | Return the 3D view to the default orientation |
+
+Selecting **Color by: Cluster** runs the client-side K-Means and shows the **K** and **Iterations** fields, which re-run the clustering immediately on change (K is clamped to the point count). A **legend** below the controls lists the visible color categories (cluster IDs or the top files by chunk count, with swatch colors) — cluster legends are capped at 20 entries, file legends at 12 with a "+N more files" indicator.
+
+**2D mode:** Canvas scatter plot with scroll-wheel zoom, drag-to-pan, hover tooltip (chunk label + description), and reset-zoom button.
+
+**3D mode:** Three.js point cloud with orbit controls (drag to rotate, wheel to zoom, right-drag to pan, damped). The point cloud is centered and scaled to a unit cube; axes are anchored at the data bounding-box minimum corner.
+
+**Clicking any point (either mode)** selects the chunk: an RGB crosshair marks it in 3D and a details panel appears below the plot showing the file path, line range, language, chunk ID, **Description** card, and the chunk content. The "Open in Chunks" button jumps to the full Chunks view.
+
+![Embeddings View](assets/webui-embeddings.png)
+
 ### Chunks
 
 A master-detail split pane for browsing individual chunks.
@@ -233,6 +260,7 @@ The web server exposes a REST API under `/api/`:
 | `/api/search?q=&topK=` | GET | Keyword search via KeywordIndex |
 | `/api/compare?ids=` | GET | Fetch multiple chunks for side-by-side view |
 | `/api/retrieve?q=&topK=&minScore=&keywordWeight=&hybrid=&path=&lang=&explain=` | GET/POST | **Semantic search** — full vector+hybrid retrieval pipeline with score breakdowns and matched terms |
+| `/api/embeddings/projection?maxChunks=&dims=` | GET | PCA projection of chunk embeddings (dims: 2 or 3) for the Embedding Space Explorer |
 | `/api/eval/sessions` | GET | All recorded sessions with summary stats |
 | `/api/eval/sessions/:id` | GET | Single session detail with events |
 | `/api/eval/sessions/:id` | DELETE | Delete a recorded session |
@@ -253,7 +281,7 @@ All endpoints return JSON with `Access-Control-Allow-Origin: *`.
 | Frontend framework | **Preact** via Vite |
 | Styling | **Tailwind CSS** (PostCSS build pipeline) |
 | Syntax highlighting | **highlight.js** |
-| Charts | Custom **SVG** components (donut, bar, scatter) |
+| Charts | Custom **SVG** components (donut, bar, scatter) + **Three.js** WebGL for the 3D embedding view |
 | State management | **@preact/signals** |
 | Routing | **Hash-based** (`#/search?query=...`) |
-| Bundle size | **~24 kB gzip** (vendor + app) |
+| Bundle size | **~25 kB gzip** core (vendor + app); the 3D chart (three.js, ~135 kB gzip) is lazy-loaded on demand |

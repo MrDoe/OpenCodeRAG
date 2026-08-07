@@ -1,14 +1,21 @@
-interface Point2D { x: number; y: number; }
-
-function dist(a: Point2D, b: Point2D): number {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+interface Point {
+  x: number;
+  y: number;
+  z?: number;
 }
 
-export function kmeans(points: Point2D[], k: number = 8, maxIter: number = 20): number[] {
+function dist(a: Point, b: Point): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = (a.z ?? 0) - (b.z ?? 0);
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+export function kmeans(points: Point[], k: number = 8, maxIter: number = 20): number[] {
   const n = points.length;
   if (n <= k) return points.map((_, i) => i);
   const assignments = new Array(n).fill(0);
-  const centroids: Point2D[] = [];
+  const centroids: Point[] = [];
 
   // k-means++ initialization
   centroids.push(points[Math.floor(Math.random() * n)]!);
@@ -35,24 +42,26 @@ export function kmeans(points: Point2D[], k: number = 8, maxIter: number = 20): 
       assignments[i] = best;
     }
 
-    const sums = centroids.map(() => ({ x: 0, y: 0, count: 0 }));
+    const sums = centroids.map(() => ({ x: 0, y: 0, z: 0, count: 0 }));
     for (let i = 0; i < n; i++) {
       const c = assignments[i]!;
       sums[c]!.x += points[i]!.x;
       sums[c]!.y += points[i]!.y;
+      sums[c]!.z += points[i]!.z ?? 0;
       sums[c]!.count++;
     }
     centroids.forEach((cent, i) => {
       if (sums[i]!.count > 0) {
         cent.x = sums[i]!.x / sums[i]!.count;
         cent.y = sums[i]!.y / sums[i]!.count;
+        if (cent.z !== undefined) cent.z = sums[i]!.z / sums[i]!.count;
       }
     });
   }
   return assignments;
 }
 
-export function findOutliers(points: Point2D[], assignments: number[], centroids: Point2D[]): Set<number> {
+export function findOutliers(points: Point[], assignments: number[], centroids: Point[]): Set<number> {
   const stds = centroids.map((cent, ci) => {
     const clusterPoints = points.filter((_, i) => assignments[i] === ci);
     const dists = clusterPoints.map((p) => dist(p, cent));

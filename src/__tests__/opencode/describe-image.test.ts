@@ -22,6 +22,17 @@ function makeFakeVisionProvider(): ImageVisionProvider {
   };
 }
 
+function makeSpyVisionProvider(): { provider: ImageVisionProvider; calls: { prompt?: string; systemPrompt?: string }[] } {
+  const calls: { prompt?: string; systemPrompt?: string }[] = [];
+  const provider: ImageVisionProvider = {
+    describeImage: async (_b64, _mime, prompt, systemPrompt) => {
+      calls.push({ prompt, systemPrompt });
+      return TEST_DESCRIPTION;
+    },
+  };
+  return { provider, calls };
+}
+
 function makeConfigWithImageDesc(overrides?: Partial<RagConfig>): RagConfig {
   const cfg = {
     ...DEFAULT_CONFIG,
@@ -150,6 +161,40 @@ describe("createDescribeImageTool", () => {
 
     assert.equal(r.title, `Image description — ${pngPath}`);
     assert.ok(r.output.includes("test image with sample content"));
+  });
+
+  it("forwards systemPrompt to the vision provider", async () => {
+    const cfg = makeConfigWithImageDesc();
+    const { provider, calls } = makeSpyVisionProvider();
+    const tool = createDescribeImageTool({
+      worktree: tmpDir,
+      config: cfg,
+      visionProvider: provider,
+    });
+
+    const exec = (tool as { execute: Function }).execute;
+    const r = asObject(await exec({ filePath: "test.png", systemPrompt: "focus on colors and layout" }));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.prompt, "Describe this image");
+    assert.equal(calls[0]?.systemPrompt, "focus on colors and layout");
+    assert.equal(r.metadata?.description, TEST_DESCRIPTION);
+  });
+
+  it("does not pass systemPrompt when omitted", async () => {
+    const cfg = makeConfigWithImageDesc();
+    const { provider, calls } = makeSpyVisionProvider();
+    const tool = createDescribeImageTool({
+      worktree: tmpDir,
+      config: cfg,
+      visionProvider: provider,
+    });
+
+    const exec = (tool as { execute: Function }).execute;
+    await exec({ filePath: "test.png" });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.systemPrompt, undefined);
   });
 
   it("creates real vision provider when none injected (config fallback)", () => {

@@ -321,6 +321,8 @@ export interface FindUsagesResult {
 export interface DescribeImageParams {
   /** Path to the image file. */
   filePath: string;
+  /** Optional system prompt to steer the description toward specific features. */
+  systemPrompt?: string;
 }
 
 /** Result of an image description operation. */
@@ -368,7 +370,7 @@ export async function handleDescribeImage(
   const b64 = sized.toString("base64");
 
   const provider = visionProvider ?? (await import("../chunker/image.js")).createImageVisionProvider(imageDescriptionConfig);
-  const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt);
+  const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt, params.systemPrompt);
 
   const formatted = [
     `**Image description** — ${params.filePath}`,

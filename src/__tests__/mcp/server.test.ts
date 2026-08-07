@@ -562,6 +562,17 @@ function makeFakeVisionProvider(description = TEST_DESCRIPTION): ImageVisionProv
   };
 }
 
+function makeSpyVisionProvider() {
+  const calls: { prompt?: string; systemPrompt?: string }[] = [];
+  const provider: ImageVisionProvider = {
+    describeImage: async (_b64, _mime, prompt, systemPrompt) => {
+      calls.push({ prompt, systemPrompt });
+      return TEST_DESCRIPTION;
+    },
+  };
+  return { provider, calls };
+}
+
 function makeConfigWithImageDesc(overrides?: Partial<RagConfig>): RagConfig {
   return {
     ...DEFAULT_CONFIG,
@@ -667,6 +678,33 @@ describe("handleDescribeImage", () => {
     const result = await handleDescribeImage({ filePath: pngPath }, cfg, tmpDir, fakeVision);
 
     assert.equal(result.description, TEST_DESCRIPTION);
+  });
+
+  it("forwards systemPrompt to the vision provider", async () => {
+    const cfg = makeConfigWithImageDesc();
+    const { provider, calls } = makeSpyVisionProvider();
+
+    const result = await handleDescribeImage(
+      { filePath: "test.png", systemPrompt: "extract the button labels" },
+      cfg,
+      tmpDir,
+      provider
+    );
+
+    assert.equal(result.description, TEST_DESCRIPTION);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.prompt, "Describe this image");
+    assert.equal(calls[0]?.systemPrompt, "extract the button labels");
+  });
+
+  it("does not pass systemPrompt when omitted", async () => {
+    const cfg = makeConfigWithImageDesc();
+    const { provider, calls } = makeSpyVisionProvider();
+
+    await handleDescribeImage({ filePath: "test.png" }, cfg, tmpDir, provider);
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.systemPrompt, undefined);
   });
 });
 

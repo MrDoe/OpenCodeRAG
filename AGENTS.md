@@ -9,7 +9,7 @@ ALWAYS use OpenCodeRAG tools before reading or editing:
 - **Search first** — `search_semantic(query)` instead of grep/glob
 - **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines
 - **Usages before edit** — `find_usages(symbolName)` before modifying any symbol
-- **Images via describe** — `describe_image(filePath)` — never read raw bytes
+- **Images via describe** — `describe_image(filePath, systemPrompt?)` — never read raw bytes
 
 If no results, run `opencode-rag index`.
 
@@ -74,7 +74,7 @@ ALWAYS use OpenCodeRAG tools before reading or editing:
 - **Search first** — `search_semantic(query)` instead of grep/glob
 - **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines
 - **Usages before edit** — `find_usages(symbolName)` before modifying any symbol
-- **Images via describe** — `describe_image(filePath)` — never read raw bytes
+- **Images via describe** — `describe_image(filePath, systemPrompt?)` — never read raw bytes
 - **Recall quirks** — `recall_quirks(query)` when you hit a known pitfall
 - **Add quirks** — `add_quirk(content)` when you discover a non-obvious fact
 - **Fix quirks** — `update_quirk(id, ...)` / `delete_quirk(id)` when a stored quirk is outdated or wrong
@@ -86,7 +86,7 @@ If no results, run `opencode-rag index`.
 2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines
 3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`
 4. User asks a code question → `search_semantic` to gather context before answering
-5. User asks about an image or visual asset → `describe_image(filePath)` to retrieve its generated description, then optionally `search_semantic` for related code
+5. User asks about an image or visual asset → `describe_image(filePath)` (optionally pass `systemPrompt` to focus on specific features) to retrieve its generated description, then optionally `search_semantic` for related code
 6. You encounter an error or need to recall a known pitfall → `recall_quirks(query)`
 7. You discover a non-obvious fact or workaround → `add_quirk(content)` to persist it for future sessions
 8. A recalled quirk is outdated or wrong → `update_quirk(id, ...)` to fix it, or `delete_quirk(id)` if it no longer applies

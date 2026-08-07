@@ -121,9 +121,10 @@ export async function createMcpServer(options?: McpServerOptions): Promise<RagMc
 
   server.tool(
     "describe_image",
-    "Describe an image file using a vision model. Reads the file from disk, sends it to the configured vision provider (Ollama, OpenAI, Anthropic, or Google Gemini), and returns a text description of the image contents.",
+    "Describe an image file using a vision model. Reads the file from disk, sends it to the configured vision provider (Ollama, OpenAI, Anthropic, or Google Gemini), and returns a text description of the image contents. Optionally accepts a systemPrompt to steer the description toward specific features.",
     {
       filePath: z.string().min(1, "An image file path is required."),
+      systemPrompt: z.string().optional(),
     },
     async (args: DescribeImageParams) => {
       try {

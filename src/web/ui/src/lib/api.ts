@@ -69,5 +69,5 @@ export const API = {
   indexStatus: () => request<any>("/indexing/status"),
   triggerReindex: () => request<any>("/indexing/reindex", { method: "POST" }),
   config: () => request<any>("/config"),
-  embeddingProj: (max = 5000) => request<any>(`/embeddings/projection?maxChunks=${max}`),
+  embeddingProj: (max = 5000, dims: 2 | 3 = 2) => request<any>(`/embeddings/projection?maxChunks=${max}&dims=${dims}`),
 };

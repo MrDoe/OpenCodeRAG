@@ -94,8 +94,8 @@ opencode-rag query <query> [options]
 **Options:**
 | Flag | Default | Description |
 |---|---|---|
-| `-n, --top-k <number>` | config default | Number of results |
 | `-c, --config <path>` | auto-detected | Path to config file |
+| `-s, --system-prompt <text>` | none | Optional system prompt steering the description toward specific features |
 
 **Output:** Formatted results showing:
 - File path (relative)

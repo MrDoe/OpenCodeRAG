@@ -21,6 +21,8 @@ export interface CliOptions {
   explain?: boolean;
   /** Skip confirmation prompts for destructive operations. */
   yes?: boolean;
+  /** Optional system prompt to steer an image description toward specific features. */
+  systemPrompt?: string;
 }
 
 /** Options for the `init` command. */
