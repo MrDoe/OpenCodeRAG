@@ -53,9 +53,9 @@ opencode-rag query "authentication middleware"
 
 ## Web UI
 
-A browser-based dashboard for exploring the indexed vector database - browse and inspect chunks and evaluate the OpenCode sessions in terms of retrieved chunks, consumed tokens and more.
+A browser-based dashboard for exploring the indexed vector database - browse, visualize and inspect chunks and evaluate the OpenCode sessions in terms of retrieved chunks, consumed tokens and more.
 
-![OpenCodeRAG Web UI](doc/assets/webui-dashboard.png)
+![OpenCodeRAG Web UI](doc/assets/webui-3d.png)
 
 Launch with `opencode-rag ui`. See [Web UI documentation](doc/webui.md) for details.
 
