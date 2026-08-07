@@ -34,7 +34,7 @@ export class LlmDescriptionProvider implements DescriptionProvider {
   /** Consecutive batches that needed individual fallback; disables batching past BATCH_MAX_STREAK. */
   private batchFailStreak = 0;
   /** Whether multi-chunk batching is still active (adaptive, per provider instance / index run). */
-  private batchEnabled = true;
+  private adaptiveBatchActive = true;
 
   /**
    * @param config - Configuration for the LLM provider, including base URL, model, API key, proxy, and retry settings.
@@ -66,9 +66,13 @@ export class LlmDescriptionProvider implements DescriptionProvider {
   async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger, opts?: BatchDescriptionOptions): Promise<Map<string, string>> {
     const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => process.stderr.write(`${msg}\n`), debug: (msg: string) => process.stderr.write(`${msg}\n`) };
     const concurrency = this.config.batchConcurrency ?? 3;
-    const batchMaxChunks = this.config.batchMaxChunks ?? 25;
+    // Batching is an EXPERIMENTAL opt-in (description.batchEnabled). Off by
+    // default — a batch size of 1 routes every group through the individual
+    // request path below, which is exactly the per-chunk behavior.
+    const batchEnabled = this.config.batchEnabled === true;
+    const batchMaxChunks = batchEnabled ? (this.config.batchMaxChunks ?? 25) : 1;
     const total = chunks.length;
-    log.debug(`[describer] Generating descriptions for ${total} chunks via ${this.config.provider}/${this.config.model} (concurrency: ${concurrency}, batch: ${batchMaxChunks})`);
+    log.debug(`[describer] Generating descriptions for ${total} chunks via ${this.config.provider}/${this.config.model} (concurrency: ${concurrency}, batch: ${batchEnabled ? batchMaxChunks : "off"})`);
     const result = new Map<string, string>();
     const limit = pLimit(concurrency);
     let completed = 0;
@@ -107,7 +111,7 @@ export class LlmDescriptionProvider implements DescriptionProvider {
           // BATCH_MAX_STREAK consecutive failures.
           let resolved: Map<string, string>;
           let batchFailed = false;
-          if (this.batchEnabled) {
+          if (this.adaptiveBatchActive) {
             try {
               resolved = await this.batchDescribe(group, log);
             } catch (err) {
@@ -134,8 +138,8 @@ export class LlmDescriptionProvider implements DescriptionProvider {
 
           if (batchFailed || missing.length > 0) {
             this.batchFailStreak++;
-            if (this.batchEnabled && this.batchFailStreak >= BATCH_MAX_STREAK) {
-              this.batchEnabled = false;
+            if (this.adaptiveBatchActive && this.batchFailStreak >= BATCH_MAX_STREAK) {
+              this.adaptiveBatchActive = false;
               log.warn(`[describer] Batch descriptions unreliable (${this.batchFailStreak} consecutive failures), switching to individual requests for the rest of the run`);
             }
           } else {

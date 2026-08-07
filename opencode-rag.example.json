@@ -37,7 +37,7 @@
     "concurrency": 8,
     "embedBatchSize": 100,
     "embedConcurrency": 3,
-    "ollamaMaxBatchSize": 4000,
+    "ollamaMaxBatchSize": 100,
     "descriptionConcurrency": 4,
     "optimizeIntervalWindows": 8
   },
@@ -83,6 +83,7 @@
     "numCtx": 2048,
     "timeoutMs": 60000,
     "systemPrompt": "Describe this code in ONE concise sentence (max 20 words): purpose, inputs/outputs. No code repetition.",
+    "batchEnabled": false,
     "batchConcurrency": 3,
     "retryMax": 3,
     "retryBaseDelayMs": 1000

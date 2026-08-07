@@ -385,7 +385,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
     }));
 
     try {
-      const provider = new LlmDescriptionProvider(makeConfig({ baseUrl: `${baseUrl}/api` }));
+      const provider = new LlmDescriptionProvider(makeConfig({ baseUrl: `${baseUrl}/api`, batchEnabled: true }));
       const chunks = [
         makeChunk({ id: "c0", metadata: { filePath: "src/a.ts", startLine: 1, endLine: 2, language: "typescript" } }),
         makeChunk({ id: "c1", metadata: { filePath: "src/a.ts", startLine: 4, endLine: 5, language: "typescript" } }),
@@ -435,6 +435,37 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
     }
   });
 
+  it("is off by default — makes one individual request per chunk", async () => {
+    let requestCount = 0;
+    const { baseUrl, close } = await startMockServer((body) => {
+      requestCount++;
+      const userMsg = (body.messages as Array<{ role: string; content: string }>)[1]?.content ?? "";
+      assert.ok(!userMsg.includes("[CHUNK "), "default mode must not build batch prompts");
+      return {
+        status: 200,
+        body: { message: { content: "Individual description." } },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ baseUrl: `${baseUrl}/api` })
+      );
+      const chunks = [
+        makeChunk({ id: "c0", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
+        makeChunk({ id: "c1", metadata: { filePath: "src/second.ts", startLine: 4, endLine: 5, language: "typescript" } }),
+      ];
+      const result = await provider.generateBatchDescriptions(chunks);
+
+      assert.equal(requestCount, 2, "two chunks must use two individual requests by default");
+      assert.equal(result.size, 2);
+      assert.equal(result.get("c0"), "Individual description.");
+      assert.equal(result.get("c1"), "Individual description.");
+    } finally {
+      await close();
+    }
+  });
+
   it("batches multiple chunks into a single request", async () => {
     let requestCount = 0;
     const { baseUrl, close } = await startMockServer((body) => {
@@ -455,7 +486,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
 
     try {
       const provider = new LlmDescriptionProvider(
-        makeConfig({ baseUrl: `${baseUrl}/api` })
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchEnabled: true })
       );
       const chunks = [
         makeChunk({ id: "c0", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
@@ -484,7 +515,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
 
     try {
       const provider = new LlmDescriptionProvider(
-        makeConfig({ baseUrl: `${baseUrl}/api` })
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchEnabled: true })
       );
       const result = await provider.generateBatchDescriptions([
         makeChunk({ id: "c0" }),
@@ -511,7 +542,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
 
     try {
       const provider = new LlmDescriptionProvider(
-        makeConfig({ baseUrl: `${baseUrl}/api` })
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchEnabled: true })
       );
       const result = await provider.generateBatchDescriptions([
         makeChunk({ id: "c0", content: "function first() {}", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
@@ -541,7 +572,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
 
     try {
       const provider = new LlmDescriptionProvider(
-        makeConfig({ baseUrl: `${baseUrl}/api` })
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchEnabled: true })
       );
       const result = await provider.generateBatchDescriptions([
         makeChunk({ id: "c0", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
@@ -571,7 +602,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
 
     try {
       const provider = new LlmDescriptionProvider(
-        makeConfig({ baseUrl: `${baseUrl}/api` })
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchEnabled: true })
       );
       const result = await provider.generateBatchDescriptions([
         makeChunk({ id: "c0", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
@@ -604,7 +635,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
 
     try {
       const provider = new LlmDescriptionProvider(
-        makeConfig({ baseUrl: `${baseUrl}/api`, batchMaxChunks: 2, batchConcurrency: 1 })
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchMaxChunks: 2, batchConcurrency: 1, batchEnabled: true })
       );
       // 7 chunks → groups [0,1],[2,3],[4,5],[6]. After 2 failed batches the
       // provider degrades: group [4,5] and [6] go individual-only.

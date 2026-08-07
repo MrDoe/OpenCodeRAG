@@ -24,6 +24,7 @@ import {
   writeJsonFile,
 } from "../helpers.js";
 import type { PackageMetadata } from "../types.js";
+import type { IndexingTuning } from "./backend-detect.js";
 
 /**
  * Build the workspace-local `.opencode/package.json` content.
@@ -473,9 +474,11 @@ export async function installPluginFromGlobal(
 /**
  * Generate the default `opencode-rag.json` configuration content.
  *
+ * @param tuning - Optional embedding batch tuning (auto-detected from the
+ *   Ollama backend). Falls back to `DEFAULT_CONFIG` for any omitted field.
  * @returns A pretty-printed JSON string with all default configuration values.
  */
-export function generateDefaultConfigJson(): string {
+export function generateDefaultConfigJson(tuning?: Partial<IndexingTuning>): string {
   return JSON.stringify(
     {
       embedding: {
@@ -490,7 +493,9 @@ export function generateDefaultConfigJson(): string {
         chunkOverlap: DEFAULT_CONFIG.indexing.chunkOverlap,
         minFileSizeBytes: DEFAULT_CONFIG.indexing.minFileSizeBytes,
         concurrency: DEFAULT_CONFIG.indexing.concurrency,
-        embedBatchSize: DEFAULT_CONFIG.indexing.embedBatchSize,
+        embedBatchSize: tuning?.embedBatchSize ?? DEFAULT_CONFIG.indexing.embedBatchSize,
+        embedConcurrency: tuning?.embedConcurrency ?? DEFAULT_CONFIG.indexing.embedConcurrency ?? 3,
+        ollamaMaxBatchSize: tuning?.ollamaMaxBatchSize ?? DEFAULT_CONFIG.indexing.ollamaMaxBatchSize ?? 100,
       },
       vectorStore: {
         path: DEFAULT_CONFIG.vectorStore.path,

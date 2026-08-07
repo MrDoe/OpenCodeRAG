@@ -159,7 +159,7 @@ Walks the workspace directory tree, filtering by `includeExtensions` and `exclud
 Dispatches to the appropriate `Chunker` based on file extension. Each chunker splits content into semantically meaningful units (AST nodes, headings, paragraphs, etc.).
 
 ### 3. Description (Optional, `DescriptionProvider`)
-An LLM generates a natural-language description of each chunk. Batches of chunks are processed concurrently (configurable via `description.batchConcurrency`). The embedded text becomes `filePath + "\n\n" + description + "\n\n" + content`. If disabled, the description defaults to `lines N-M, language`.
+An LLM generates a natural-language description of each chunk. By default every chunk gets its own request; the experimental `description.batchEnabled` flag makes the Ollama provider group several chunks into one request (configurable via `description.batchMaxChunks`), with concurrent requests governed by `description.batchConcurrency`. The embedded text becomes `filePath + "\n\n" + description + "\n\n" + content`. If disabled, the description defaults to `lines N-M, language`.
 
 ### 4. Embedding (`embedBatch` in `embedder/factory.ts`)
 Texts are optionally prefixed with `documentPrefix` (e.g., `search_document:`) and sent to the embedding provider in batches. Multiple batches are sent concurrently (configurable via `indexing.embedConcurrency`). The resulting vectors are written to the chunk objects.

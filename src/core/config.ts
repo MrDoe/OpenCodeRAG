@@ -64,7 +64,18 @@ export interface DescriptionConfig {
   proxy?: ProxyConfig;
   /** System prompt instructing the LLM how to describe code. */
   systemPrompt: string;
-  /** Maximum chunks per batch request. */
+  /**
+   * EXPERIMENTAL: enable multi-chunk batch description requests (Ollama
+   * provider only). Off by default — each chunk is described with its own
+   * request. When enabled, up to `batchMaxChunks` chunks share one request
+   * using ordinal labels ([CHUNK 1] ... reply "1: <desc>"); small models can
+   * mangle the structured output, so batches that fail to parse fall back to
+   * individual requests and batching auto-disables after 2 consecutive
+   * failures. Part of the description manifest fingerprint — toggling it
+   * re-describes files.
+   */
+  batchEnabled?: boolean;
+  /** Maximum chunks per batch request. Only applies when `batchEnabled` is true. */
   batchMaxChunks?: number;
   /** Timeout per batch request in milliseconds. */
   batchTimeoutMs?: number;
@@ -496,7 +507,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     concurrency: 8,
     embedBatchSize: 100,
     embedConcurrency: 3,
-    ollamaMaxBatchSize: 500,
+    ollamaMaxBatchSize: 100,
     descriptionConcurrency: 4,
     maxSvgSizeBytes: 1_048_576,
     optimizeIntervalWindows: 8,
@@ -553,6 +564,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     timeoutMs: 60000,
     systemPrompt:
       "Describe this code in ONE concise sentence (max 20 words): purpose, key inputs/outputs. No code repetition.",
+    batchEnabled: false,
     batchMaxChunks: 25,
     batchTimeoutMs: 120000,
     batchConcurrency: 1,
@@ -836,6 +848,12 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     }
     if (config.description.timeoutMs != null && config.description.timeoutMs <= 0) {
       warnings.push("description.timeoutMs must be > 0");
+    }
+    if (config.description.batchEnabled === true) {
+      warnings.push(
+        "description.batchEnabled is EXPERIMENTAL — batching several chunks into one LLM request (Ollama only) " +
+        "is unreliable on small models; disable it if descriptions look wrong",
+      );
     }
   }
 

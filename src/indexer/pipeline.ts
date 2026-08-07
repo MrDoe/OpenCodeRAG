@@ -520,8 +520,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
    * version-manifest accumulation (K+2 versions per file) that made the
    * store phase degrade quadratically as the index grew.
    */
-  async function storeWindow(prepared: PreparedFile[]): Promise<void> {
-    const filesToStore = prepared.filter((p) => !earlyWorkerResults.has(prepared.indexOf(p)) && p.chunks && (p.textToEmbed?.length ?? 0) > 0).length;
+  async function storeWindow(prepared: PreparedFile[], windowEarlyResults: ReadonlyMap<number, WorkerResult>): Promise<void> {
+    const filesToStore = prepared.filter((p) => !windowEarlyResults.has(prepared.indexOf(p)) && p.chunks && (p.textToEmbed?.length ?? 0) > 0).length;
     const storePhaseStart = Date.now();
     logger.info(`Store phase: storing ${filesToStore} file(s) into vector database...`);
     let storedFiles = 0;
@@ -530,7 +530,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     const storePayloads: Array<{ prep: PreparedFile; validChunks: Chunk[]; allEmbedded: boolean }> = [];
     for (const prep of prepared) {
       if (aborted()) break;
-      if (earlyWorkerResults.has(prepared.indexOf(prep))) continue;
+      if (windowEarlyResults.has(prepared.indexOf(prep))) continue;
       if (!prep.chunks || prep.textToEmbed?.length === 0) continue;
       const validChunks = (prep.chunks ?? []).filter(
         (c) => c.embedding && c.embedding.length > 0,
@@ -577,7 +577,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       }
 
       // Return early results from phase 1
-      const earlyResult = earlyWorkerResults.get(fi);
+      const earlyResult = windowEarlyResults.get(fi);
       if (earlyResult) {
         storeResults.push(earlyResult);
         continue;
@@ -1003,7 +1003,12 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // phases. Stores stay serialized: the previous window's store is drained
   // before the next one starts.
   if (prevStore) await prevStore;
-  prevStore = storeWindow(prepared);
+  // Snapshot the current window's early results BEFORE the next window's
+  // embed phase clears/repopulates the shared map — storeWindow runs
+  // asynchronously (overlapped with the next window's prepare/embed), so a
+  // shared mutable map would make its per-file loop read the WRONG window's
+  // entries and skip every file ("Store phase: storing N → 0 files stored").
+  prevStore = storeWindow(prepared, new Map(earlyWorkerResults));
 
   // Periodically compact fragments and prune old versions so the store
   // phase doesn't slow down as the index grows during long runs.

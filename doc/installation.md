@@ -26,7 +26,7 @@ OpenCodeRAG uses three models:
 - **Description model** - generates natural-language descriptions of code chunks before embedding. Configured via `description.model` (default: `qwen2.5:3b`).
 - **Vision model** - generates natural-language descriptions of images before embedding. Configured via `imageDescription.model` (default: `minicpm-v4.6`).
 
-> **Tip:** Smaller embedding models (≤3B) work well on CPU. For better search results, use a larger embedding model like `qwen3-embedding:1.7b` and activate description and image descripion model usage in OpenCodeRAG config (dedicated GPU recommended).
+> **Tip:** Smaller embedding models (≤3B) work well on CPU. For better search results, use a larger embedding model like `qwen3-embedding:1.7b` and activate description and image descripion model usage in OpenCodeRAG config (dedicated GPU recommended). `opencode-rag init` auto-detects whether your Ollama runs on CPU or GPU and tunes the embedding batch settings accordingly — no manual tuning needed.
 
 ## Install
 
@@ -39,10 +39,12 @@ npm install -g opencode-rag-plugin
 # Set up the OpenCode runtime
 opencode-rag setup
 
-# Initialize in your project
-cd /path/to/your/project
+# Initialize in your local workspace (creates config, skill, and AGENTS.md)
+cd /path/to/your/workspace
 opencode-rag init
 ```
+
+> `opencode-rag setup` is a **machine-level** step — it installs the plugin runtime into `~/.opencode/` once per machine. `opencode-rag init` is a **workspace-level** step — run it in every workspace where you want OpenCodeRAG. Both commands explain their exact use cases in their help output (`opencode-rag setup --help` / `opencode-rag init --help`).
 
 Tree-sitter grammars ship as pre-built WASM files (bundled in `wasm/` and `@vscode/tree-sitter-wasm`). Native dependencies (`sharp`, `@lancedb/lancedb`) use pre-built platform binaries. The plugin is workspace-local — OpenCode loads it from `.opencode/plugins/`. Data (vector store, manifest) lives in the workspace.
 
@@ -102,12 +104,12 @@ This removes all copies and config entries of OpenCodeRAG.
 The install script only installs the CLI globally. Initialize each workspace where you want to use OpenCodeRAG:
 
 ```bash
-cd /path/to/your/project
+cd /path/to/your/workspace
 opencode-rag init
 ```
 
 This creates:
-- `opencode-rag.json` — Workspace-specific RAG configuration (never overwritten without interactive confirmation)
+- `opencode-rag.json` — Workspace-specific RAG configuration (never overwritten without interactive confirmation). Embedding batch settings are **auto-tuned to your Ollama backend** (see below)
 - `.opencode/plugins/rag-plugin.js` — Plugin entry (re-exports from workspace `node_modules/`)
 - `.opencode/plugins/rag-tui.js` — TUI plugin module
 - `.opencode/opencode.json` — OpenCode workspace config
@@ -123,6 +125,18 @@ The `AGENTS.md` directive is wrapped in sentinel markers (`<!-- BEGIN opencode-r
 Use `--skip-install` to skip the npm install step. Use `--force` to overwrite existing files except `opencode-rag.json` (requires interactive confirmation). Use `--skip-health-check` to skip provider validation (useful in offline environments).
 
 After writing config, `init` validates that your embedding provider is reachable and all configured models (embedding, description & visual) are available. For Ollama, if models are missing, you will be asked to pull them automatically.
+
+### Auto-tuned embedding batches (Ollama)
+
+When generating a new `opencode-rag.json`, `init` probes Ollama (`GET /api/ps`) and detects whether models run on the **GPU** or **CPU**, then writes matching embedding batch settings into the `indexing` section:
+
+| Detected backend | `embedBatchSize` | `embedConcurrency` | `ollamaMaxBatchSize` |
+|---|---|---|---|
+| GPU (any model in VRAM) | `40` | `4` | `40` |
+| CPU | `20` | `1` | `20` |
+| Ollama unreachable / undetermined | `100` (default) | `3` (default) | `100` (default) |
+
+GPU settings (batch 40 + concurrency 4) reach ~97% of the measured GPU throughput ceiling on a GeForce RTX 4090 with `qwen3-embedding:0.6b`, while keeping batches safely under Ollama's 4096-token context window. CPU settings keep batches small and sequential since CPU throughput is flat regardless of batch size. Override any of these via `indexing.*` in the config if your workload differs.
 
 ## Running Without Global Installation
 

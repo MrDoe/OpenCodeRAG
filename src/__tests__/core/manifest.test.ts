@@ -122,4 +122,15 @@ describe("manifest", () => {
 
     assert.notEqual(computeDescriptionConfigHash(config1), computeDescriptionConfigHash(config2));
   });
+
+  it("computeDescriptionConfigHash changes when experimental batching is toggled", () => {
+    const config1 = {
+      description: { provider: "ollama", model: "qwen2.5:3b", baseUrl: "http://localhost:11434", systemPrompt: "test", batchEnabled: false },
+    } as unknown as RagConfig;
+    const config2 = {
+      description: { provider: "ollama", model: "qwen2.5:3b", baseUrl: "http://localhost:11434", systemPrompt: "test", batchEnabled: true },
+    } as unknown as RagConfig;
+
+    assert.notEqual(computeDescriptionConfigHash(config1), computeDescriptionConfigHash(config2));
+  });
 });
