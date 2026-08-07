@@ -62,6 +62,7 @@ class OllamaImageVisionProvider implements ImageVisionProvider {
   private readonly timeoutMs: number;
   private think: boolean;
   private numCtx?: number;
+  private keepAlive?: string;
   private proxy?: ProxyConfig;
 
   constructor(config: ImageDescriptionConfig) {
@@ -70,11 +71,12 @@ class OllamaImageVisionProvider implements ImageVisionProvider {
     this.timeoutMs = config.timeoutMs;
     this.think = config.think ?? false;
     this.numCtx = config.numCtx;
+    this.keepAlive = config.keepAlive;
     this.proxy = config.proxy;
   }
 
   async describeImage(imageBase64: string, _mimeType: string, prompt: string, abort?: AbortSignal): Promise<string> {
-    const body = {
+    const body: Record<string, unknown> = {
       model: this.model,
       messages: [
         {
@@ -87,6 +89,9 @@ class OllamaImageVisionProvider implements ImageVisionProvider {
       think: this.think,
       options: { num_ctx: this.numCtx },
     };
+    if (this.keepAlive) {
+      body.keep_alive = this.keepAlive;
+    }
 
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= VISION_RETRY_MAX; attempt++) {

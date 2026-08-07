@@ -278,6 +278,27 @@ describe("LlmDescriptionProvider", () => {
     }
   });
 
+  it("sends keep_alive in the Ollama chat body when configured", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const { baseUrl, close } = await startMockServer((body) => {
+      capturedBody = body;
+      return {
+        status: 200,
+        body: { message: { content: "Desc." } },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ baseUrl: `${baseUrl}/api`, keepAlive: "-1" })
+      );
+      await provider.generateDescription(makeChunk());
+      assert.equal(capturedBody.keep_alive, "-1");
+    } finally {
+      await close();
+    }
+  });
+
   it("uses OpenAI chat completions endpoint", async () => {
     const { baseUrl, close } = await startMockServer(() => ({
       status: 200,
@@ -340,7 +361,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
 
     try {
       const provider = new LlmDescriptionProvider(
-        makeConfig({ baseUrl: `${baseUrl}/api` })
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchMaxChunks: 1 })
       );
       const chunks = [
         makeChunk({ id: "c0", content: "function first() {}", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
@@ -399,7 +420,7 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
 
     try {
       const provider = new LlmDescriptionProvider(
-        makeConfig({ baseUrl: `${baseUrl}/api` })
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchMaxChunks: 1 })
       );
       const chunks = [
         makeChunk({ id: "c0", metadata: { filePath: "src/a.ts", startLine: 1, endLine: 2, language: "typescript" } }),
@@ -409,6 +430,192 @@ describe("LlmDescriptionProvider.generateBatchDescriptions", () => {
       const result = await provider.generateBatchDescriptions(chunks);
       assert.equal(result.size, 1);
       assert.equal(result.get("c1"), "Second desc.");
+    } finally {
+      await close();
+    }
+  });
+
+  it("batches multiple chunks into a single request", async () => {
+    let requestCount = 0;
+    const { baseUrl, close } = await startMockServer((body) => {
+      requestCount++;
+      const userMsg = (body.messages as Array<{ role: string; content: string }>)[1]?.content ?? "";
+      assert.ok(userMsg.includes("[CHUNK 1]"), "batch message must label the first chunk");
+      assert.ok(userMsg.includes("[CHUNK 2]"), "batch message must label the second chunk");
+      assert.ok(userMsg.includes("[END CHUNK 2]"), "batch message must close the second chunk");
+      return {
+        status: 200,
+        body: {
+          message: {
+            content: "1: Handles first.\n2: Handles second.",
+          },
+        },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ baseUrl: `${baseUrl}/api` })
+      );
+      const chunks = [
+        makeChunk({ id: "c0", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
+        makeChunk({ id: "c1", metadata: { filePath: "src/second.ts", startLine: 4, endLine: 5, language: "typescript" } }),
+      ];
+      const result = await provider.generateBatchDescriptions(chunks);
+
+      assert.equal(requestCount, 1, "two chunks must share one batch request");
+      assert.equal(result.size, 2);
+      assert.equal(result.get("c0"), "Handles first.");
+      assert.equal(result.get("c1"), "Handles second.");
+    } finally {
+      await close();
+    }
+  });
+
+  it("tolerates prose and markdown fences in batch responses", async () => {
+    const { baseUrl, close } = await startMockServer(() => ({
+      status: 200,
+      body: {
+        message: {
+          content: "Here are the descriptions:\n```\n1: Handles first.\n2: Handles second.\n```\nDone.",
+        },
+      },
+    }));
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ baseUrl: `${baseUrl}/api` })
+      );
+      const result = await provider.generateBatchDescriptions([
+        makeChunk({ id: "c0" }),
+        makeChunk({ id: "c1" }),
+      ]);
+
+      assert.equal(result.size, 2);
+      assert.equal(result.get("c0"), "Handles first.");
+      assert.equal(result.get("c1"), "Handles second.");
+    } finally {
+      await close();
+    }
+  });
+
+  it("falls back to individual requests when the batch response is unparseable", async () => {
+    let requestCount = 0;
+    const { baseUrl, close } = await startMockServer((_body) => {
+      requestCount++;
+      return {
+        status: 200,
+        body: { message: { content: "Just a sentence, no chunk labels." } },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ baseUrl: `${baseUrl}/api` })
+      );
+      const result = await provider.generateBatchDescriptions([
+        makeChunk({ id: "c0", content: "function first() {}", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
+        makeChunk({ id: "c1", content: "function second() {}", metadata: { filePath: "src/second.ts", startLine: 4, endLine: 5, language: "typescript" } }),
+      ]);
+
+      assert.equal(requestCount, 3, "1 failed batch + 2 individual fallbacks");
+      assert.equal(result.size, 2);
+      assert.equal(result.get("c0"), "Just a sentence, no chunk labels.");
+      assert.equal(result.get("c1"), "Just a sentence, no chunk labels.");
+    } finally {
+      await close();
+    }
+  });
+
+  it("falls back to individual requests for chunks the batch missed", async () => {
+    let requestCount = 0;
+    const { baseUrl, close } = await startMockServer((_body) => {
+      requestCount++;
+      // Batch reply covers only label 1; chunk 2 must be fetched individually.
+      const content = requestCount === 1 ? "1: Handles first." : "Handles second.";
+      return {
+        status: 200,
+        body: { message: { content } },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ baseUrl: `${baseUrl}/api` })
+      );
+      const result = await provider.generateBatchDescriptions([
+        makeChunk({ id: "c0", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
+        makeChunk({ id: "c1", metadata: { filePath: "src/second.ts", startLine: 4, endLine: 5, language: "typescript" } }),
+      ]);
+
+      assert.equal(requestCount, 2, "1 batch + 1 individual fallback");
+      assert.equal(result.size, 2);
+      assert.equal(result.get("c0"), "Handles first.");
+      assert.equal(result.get("c1"), "Handles second.");
+    } finally {
+      await close();
+    }
+  });
+
+  it("drops hallucinated labels from batch responses", async () => {
+    let requestCount = 0;
+    const { baseUrl, close } = await startMockServer((_body) => {
+      requestCount++;
+      // Label 9 is outside the group's range (1-2) and must be ignored.
+      const content = requestCount === 1 ? "1: Handles first.\n9: Not a real chunk." : "Handles second.";
+      return {
+        status: 200,
+        body: { message: { content } },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ baseUrl: `${baseUrl}/api` })
+      );
+      const result = await provider.generateBatchDescriptions([
+        makeChunk({ id: "c0", metadata: { filePath: "src/first.ts", startLine: 1, endLine: 2, language: "typescript" } }),
+        makeChunk({ id: "c1", metadata: { filePath: "src/second.ts", startLine: 4, endLine: 5, language: "typescript" } }),
+      ]);
+
+      assert.equal(requestCount, 2, "hallucinated label must not suppress the c1 fallback");
+      assert.equal(result.size, 2);
+      assert.equal(result.get("c0"), "Handles first.");
+      assert.equal(result.get("c1"), "Handles second.");
+    } finally {
+      await close();
+    }
+  });
+
+  it("disables batching after repeated unparseable batches", async () => {
+    let requestCount = 0;
+    let batchRequestCount = 0;
+    const { baseUrl, close } = await startMockServer((body) => {
+      requestCount++;
+      const userMsg = (body.messages as Array<{ role: string; content: string }>)[1]?.content ?? "";
+      if (userMsg.includes("[CHUNK ")) {
+        batchRequestCount++;
+      }
+      return {
+        status: 200,
+        body: { message: { content: "Unparseable prose." } },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ baseUrl: `${baseUrl}/api`, batchMaxChunks: 2, batchConcurrency: 1 })
+      );
+      // 7 chunks → groups [0,1],[2,3],[4,5],[6]. After 2 failed batches the
+      // provider degrades: group [4,5] and [6] go individual-only.
+      const chunks = Array.from({ length: 7 }, (_, i) =>
+        makeChunk({ id: `c${i}`, content: `function f${i}() {}`, metadata: { filePath: `src/f${i}.ts`, startLine: 1, endLine: 2, language: "typescript" } }),
+      );
+      const result = await provider.generateBatchDescriptions(chunks);
+
+      assert.equal(batchRequestCount, 2, "batching must stop after 2 consecutive failures");
+      assert.equal(requestCount, 9, "2 batches + 7 individual requests");
+      assert.equal(result.size, 7);
     } finally {
       await close();
     }

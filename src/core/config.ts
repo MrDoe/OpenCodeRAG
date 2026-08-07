@@ -78,6 +78,8 @@ export interface DescriptionConfig {
   think?: boolean;
   /** Context window size for the LLM. */
   numCtx?: number;
+  /** Ollama keep_alive value (e.g. "-1" for keep-in-memory) sent with /api/chat requests. */
+  keepAlive?: string;
   /** Maximum content characters sent to the LLM. Chunks exceeding this use fallback descriptions. */
   maxContentChars?: number;
 }
@@ -102,6 +104,8 @@ export interface ImageDescriptionConfig {
   think?: boolean;
   /** Context window size. */
   numCtx?: number;
+  /** Ollama keep_alive value (e.g. "-1" for keep-in-memory) sent with /api/chat requests. */
+  keepAlive?: string;
   /** Proxy configuration. */
   proxy?: ProxyConfig;
   /** Maximum image dimension (pixels) — larger images are resized before sending. */
@@ -240,6 +244,8 @@ export interface RagConfig {
     queryPrefix?: string;
     /** Cached embedding vector dimension. Probed once on first startup, then persisted to config. */
     vectorDimension?: number;
+    /** Ollama keep_alive value (e.g. "-1" for keep-in-memory) sent with /api/embed requests. */
+    keepAlive?: string;
   };
   /** Indexing pipeline controls: what to index, concurrency, batch sizes. */
   indexing: {
@@ -546,7 +552,9 @@ export const DEFAULT_CONFIG: RagConfig = {
     numCtx: 4096,
     timeoutMs: 60000,
     systemPrompt:
-      "Describe this code in 2-3 sentences: purpose, key concepts, inputs/outputs, and dependencies. No code repetition.",
+      "Describe this code in ONE concise sentence (max 20 words): purpose, key inputs/outputs. No code repetition.",
+    batchMaxChunks: 25,
+    batchTimeoutMs: 120000,
     batchConcurrency: 1,
     retryMax: 3,
     retryBaseDelayMs: 1000,

@@ -159,7 +159,7 @@ Controls LLM-based description generation for code chunks.
     "apiKey": null,
     "model": "qwen2.5:3b",
     "timeoutMs": 60000,
-    "systemPrompt": "Describe code for embedding search in caveman style...",
+    "systemPrompt": "Describe this code in ONE concise sentence (max 20 words): purpose, key inputs/outputs. No code repetition.",
     "batchMaxChunks": 25,
     "batchTimeoutMs": 120000,
     "batchConcurrency": 3,
@@ -174,13 +174,14 @@ Controls LLM-based description generation for code chunks.
 | `enabled` | `true` | Enable description-based embedding. Disable to embed raw code. |
 | `provider` | `"ollama"` | LLM provider (`"ollama"`, `"openai"`, `"anthropic"`, `"gemini"`) |
 | `model` | `"qwen2.5:3b"` | Model for description generation |
-| `systemPrompt` | *(see above)* | Customizable prompt for the LLM |
+| `systemPrompt` | *(see above)* | Customizable prompt for the LLM. **Keep it brief** — the prompt caps output length, and output tokens are the dominant cost of the description phase. A one-sentence (≤ 20 word) instruction roughly halves generation time and improves batch-format adherence on small models. Changing it re-describes files (it is part of the manifest fingerprint). |
 | `timeoutMs` | `60000` | Timeout per LLM call |
-| `batchMaxChunks` | `25` | Maximum chunks per batch description call |
+| `batchMaxChunks` | `25` | Maximum chunks per batch description call. `1` disables multi-chunk batching (per-chunk requests). Multi-chunk batches are parsed per ordinal label; chunks a batch misses are fetched individually, and batching auto-disables after 2 consecutive unparseable batches. |
 | `batchTimeoutMs` | `120000` | Timeout for batch description calls |
 | `batchConcurrency` | `3` | Number of LLM batch description requests sent in parallel. Higher values speed up description generation but increase LLM pressure |
 | `retryMax` | `3` | Retry attempts on failure |
 | `retryBaseDelayMs` | `1000` | Base delay for exponential backoff |
+| `keepAlive` | — | Ollama `keep_alive` value sent with `/api/chat` requests (e.g. `"-1"` keeps the model resident in memory between phases/runs). |
 | `maxContentChars` | `4000` | Maximum content characters sent to the LLM. Chunks exceeding this limit receive fallback descriptions (line range + language) instead of LLM-generated descriptions. Prevents timeouts on large/minified files. |
 
 When enabled, the embedded text is `filePath + "\n\n" + description + "\n\n" + code content`. Even when disabled, descriptions include the line range and language (e.g., `lines 10-42, typescript`). On LLM failure, falls back to embedding filePath + raw content. Files where description generation failed are flagged in the manifest (`descriptionFailed: true`) and automatically retried on the next `opencode-rag index` run.

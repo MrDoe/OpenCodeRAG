@@ -134,6 +134,51 @@ describe("OllamaProvider", () => {
     }
   });
 
+  it("sends keep_alive in the embed body when configured", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("fetch should not be called for localhost");
+    }) as typeof fetch;
+
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += String(chunk);
+      });
+      req.on("end", () => {
+        assert.equal(req.url, "/api/embed");
+        assert.match(body, /"keep_alive":"-1"/);
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ embeddings: [[1, 2, 3]] }));
+      });
+    });
+
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (typeof address !== "object" || address === null) {
+        throw new Error("failed to start test server");
+      }
+
+      const p = new OllamaProvider(
+        `http://localhost:${address.port}/api`,
+        "qwen2.5:3b",
+        undefined,
+        5000,
+        undefined,
+        undefined,
+        "-1"
+      );
+      const embeddings = await p.embed(["hello"]);
+
+      assert.deepEqual(embeddings, [[1, 2, 3]]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("follows redirect responses from Ollama", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {

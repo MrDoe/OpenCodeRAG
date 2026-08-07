@@ -80,9 +80,9 @@
     "baseUrl": "http://127.0.0.1:11434/api",
     "model": "qwen2.5:3b",
     "think": false,
-    "numCtx": 4096,
+    "numCtx": 2048,
     "timeoutMs": 60000,
-    "systemPrompt": "Describe this code in 2-3 sentences: purpose, key concepts, inputs/outputs, and dependencies. No code repetition.",
+    "systemPrompt": "Describe this code in ONE concise sentence (max 20 words): purpose, inputs/outputs. No code repetition.",
     "batchConcurrency": 3,
     "retryMax": 3,
     "retryBaseDelayMs": 1000

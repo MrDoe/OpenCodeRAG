@@ -154,6 +154,19 @@ The `embedBatch` function sends multiple embedding batch requests concurrently, 
 
 Increase `embedConcurrency` if your embedding provider can handle concurrent requests (e.g., local Ollama). For rate-limited providers, keep it low or at 1.
 
+## Model Residency (`keepAlive`)
+
+Ollama evicts idle models after 5 minutes by default. To keep models resident across phases and runs (avoiding unload/reload thrash between the description and embedding phases), set `keepAlive` in the embedding and/or description config:
+
+```json
+{
+  "embedding": { "keepAlive": "-1" },
+  "description": { "keepAlive": "-1" }
+}
+```
+
+`"-1"` keeps the model in memory indefinitely; any Ollama duration string (e.g. `"30m"`, `"24h"`) also works. The value is sent as `keep_alive` on every `/api/embed` and `/api/chat` request. Note: pinning several models in memory competes for VRAM — see `OLLAMA_MAX_LOADED_MODELS` in the [configuration docs](configuration.md).
+
 ## Connection Reuse
 
 OpenCodeRAG maintains an HTTP connection pool for the embedding provider. When multiple embedding requests are sent to the same host, TCP connections are reused instead of creating new ones for each request. This reduces connection overhead, especially for remote providers. Connections are kept alive for 30 seconds and the pool maintains up to 4 connections per host.

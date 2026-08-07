@@ -23,7 +23,6 @@ import pLimit from "p-limit";
 export function createEmbedder(config: RagConfig): EmbeddingProvider {
   const { provider, baseUrl, model, apiKey, proxy, timeoutMs } = config.embedding;
   const effectiveTimeoutMs = timeoutMs ?? 120000;
-
   // Fail fast for chat-only providers (groq, deepseek, anthropic, google)
   // — proceeding would surface a cryptic failure at index time.
   if (!supportsEmbedding(provider)) {
@@ -34,7 +33,7 @@ export function createEmbedder(config: RagConfig): EmbeddingProvider {
   }
 
   if (provider === "ollama") {
-    return new OllamaProvider(baseUrl, model, apiKey, effectiveTimeoutMs, proxy, config.logging.level);
+    return new OllamaProvider(baseUrl, model, apiKey, effectiveTimeoutMs, proxy, config.logging.level, config.embedding.keepAlive);
   }
 
   if (provider === "cohere") {

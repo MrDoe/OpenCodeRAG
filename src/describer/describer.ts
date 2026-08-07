@@ -4,7 +4,7 @@
 import type { BatchDescriptionOptions, Chunk, DescriptionProvider, DescriptionLogger } from "../core/interfaces.js";
 import type { DescriptionConfig } from "../core/config.js";
 import { postJson } from "../embedder/http.js";
-import { buildUserMessage, sleep } from "./shared.js";
+import { buildUserMessage, buildBatchUserMessage, parseBatchDescriptions, sleep } from "./shared.js";
 import pLimit from "p-limit";
 
 interface ChatMessage {
@@ -20,6 +20,9 @@ interface ChatResponse {
 /** HTTP status codes that are safe to retry on. */
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
+/** Consecutive failed batch attempts after which batching is disabled for the rest of the run. */
+const BATCH_MAX_STREAK = 2;
+
 /**
  * Description provider that works with any OpenAI-compatible chat API (including Ollama).
  *
@@ -28,6 +31,10 @@ const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
  */
 export class LlmDescriptionProvider implements DescriptionProvider {
   private readonly config: DescriptionConfig;
+  /** Consecutive batches that needed individual fallback; disables batching past BATCH_MAX_STREAK. */
+  private batchFailStreak = 0;
+  /** Whether multi-chunk batching is still active (adaptive, per provider instance / index run). */
+  private batchEnabled = true;
 
   /**
    * @param config - Configuration for the LLM provider, including base URL, model, API key, proxy, and retry settings.
@@ -59,32 +66,126 @@ export class LlmDescriptionProvider implements DescriptionProvider {
   async generateBatchDescriptions(chunks: Chunk[], logger?: DescriptionLogger, opts?: BatchDescriptionOptions): Promise<Map<string, string>> {
     const log = logger ?? { info: (msg: string) => process.stderr.write(`${msg}\n`), warn: (msg: string) => process.stderr.write(`${msg}\n`), debug: (msg: string) => process.stderr.write(`${msg}\n`) };
     const concurrency = this.config.batchConcurrency ?? 3;
+    const batchMaxChunks = this.config.batchMaxChunks ?? 25;
     const total = chunks.length;
-    log.debug(`[describer] Generating descriptions for ${total} chunks via ${this.config.provider}/${this.config.model} (concurrency: ${concurrency})`);
+    log.debug(`[describer] Generating descriptions for ${total} chunks via ${this.config.provider}/${this.config.model} (concurrency: ${concurrency}, batch: ${batchMaxChunks})`);
     const result = new Map<string, string>();
     const limit = pLimit(concurrency);
     let completed = 0;
+    const emitProgress = (chunk: Chunk) => {
+      completed++;
+      opts?.onProgress?.(chunk, completed, opts.total ?? total);
+    };
+
+    // Group chunks so that up to batchMaxChunks share a single LLM request,
+    // cutting round trips (one prefill + one generation per group instead of
+    // per chunk). Groups with a single chunk use the individual path for
+    // consistent error handling.
+    const groups: Chunk[][] = [];
+    for (let i = 0; i < chunks.length; i += batchMaxChunks) {
+      groups.push(chunks.slice(i, i + batchMaxChunks));
+    }
 
     await Promise.all(
-      chunks.map((chunk) =>
+      groups.map((group) =>
         limit(async () => {
-          const userMsg = buildUserMessage(chunk, this.config.maxContentChars);
-          log.debug(`[describer] REQUEST chunk ${chunk.id} (${chunk.metadata.filePath}:${chunk.metadata.startLine}):\n${userMsg}`);
-          try {
-            const desc = await this.generateDescription(chunk);
-            result.set(chunk.id, desc);
-            log.debug(`[describer] RESPONSE chunk ${chunk.id}: ${desc}`);
-          } catch (err) {
-            log.warn(`[describer] Failed to describe chunk ${chunk.id} (${chunk.metadata.filePath}:${chunk.metadata.startLine}): ${err instanceof Error ? err.message : String(err)}`);
+          if (group.length === 1) {
+            const chunk = group[0]!;
+            try {
+              const desc = await this.generateDescription(chunk);
+              result.set(chunk.id, desc);
+            } catch (err) {
+              log.warn(`[describer] Failed to describe chunk ${chunk.id} (${chunk.metadata.filePath}:${chunk.metadata.startLine}): ${err instanceof Error ? err.message : String(err)}`);
+            }
+            emitProgress(chunk);
+            return;
           }
-          completed++;
-          opts?.onProgress?.(chunk, completed, opts.total ?? total);
+
+          // Small models are unreliable at structured multi-item output — if a
+          // batch response can't be parsed, fall back to individual requests
+          // and degrade to per-chunk mode for the rest of the run after
+          // BATCH_MAX_STREAK consecutive failures.
+          let resolved: Map<string, string>;
+          let batchFailed = false;
+          if (this.batchEnabled) {
+            try {
+              resolved = await this.batchDescribe(group, log);
+            } catch (err) {
+              log.warn(`[describer] Batch description failed for ${group.length} chunks, falling back to individual: ${err instanceof Error ? err.message : String(err)}`);
+              resolved = new Map();
+              batchFailed = true;
+            }
+          } else {
+            resolved = new Map();
+          }
+
+          // Batch labels are ordinals (1..N); map back to chunks by position.
+          const missing: Chunk[] = [];
+          for (let i = 0; i < group.length; i++) {
+            const chunk = group[i]!;
+            const desc = resolved.get(String(i + 1));
+            if (desc && desc.trim().length > 0) {
+              result.set(chunk.id, desc.trim());
+              emitProgress(chunk);
+            } else {
+              missing.push(chunk);
+            }
+          }
+
+          if (batchFailed || missing.length > 0) {
+            this.batchFailStreak++;
+            if (this.batchEnabled && this.batchFailStreak >= BATCH_MAX_STREAK) {
+              this.batchEnabled = false;
+              log.warn(`[describer] Batch descriptions unreliable (${this.batchFailStreak} consecutive failures), switching to individual requests for the rest of the run`);
+            }
+          } else {
+            this.batchFailStreak = 0;
+          }
+
+          // Fall back to individual requests for chunks the batch did not cover.
+          for (const chunk of missing) {
+            try {
+              const desc = await this.generateDescription(chunk);
+              result.set(chunk.id, desc);
+            } catch (err) {
+              log.warn(`[describer] Failed to describe chunk ${chunk.id} (${chunk.metadata.filePath}:${chunk.metadata.startLine}): ${err instanceof Error ? err.message : String(err)}`);
+            }
+            emitProgress(chunk);
+          }
         }),
       ),
     );
 
     log.debug(`[describer] Descriptions generated: ${result.size}/${total}`);
     return result;
+  }
+
+  /**
+   * Describe a group of chunks in a single LLM request and parse the response.
+   *
+   * Builds one chat request whose user message contains all chunks wrapped in
+   * `[CHUNK <n>]` markers and expects a `<n>: <description>` line per chunk.
+   * Labels are ordinals and are mapped back to chunks by position in the
+   * calling group; labels outside the group's range (hallucinations) are
+   * naturally dropped, prompting the caller to fall back to individual
+   * requests for the missing chunks.
+   *
+   * @param group - Chunks to describe in one request (length > 1)
+   * @param log - Logger for diagnostic messages
+   * @returns Map of ordinal label to description (may be partial or empty)
+   * @throws When the LLM request itself fails (caller falls back per chunk)
+   */
+  private async batchDescribe(group: Chunk[], log: DescriptionLogger): Promise<Map<string, string>> {
+    const messages: ChatMessage[] = [
+      { role: "system", content: this.config.systemPrompt },
+      { role: "user", content: buildBatchUserMessage(group, this.config.maxContentChars) },
+    ];
+    const timeoutMs = this.config.batchTimeoutMs ?? this.config.timeoutMs ?? 120000;
+    log.debug(`[describer] BATCH REQUEST ${group.length} chunks (${group[0]!.metadata.filePath}):\n${messages[1]!.content}`);
+    const content = await this.chatRequest(messages, timeoutMs);
+    const parsed = parseBatchDescriptions(content);
+    log.debug(`[describer] BATCH RESPONSE parsed ${parsed.size}/${group.length} chunks`);
+    return parsed;
   }
 
   /**
@@ -108,7 +209,7 @@ export class LlmDescriptionProvider implements DescriptionProvider {
       : `${baseUrl}${baseUrl.endsWith("/v1") ? "" : "/v1"}/chat/completions`;
 
     const body = isOllama
-      ? { model: this.config.model, messages, stream: false, think: this.config.think ?? false, options: { num_ctx: this.config.numCtx } }
+      ? { model: this.config.model, messages, stream: false, think: this.config.think ?? false, options: { num_ctx: this.config.numCtx }, keep_alive: this.config.keepAlive }
       : { model: this.config.model, messages };
 
     const headers: Record<string, string> = {};
