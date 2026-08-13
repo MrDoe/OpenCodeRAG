@@ -10,6 +10,7 @@ import {
   type SearchResult,
   type Chunk,
 } from "../../core/interfaces.js";
+import { normalizeFileExtensions, matchesFileExtension } from "../../core/filters.js";
 
 function makeEmbedder(vectors: number[][]): EmbeddingProvider {
   return {
@@ -30,6 +31,11 @@ function makeStore(results: SearchResult[]): VectorStore {
       let filtered = results;
       if (filter?.kinds?.length) {
         filtered = filtered.filter((r) => filter.kinds.includes(r.chunk.metadata.kind ?? ""));
+      }
+      if (filter?.fileExtensions?.length) {
+        filtered = filtered.filter((r) =>
+          matchesFileExtension(r.chunk.metadata.filePath, normalizeFileExtensions(filter.fileExtensions))
+        );
       }
       return filtered.slice(0, topK);
     },
@@ -471,6 +477,61 @@ describe("retrieve", () => {
       });
       const ids = results.map((r) => r.chunk.id).sort();
       assert.deepEqual(ids, ["c1", "d1"], "should keep regular chunks, never quirks");
+    });
+  });
+
+  describe("file extensions filter", () => {
+    it("filters by file extension, case-insensitively, with or without leading dot", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "c1", content: "code content", metadata: { filePath: "src/auth.ts", startLine: 1, endLine: 5, language: "typescript" } } },
+        { score: 0.8, chunk: { id: "c2", content: "python content", metadata: { filePath: "src/app.py", startLine: 1, endLine: 5, language: "python" } } },
+        { score: 0.7, chunk: { id: "d1", content: "doc content", metadata: { filePath: "doc.md", startLine: 1, endLine: 5, language: "markdown" } } },
+      ]);
+      const ki = new KeywordIndex();
+      ki.addChunks([
+        { id: "c1", content: "code content", metadata: { filePath: "src/auth.ts", startLine: 1, endLine: 5, language: "typescript" } },
+        { id: "c2", content: "python content", metadata: { filePath: "src/app.py", startLine: 1, endLine: 5, language: "python" } },
+        { id: "d1", content: "doc content", metadata: { filePath: "doc.md", startLine: 1, endLine: 5, language: "markdown" } },
+      ]);
+      const results = await retrieve("content", embedder, store, {
+        keywordIndex: ki,
+        keywordWeight: 0.4,
+        minScore: 0,
+        filter: { fileExtensions: ["TS"] },
+      });
+      const ids = results.map((r) => r.chunk.id).sort();
+      assert.deepEqual(ids, ["c1"], "should keep only .ts chunks");
+    });
+
+    it("returns empty when no chunks match the extension filter", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "c1", content: "code", metadata: { filePath: "src/auth.ts", startLine: 1, endLine: 5, language: "typescript" } } },
+      ]);
+      const results = await retrieve("code", embedder, store, { filter: { fileExtensions: [".py"] } });
+      assert.equal(results.length, 0, "should return no results when extension filter excludes all");
+    });
+
+    it("filters the keyword index too", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "c1", content: "apple", metadata: { filePath: "a.ts", startLine: 1, endLine: 1, language: "typescript" } } },
+        { score: 0.8, chunk: { id: "c2", content: "apple", metadata: { filePath: "b.py", startLine: 1, endLine: 1, language: "python" } } },
+      ]);
+      const ki = new KeywordIndex();
+      ki.addChunks([
+        { id: "c1", content: "apple", metadata: { filePath: "a.ts", startLine: 1, endLine: 1, language: "typescript" } },
+        { id: "c2", content: "apple", metadata: { filePath: "b.py", startLine: 1, endLine: 1, language: "python" } },
+      ]);
+      const results = await retrieve("apple", embedder, store, {
+        keywordIndex: ki,
+        keywordWeight: 1,
+        minScore: 0,
+        filter: { fileExtensions: ["py"] },
+      });
+      const ids = results.map((r) => r.chunk.id).sort();
+      assert.deepEqual(ids, ["c2"], "keyword-only search should respect the extension filter");
     });
   });
 });

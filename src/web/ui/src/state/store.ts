@@ -28,6 +28,7 @@ export const searchParams = signal({
   hybrid: true,
   pathFilter: "",
   langFilter: "",
+  extFilter: "",
 });
 export const searchResults = signal<any[]>([]);
 export const searchHistory = signal<{ query: string; params: any }[]>([]);

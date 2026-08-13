@@ -419,7 +419,7 @@ async function handleSearch(
 
 /**
  * Perform a full vector+hybrid semantic search via the retrieve() pipeline.
- * Accepts GET or POST with query parameters: q, topK, minScore, keywordWeight, hybrid, path, lang, explain.
+ * Accepts GET or POST with query parameters: q, topK, minScore, keywordWeight, hybrid, path, lang, ext, explain.
  * The embedder is lazily initialized on the first call; returns 202 if still initializing.
  */
 async function handleRetrieve(
@@ -457,6 +457,7 @@ async function handleRetrieve(
   const explain = params.get("explain") !== "false";
   const pathFilter = params.get("path") ?? undefined;
   const langFilter = params.get("lang") ?? undefined;
+  const extFilter = params.get("ext") ?? undefined;
 
   try {
     const results = await retrieve(q, embedder, store, {
@@ -470,6 +471,7 @@ async function handleRetrieve(
       filter: {
         pathPatterns: pathFilter ? pathFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         languages: langFilter ? langFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+        fileExtensions: extFilter ? extFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         kinds: CODE_SEARCH_FILTER.kinds,
       },
     } satisfies RetrieveOptions);

@@ -230,7 +230,7 @@ export interface VectorStore {
   checkIntegrity?(): Promise<boolean>;
 }
 
-/** Filter criteria for narrowing search results by file path, language, or kind. */
+/** Filter criteria for narrowing search results by file path, language, kind, or extension. */
 export interface MetadataFilter {
   /** Glob-style path patterns (e.g. "src/**", "lib/auth/*"). */
   pathPatterns?: string[];
@@ -238,6 +238,8 @@ export interface MetadataFilter {
   languages?: string[];
   /** Synthetic kind filters (e.g. ["quirk"]). */
   kinds?: string[];
+  /** Dot-prefixed file extensions (e.g. [".ts", ".py"]). Matching is case-insensitive. */
+  fileExtensions?: string[];
 }
 
 /**

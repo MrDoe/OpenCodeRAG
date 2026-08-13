@@ -6,7 +6,8 @@
 
 import type { Plugin, PluginInput, Hooks, ToolDefinition } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin/tool";
-import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type VectorStore, type SearchResult } from "./core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type VectorStore, type SearchResult, type MetadataFilter } from "./core/interfaces.js";
+import { normalizeFileExtensions } from "./core/filters.js";
 import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
 import { createEmbedder } from "./embedder/factory.js";
 import { createDescriptionProvider } from "./describer/factory.js";
@@ -382,10 +383,11 @@ async function retrieveContext(
   keywordWeight?: number,
   queryPrefix?: string,
   explain = false,
-  hybridEnabled?: boolean
+  hybridEnabled?: boolean,
+  filter?: MetadataFilter
 ): Promise<SearchResult[]> {
   if (query.trim().length === 0) return [];
-  return retrieveFn(query, embedder, store, { topK, minScore, keywordIndex, keywordWeight, hybridEnabled, queryPrefix, explain });
+  return retrieveFn(query, embedder, store, { topK, minScore, keywordIndex, keywordWeight, hybridEnabled, queryPrefix, explain, filter });
 }
 
 /**
@@ -403,14 +405,15 @@ async function loadRetrievedResults(
   extraQuery?: string,
   keywordIndex?: KeywordIndex,
   queryPrefix?: string,
-  explain = false
+  explain = false,
+  filter?: MetadataFilter
 ): Promise<SearchResult[]> {
   const minScore = cfg.retrieval.minScore;
   const kw = cfg.retrieval.hybridSearch?.keywordWeight;
   const hybridEnabled = cfg.retrieval.hybridSearch?.enabled;
-  const primaryResults = await retrieveContext(query, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled);
+  const primaryResults = await retrieveContext(query, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter);
   const extraResults = extraQuery
-    ? await retrieveContext(extraQuery, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled)
+    ? await retrieveContext(extraQuery, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter)
     : [];
 
   const optCfg = cfg.retrieval.contextOptimization ?? DEFAULT_CONTEXT_OPTIMIZATION;
@@ -613,6 +616,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       query: tool.schema.string().min(1, "A retrieval query is required."),
       pathHints: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
       languageHints: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
+      fileExtensions: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
       topK: tool.schema.number().int().min(1).max(25).optional(),
       explain: tool.schema.boolean().optional(),
     },
@@ -624,6 +628,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             query: args.query,
             pathHints: args.pathHints ?? [],
             languageHints: args.languageHints ?? [],
+            fileExtensions: args.fileExtensions ?? [],
             topK: args.topK ?? getEffectiveCfg().retrieval.topK,
           });
 
@@ -647,13 +652,16 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         });
         const topK = args.topK ?? effectiveCfg.retrieval.topK;
         const explain = args.explain ?? false;
-        const results = await loadRetrievedResults(query, embedder, store, effectiveCfg, dependencies.retrieve, topK, undefined, keywordIndex, effectiveCfg.embedding.queryPrefix, explain);
+        const fileExtensions = normalizeFileExtensions(args.fileExtensions);
+        const filter: MetadataFilter | undefined = fileExtensions.length > 0 ? { fileExtensions } : undefined;
+        const results = await loadRetrievedResults(query, embedder, store, effectiveCfg, dependencies.retrieve, topK, undefined, keywordIndex, effectiveCfg.embedding.queryPrefix, explain, filter);
 
         if (results.length === 0) {
           appendVerboseLog(options.logFilePath, CONTEXT_TOOL_NAME, "retrieval completed with no matching chunks", {
             query,
             pathHints: args.pathHints ?? [],
             languageHints: args.languageHints ?? [],
+            fileExtensions: args.fileExtensions ?? [],
             topK,
           });
 
@@ -674,6 +682,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           query,
           pathHints: args.pathHints ?? [],
           languageHints: args.languageHints ?? [],
+          fileExtensions: args.fileExtensions ?? [],
           topK,
           results: results.map((result) => ({
             filePath: result.chunk.metadata.filePath,
@@ -695,6 +704,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             indexed: true,
             pathHints: args.pathHints ?? [],
             languageHints: args.languageHints ?? [],
+            fileExtensions: args.fileExtensions ?? [],
           },
         };
       } catch (err) {

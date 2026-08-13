@@ -17,7 +17,7 @@ export const END_MARKER = "<!-- END opencode-rag -->";
  */
 export const MANDATORY_GUIDANCE_LINES: readonly string[] = [
   "MANDATORY: OpenCodeRAG tools MUST be used before any code task:",
-  "- `search_semantic(query)`: retrieve relevant code chunks. Call BEFORE planning, editing, or answering. Accepts `pathHints` and `languageHints`.",
+  "- `search_semantic(query)`: retrieve relevant code chunks. Call BEFORE planning, editing, or answering. Accepts `pathHints`, `languageHints`, and `fileExtensions`.",
   "- `get_file_skeleton(filePath)`: structural overview of a file. Call BEFORE reading any file.",
   "- `find_usages(symbolName)`: find all references. Call BEFORE editing any function, class, or variable.",
   "- `describe_image(filePath, systemPrompt?)`: describe an image file using a vision model. Call when user refers to a screenshot, diagram, or image. Optional `systemPrompt` steers the description toward specific features.",

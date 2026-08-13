@@ -28,6 +28,8 @@ export interface SearchOptions {
   pathHints?: string[];
   /** Filter results to files matching these language identifiers. */
   languageHints?: string[];
+  /** Filter results to files matching these dot-prefixed extensions (e.g. [".ts"]). */
+  fileExtensions?: string[];
   /** Include explanation metadata in results. */
   explain?: boolean;
 }
@@ -102,6 +104,7 @@ export async function search(
       filter: {
         pathPatterns: options.pathHints,
         languages: options.languageHints,
+        fileExtensions: options.fileExtensions,
         kinds: CODE_SEARCH_FILTER.kinds,
       },
     } satisfies RetrieveOptions);

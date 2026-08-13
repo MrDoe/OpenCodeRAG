@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { VectorStore, Chunk, ChunkSummary, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
+import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
 
 const TABLE_NAME = "chunks";
 
@@ -1295,6 +1296,10 @@ function buildWhereClause(filter?: MetadataFilter): string | undefined {
     });
     parts.push(`(${likes.join(" OR ")})`);
   }
+  if (filter.fileExtensions?.length) {
+    const likes = normalizeFileExtensions(filter.fileExtensions).map((ext) => `filePath LIKE '%${ext}'`);
+    parts.push(`(${likes.join(" OR ")})`);
+  }
   return parts.length ? parts.join(" AND ") : undefined;
 }
 
@@ -1306,6 +1311,7 @@ function matchesFilterLocal(chunk: Chunk, filter?: MetadataFilter): boolean {
   if (filter.pathPatterns?.length) {
     return filter.pathPatterns.some((p) => globMatchLocal(p, chunk.metadata.filePath));
   }
+  if (!matchesFileExtension(chunk.metadata.filePath, normalizeFileExtensions(filter.fileExtensions))) return false;
   return true;
 }
 

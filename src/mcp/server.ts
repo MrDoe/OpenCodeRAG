@@ -57,6 +57,7 @@ export async function createMcpServer(options?: McpServerOptions): Promise<RagMc
       query: z.string().min(1, "A search query is required."),
       pathHints: z.array(z.string().min(1)).max(10).optional(),
       languageHints: z.array(z.string().min(1)).max(10).optional(),
+      fileExtensions: z.array(z.string().min(1)).max(10).optional(),
       topK: z.number().int().min(1).max(25).optional(),
     },
     async (args: SearchSemanticParams) => {

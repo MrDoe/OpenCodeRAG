@@ -17,6 +17,7 @@ The primary retrieval tool that any OpenCode agent can invoke to search the inde
 | `query` | Yes | Narrow, specific search query |
 | `pathHints` | No | Up to 10 path filters (e.g., `["src/auth/"]`) |
 | `languageHints` | No | Up to 10 language filters (e.g., `["typescript"]`) |
+| `fileExtensions` | No | Up to 10 dot-prefixed file extensions (e.g., `[".ts", ".py"]`) — hard filter on file suffix, case-insensitive |
 | `topK` | No | Result count (1–25, default 10) |
 
 **Returns:** Formatted markdown with file paths, line ranges, score, language, content preview, and descriptions for each relevant chunk.

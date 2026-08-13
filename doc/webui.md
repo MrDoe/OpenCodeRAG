@@ -67,6 +67,9 @@ The semantic search playground for interactively querying the vector database.
 | `minScore` | 0.35 | Minimum relevance threshold |
 | `keywordWeight` | 0.4 | Hybrid search fusion weight (0 = vector only, 1 = keyword only) |
 | Hybrid mode | on | Toggle hybrid vector+keyword search on/off |
+| `Extensions` | — | Comma-separated file extensions (e.g. `.ts, .py`) — hard filter on file suffix |
+| `Languages` | — | Comma-separated language identifiers (e.g. `typescript, python`) |
+| `Path` | — | Comma-separated glob path patterns (e.g. `src/**`) |
 
 **Result cards** show for each match:
 
@@ -259,7 +262,7 @@ The web server exposes a REST API under `/api/`:
 | `/api/chunks/:id` | GET | Single chunk by ID |
 | `/api/search?q=&topK=` | GET | Keyword search via KeywordIndex |
 | `/api/compare?ids=` | GET | Fetch multiple chunks for side-by-side view |
-| `/api/retrieve?q=&topK=&minScore=&keywordWeight=&hybrid=&path=&lang=&explain=` | GET/POST | **Semantic search** — full vector+hybrid retrieval pipeline with score breakdowns and matched terms |
+| `/api/retrieve?q=&topK=&minScore=&keywordWeight=&hybrid=&path=&lang=&ext=&explain=` | GET/POST | **Semantic search** — full vector+hybrid retrieval pipeline with score breakdowns and matched terms |
 | `/api/embeddings/projection?maxChunks=&dims=` | GET | PCA projection of chunk embeddings (dims: 2 or 3) for the Embedding Space Explorer |
 | `/api/eval/sessions` | GET | All recorded sessions with summary stats |
 | `/api/eval/sessions/:id` | GET | Single session detail with events |

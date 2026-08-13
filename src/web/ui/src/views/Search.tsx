@@ -23,6 +23,7 @@ export function Search() {
         hybrid: router.params.hybrid !== "false",
         pathFilter: router.params.path ?? "",
         langFilter: router.params.lang ?? "",
+        extFilter: router.params.ext ?? "",
       };
     }
   }, []);
@@ -39,6 +40,7 @@ export function Search() {
       });
       if (searchParams.value.pathFilter) p.set("path", searchParams.value.pathFilter);
       if (searchParams.value.langFilter) p.set("lang", searchParams.value.langFilter);
+      if (searchParams.value.extFilter) p.set("ext", searchParams.value.extFilter);
       const hash = `search?${p.toString()}`;
       if (location.hash !== `#${hash}`) {
         history.replaceState(null, "", `#${hash}`);
@@ -88,6 +90,39 @@ export function Search() {
             <input type="checkbox" checked={searchParams.value.hybrid}
               onChange={(e) => { searchParams.value = { ...searchParams.value, hybrid: (e.target as HTMLInputElement).checked }; }}
               className="accent-brand-500" />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-slate-400 w-28 shrink-0">Extensions</label>
+            <input
+              type="text"
+              value={searchParams.value.extFilter}
+              onInput={(e) => { searchParams.value = { ...searchParams.value, extFilter: (e.target as HTMLInputElement).value }; }}
+              placeholder=".ts, .py (comma-separated)"
+              className="flex-1 px-2 py-1 bg-slate-900 border border-slate-600 rounded text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-400"
+              aria-label="File extension filter"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-slate-400 w-28 shrink-0">Languages</label>
+            <input
+              type="text"
+              value={searchParams.value.langFilter}
+              onInput={(e) => { searchParams.value = { ...searchParams.value, langFilter: (e.target as HTMLInputElement).value }; }}
+              placeholder="typescript, python (comma-separated)"
+              className="flex-1 px-2 py-1 bg-slate-900 border border-slate-600 rounded text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-400"
+              aria-label="Language filter"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-xs text-slate-400 w-28 shrink-0">Path</label>
+            <input
+              type="text"
+              value={searchParams.value.pathFilter}
+              onInput={(e) => { searchParams.value = { ...searchParams.value, pathFilter: (e.target as HTMLInputElement).value }; }}
+              placeholder="src/** (comma-separated)"
+              className="flex-1 px-2 py-1 bg-slate-900 border border-slate-600 rounded text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-brand-400"
+              aria-label="Path filter"
+            />
           </div>
         </div>
       </details>

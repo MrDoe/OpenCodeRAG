@@ -217,6 +217,48 @@ describe("handleSearchSemantic", () => {
 
     assert.equal(capture.options.topK, 7);
   });
+
+  it("passes normalized file extensions into the retrieve filter", async () => {
+    const capture = { query: "", options: {} as RetrieveOptions };
+    await handleSearchSemantic(
+      { query: "test", fileExtensions: [".ts", "py", " TS "] },
+      dummyProvider,
+      makeStore(5, []),
+      cfg,
+      undefined,
+      makeRetrieveCapture(capture)
+    );
+
+    assert.deepEqual(capture.options.filter?.fileExtensions, [".ts", ".py"]);
+  });
+
+  it("keeps the code-search kinds filter when file extensions are provided", async () => {
+    const capture = { query: "", options: {} as RetrieveOptions };
+    await handleSearchSemantic(
+      { query: "test", fileExtensions: [".ts"] },
+      dummyProvider,
+      makeStore(5, []),
+      cfg,
+      undefined,
+      makeRetrieveCapture(capture)
+    );
+
+    assert.deepEqual(capture.options.filter?.kinds, [""]);
+  });
+
+  it("leaves fileExtensions unset when none provided", async () => {
+    const capture = { query: "", options: {} as RetrieveOptions };
+    await handleSearchSemantic(
+      { query: "test" },
+      dummyProvider,
+      makeStore(5, []),
+      cfg,
+      undefined,
+      makeRetrieveCapture(capture)
+    );
+
+    assert.equal(capture.options.filter?.fileExtensions, undefined);
+  });
 });
 
 // ─── Suite: handleFileSkeleton ─────────────────────────────────────────────

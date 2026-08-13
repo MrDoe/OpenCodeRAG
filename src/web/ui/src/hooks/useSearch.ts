@@ -31,6 +31,9 @@ export function useSearch() {
           minScore: debouncedParams.minScore,
           keywordWeight: debouncedParams.keywordWeight,
           hybrid: debouncedParams.hybrid ? "true" : "false",
+          path: debouncedParams.pathFilter || undefined,
+          lang: debouncedParams.langFilter || undefined,
+          ext: debouncedParams.extFilter || undefined,
           explain: "true",
         });
         if (cancelled) return;

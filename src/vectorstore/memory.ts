@@ -2,6 +2,7 @@
  * @fileoverview Ephemeral in-memory vector store using cosine similarity search.
  */
 import type { VectorStore, Chunk, ChunkSummary, FileSummary, SearchResult, MetadataFilter, BulkChunkWrite } from "../core/interfaces.js";
+import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
 
 /** Ephemeral in-memory vector store using cosine similarity search. */
 export class InMemoryVectorStore implements VectorStore {
@@ -143,6 +144,7 @@ function matchesFilter(chunk: Chunk, filter?: MetadataFilter): boolean {
   if (filter.pathPatterns?.length) {
     return filter.pathPatterns.some((p) => globMatch(p, chunk.metadata.filePath));
   }
+  if (!matchesFileExtension(chunk.metadata.filePath, normalizeFileExtensions(filter.fileExtensions))) return false;
   return true;
 }
 
