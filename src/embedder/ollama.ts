@@ -3,6 +3,7 @@
  */
 import type { EmbeddingProvider } from "../core/interfaces.js";
 import type { ProxyConfig } from "../core/config.js";
+import { normalizeKeepAlive } from "../core/ollama.js";
 import { postJson } from "./http.js";
 import path from "node:path";
 import { appendDebugLog } from "../core/fileLogger.js";
@@ -64,8 +65,9 @@ export class OllamaProvider implements EmbeddingProvider {
         model: this.model,
         input: texts.length === 1 ? texts[0] : texts,
       };
-      if (this.keepAlive) {
-        body.keep_alive = this.keepAlive;
+      const keepAlive = normalizeKeepAlive(this.keepAlive);
+      if (keepAlive !== undefined) {
+        body.keep_alive = keepAlive;
       }
 
       const response = await postJson(

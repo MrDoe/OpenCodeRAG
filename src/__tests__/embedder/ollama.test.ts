@@ -147,7 +147,7 @@ describe("OllamaProvider", () => {
       });
       req.on("end", () => {
         assert.equal(req.url, "/api/embed");
-        assert.match(body, /"keep_alive":"-1"/);
+        assert.match(body, /"keep_alive":-1/);
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ embeddings: [[1, 2, 3]] }));

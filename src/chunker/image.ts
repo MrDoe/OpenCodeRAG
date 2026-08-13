@@ -3,6 +3,7 @@
  */
 import type { Chunker, Chunk } from "../core/interfaces.js";
 import type { ImageDescriptionConfig, ProxyConfig } from "../core/config.js";
+import { normalizeKeepAlive } from "../core/ollama.js";
 import { postJson } from "../embedder/http.js";
 import { uuid } from "./uuid.js";
 
@@ -96,7 +97,7 @@ class OllamaImageVisionProvider implements ImageVisionProvider {
       options: { num_ctx: this.numCtx },
     };
     if (this.keepAlive) {
-      body.keep_alive = this.keepAlive;
+      body.keep_alive = normalizeKeepAlive(this.keepAlive);
     }
 
     let lastError: Error | undefined;

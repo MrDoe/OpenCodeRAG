@@ -293,7 +293,7 @@ describe("LlmDescriptionProvider", () => {
         makeConfig({ baseUrl: `${baseUrl}/api`, keepAlive: "-1" })
       );
       await provider.generateDescription(makeChunk());
-      assert.equal(capturedBody.keep_alive, "-1");
+      assert.equal(capturedBody.keep_alive, -1);
     } finally {
       await close();
     }

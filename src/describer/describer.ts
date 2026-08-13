@@ -3,6 +3,7 @@
  */
 import type { BatchDescriptionOptions, Chunk, DescriptionProvider, DescriptionLogger } from "../core/interfaces.js";
 import type { DescriptionConfig } from "../core/config.js";
+import { normalizeKeepAlive } from "../core/ollama.js";
 import { postJson } from "../embedder/http.js";
 import { buildUserMessage, buildBatchUserMessage, parseBatchDescriptions, sleep } from "./shared.js";
 import pLimit from "p-limit";
@@ -213,7 +214,7 @@ export class LlmDescriptionProvider implements DescriptionProvider {
       : `${baseUrl}${baseUrl.endsWith("/v1") ? "" : "/v1"}/chat/completions`;
 
     const body = isOllama
-      ? { model: this.config.model, messages, stream: false, think: this.config.think ?? false, options: { num_ctx: this.config.numCtx }, keep_alive: this.config.keepAlive }
+      ? { model: this.config.model, messages, stream: false, think: this.config.think ?? false, options: { num_ctx: this.config.numCtx }, keep_alive: normalizeKeepAlive(this.config.keepAlive) }
       : { model: this.config.model, messages };
 
     const headers: Record<string, string> = {};
