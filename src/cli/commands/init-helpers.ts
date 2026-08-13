@@ -69,8 +69,11 @@ export function buildWorkspacePackageJson(
 /**
  * Build the `.opencode/opencode.json` config object.
  *
- * Ensures the `$schema` key is present and removes any stale `plugin`
- * entries that would trigger erroneous npm installs.
+ * Ensures the `$schema` key is present and removes stale `plugin` entries
+ * (which would trigger erroneous npm installs) plus stale MCP entries that
+ * are not valid local/remote server configs (e.g. a leftover
+ * `mcp.<name>: { enabled: true }` that OpenCode ignores with
+ * "Ignoring MCP config entry without type").
  *
  * @param existing - The existing opencode.json content (if any).
  * @returns The normalized config object.
@@ -85,6 +88,27 @@ export function buildOpencodeConfig(existing: Record<string, unknown> | undefine
   // init versions would trigger npm install (which fails due to native
   // dependencies like sharp) and produce "Plugin export is not a function".
   delete next.plugin;
+
+  // Keep only MCP entries that look like real server configs (have a
+  // "type" of "local" or "remote"). Drop shorthand entries such as
+  // `{ enabled: true }` that OpenCode ignores at startup.
+  if (next.mcp && typeof next.mcp === "object" && !Array.isArray(next.mcp)) {
+    const mcp = next.mcp as Record<string, unknown>;
+    const valid: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(mcp)) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const entry = value as Record<string, unknown>;
+        if (entry.type === "local" || entry.type === "remote") {
+          valid[name] = value;
+        }
+      }
+    }
+    if (Object.keys(valid).length === 0) {
+      delete next.mcp;
+    } else {
+      next.mcp = valid;
+    }
+  }
 
   return next;
 }
