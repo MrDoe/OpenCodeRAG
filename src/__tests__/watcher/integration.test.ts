@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { existsSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { DEFAULT_CONFIG, type RagConfig } from "../../core/config.js";
 import { LanceDbStore } from "../../vectorstore/lancedb.js";
@@ -88,5 +89,40 @@ describe("background indexer integration", () => {
 
     // Graceful shutdown — may be slow on Windows
     await indexer.close();
+  });
+
+  it("does not start a second watcher for the same workspace", { timeout: 120000 }, async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+
+    const indexerA = createBackgroundIndexer({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+      logFilePath,
+    });
+
+    // A claims the watcher lock and becomes the active watcher.
+    await delay(300);
+    assert.equal(existsSync(path.join(storeDir, "watcher.lock")), true, "owner holds the watcher lock");
+
+    const indexerB = createBackgroundIndexer({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+      logFilePath,
+    });
+    await delay(300);
+
+    // B is dormant — closing it must not disturb A's lock.
+    await indexerB.close();
+    assert.equal(existsSync(path.join(storeDir, "watcher.lock")), true, "dormant indexer must not release the owner's lock");
+
+    // Only the owner releases the lock on close.
+    await indexerA.close();
+    assert.equal(existsSync(path.join(storeDir, "watcher.lock")), false, "owner releases the lock on close");
   });
 });

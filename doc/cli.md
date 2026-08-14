@@ -42,6 +42,14 @@ opencode-rag init [options]
 **Config protection:**
 If `opencode-rag.json` already exists, it is **never overwritten without interactive `y/N` confirmation** — not even with `--force`. Non-interactive shells (pipes, CI) skip the overwrite automatically. To reset the config, run `init` in a TTY and type `y` when prompted, or edit the file manually.
 
+**Backend auto-tuning:**
+When generating a new `opencode-rag.json`, `init` probes Ollama (`GET /api/ps`) and tunes the embedding batch settings for the detected backend:
+- **GPU** (any loaded model has `size_vram > 0`): `embedBatchSize: 40`, `embedConcurrency: 4`, `ollamaMaxBatchSize: 40`
+- **CPU**: `embedBatchSize: 20`, `embedConcurrency: 1`, `ollamaMaxBatchSize: 20`
+- **Ollama unreachable / undetermined**: default values (100 / 3 / 100)
+
+If nothing is loaded yet, a minimal embed request loads the default embedding model first. The detection is best-effort and never fails `init`.
+
 **Health check:**
 After writing config files, `init` validates provider connectivity and model availability for all configured models (embedding + description + image description if enabled). For Ollama, if models are missing, you're prompted to pull them automatically. Use `--skip-health-check` to bypass (e.g., for offline environments).
 
@@ -86,8 +94,8 @@ opencode-rag query <query> [options]
 **Options:**
 | Flag | Default | Description |
 |---|---|---|
-| `-n, --top-k <number>` | config default | Number of results |
 | `-c, --config <path>` | auto-detected | Path to config file |
+| `-s, --system-prompt <text>` | none | Optional system prompt steering the description toward specific features |
 
 **Output:** Formatted results showing:
 - File path (relative)

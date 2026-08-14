@@ -11,7 +11,17 @@ import {
   getIndexStatusSummary,
   runIndexPass,
 } from "../../indexer.js";
-import type { Chunk, DescriptionProvider, EmbeddingProvider } from "../../core/interfaces.js";
+import type {
+  BulkChunkWrite,
+  Chunk,
+  ChunkSummary,
+  DescriptionProvider,
+  EmbeddingProvider,
+  FileSummary,
+  MetadataFilter,
+  SearchResult,
+  VectorStore,
+} from "../../core/interfaces.js";
 import type { ImageVisionProvider } from "../../chunker/image.js";
 import { LanceDbStore } from "../../vectorstore/lancedb.js";
 
@@ -20,6 +30,69 @@ class TestEmbedder implements EmbeddingProvider {
 
   async embed(texts: string[], _purpose?: "query" | "document"): Promise<number[][]> {
     return texts.map((text, index) => [text.length, index + 1, 0.5, -0.5]);
+  }
+}
+
+/**
+ * Vector store wrapper that artificially delays addChunksBulk. Used to force
+ * the store phase of window N to overlap window N+1's embed phase, which
+ * clears/repopulates the shared `earlyWorkerResults` map — the condition
+ * that used to make the per-file store loop skip every file of window N
+ * ("Store phase: storing N file(s) → 0 files stored").
+ */
+class DelayedBulkStore implements VectorStore {
+  constructor(
+    private readonly inner: VectorStore,
+    private readonly bulkDelayMs: number,
+  ) {}
+
+  async addChunks(chunks: Chunk[], options?: { dedup?: boolean }): Promise<void> {
+    return this.inner.addChunks(chunks, options);
+  }
+
+  async addChunksBulk(items: BulkChunkWrite[]): Promise<void> {
+    await delay(this.bulkDelayMs);
+    return this.inner.addChunksBulk!(items);
+  }
+
+  async search(embedding: number[], topK: number): Promise<SearchResult[]> {
+    return this.inner.search(embedding, topK);
+  }
+
+  async searchWithFilter(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]> {
+    return this.inner.searchWithFilter(embedding, topK, filter);
+  }
+
+  async count(): Promise<number> {
+    return this.inner.count();
+  }
+
+  async clear(): Promise<void> {
+    return this.inner.clear();
+  }
+
+  async deleteByFilePath(filePath: string): Promise<void> {
+    return this.inner.deleteByFilePath(filePath);
+  }
+
+  async getFilePaths(): Promise<string[]> {
+    return this.inner.getFilePaths();
+  }
+
+  async close(): Promise<void> {
+    return this.inner.close();
+  }
+
+  async getChunks(offset: number, limit: number): Promise<ChunkSummary[]> {
+    return this.inner.getChunks(offset, limit);
+  }
+
+  async listFiles(): Promise<FileSummary[]> {
+    return this.inner.listFiles();
+  }
+
+  async getChunksByFilePath(filePath: string): Promise<Chunk[]> {
+    return this.inner.getChunksByFilePath(filePath);
   }
 }
 
@@ -112,6 +185,56 @@ describe("indexer", () => {
     assert.equal(stats.deletedFiles, 1);
     assert.equal(stats.unchangedFiles, 0);
     assert.equal(stats.finalCount, 2);
+  });
+
+  it("re-stores modified files when the async store phase overlaps the next window", async () => {
+    // 100 files → two 50-file windows (WINDOW_SIZE = max(50, concurrency*10)).
+    // Window 2's files are all unchanged, so its embed phase populates the
+    // shared `earlyWorkerResults` map with entries at every index.
+    const relPaths: string[] = [];
+    for (let i = 0; i < 100; i++) {
+      const rel = `src/f${String(i).padStart(2, "0")}.ts`;
+      relPaths.push(rel);
+      await writeFile(path.join(workspaceDir, rel), `function fn${i}() { return ${i}; }\n`);
+    }
+
+    await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+    });
+
+    // Modify the file that sits at index 0 of window 1 (filterPaths order).
+    await writeFile(path.join(workspaceDir, relPaths[0]!), "function fn00() { return 999; }\n");
+
+    const before = await loadManifest(storeDir);
+    const targetKey = normalizeFilePath(path.join(workspaceDir, relPaths[0]!));
+    const beforeHash = before.manifest.files[targetKey]!.hash;
+
+    // Delaying addChunksBulk keeps window 1's store phase in flight while
+    // window 2's embed phase clears/repopulates `earlyWorkerResults`. This
+    // deterministically reproduces the "storing 4 file(s) → 0 files stored"
+    // race: window 1's per-file store loop would read window 2's entries,
+    // treat every file as an early result, and skip the manifest update.
+    const slowStore = new DelayedBulkStore(store, 150);
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store: slowStore,
+      embedder,
+      filterPaths: relPaths,
+    });
+
+    assert.equal(stats.modifiedFiles, 1, "modified file must be counted as modified");
+
+    const after = await loadManifest(storeDir);
+    const entry = after.manifest.files[targetKey];
+    assert.ok(entry, "modified file must have a manifest entry");
+    assert.notEqual(entry.hash, beforeHash, "modified file must be re-stored (manifest hash updated)");
+    assert.equal(entry.chunkCount, 1);
   });
 
   it("removes empty files from the index", async () => {

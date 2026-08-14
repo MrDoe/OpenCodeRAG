@@ -3,6 +3,7 @@
  */
 import type { Chunker, Chunk } from "../core/interfaces.js";
 import type { ImageDescriptionConfig, ProxyConfig } from "../core/config.js";
+import { normalizeKeepAlive } from "../core/ollama.js";
 import { postJson } from "../embedder/http.js";
 import { uuid } from "./uuid.js";
 
@@ -48,7 +49,13 @@ export function getMimeType(ext: string): string {
  * OpenAI, Anthropic, or Google Gemini).
  */
 export interface ImageVisionProvider {
-  describeImage(imageBase64: string, mimeType: string, prompt: string, abort?: AbortSignal): Promise<string>;
+  describeImage(
+    imageBase64: string,
+    mimeType: string,
+    prompt: string,
+    systemPrompt?: string,
+    abort?: AbortSignal
+  ): Promise<string>;
 }
 
 /**
@@ -62,6 +69,7 @@ class OllamaImageVisionProvider implements ImageVisionProvider {
   private readonly timeoutMs: number;
   private think: boolean;
   private numCtx?: number;
+  private keepAlive?: string;
   private proxy?: ProxyConfig;
 
   constructor(config: ImageDescriptionConfig) {
@@ -70,23 +78,27 @@ class OllamaImageVisionProvider implements ImageVisionProvider {
     this.timeoutMs = config.timeoutMs;
     this.think = config.think ?? false;
     this.numCtx = config.numCtx;
+    this.keepAlive = config.keepAlive;
     this.proxy = config.proxy;
   }
 
-  async describeImage(imageBase64: string, _mimeType: string, prompt: string, abort?: AbortSignal): Promise<string> {
-    const body = {
+  async describeImage(imageBase64: string, _mimeType: string, prompt: string, systemPrompt?: string, abort?: AbortSignal): Promise<string> {
+    const messages: Array<{ role: string; content: string; images?: string[] }> = [];
+    if (systemPrompt && systemPrompt.trim().length > 0) {
+      messages.push({ role: "system", content: systemPrompt });
+    }
+    messages.push({ role: "user", content: prompt, images: [imageBase64] });
+
+    const body: Record<string, unknown> = {
       model: this.model,
-      messages: [
-        {
-          role: "user",
-          content: prompt,
-          images: [imageBase64],
-        },
-      ],
+      messages,
       stream: false,
       think: this.think,
       options: { num_ctx: this.numCtx },
     };
+    if (this.keepAlive) {
+      body.keep_alive = normalizeKeepAlive(this.keepAlive);
+    }
 
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= VISION_RETRY_MAX; attempt++) {
@@ -148,23 +160,27 @@ class OpenAIImageVisionProvider implements ImageVisionProvider {
     this.proxy = config.proxy;
   }
 
-  async describeImage(imageBase64: string, mimeType: string, prompt: string, abort?: AbortSignal): Promise<string> {
+  async describeImage(imageBase64: string, mimeType: string, prompt: string, systemPrompt?: string, abort?: AbortSignal): Promise<string> {
     const url = `${this.baseUrl}${this.baseUrl.endsWith("/v1") ? "" : "/v1"}/chat/completions`;
+
+    const messages: Array<Record<string, unknown>> = [];
+    if (systemPrompt && systemPrompt.trim().length > 0) {
+      messages.push({ role: "system", content: systemPrompt });
+    }
+    messages.push({
+      role: "user",
+      content: [
+        { type: "text", text: prompt },
+        {
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+        },
+      ],
+    });
 
     const body = {
       model: this.model,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-            },
-          ],
-        },
-      ],
+      messages,
       max_tokens: 2048,
     };
 
@@ -228,8 +244,8 @@ class AnthropicImageVisionProvider implements ImageVisionProvider {
     this.proxy = config.proxy;
   }
 
-  async describeImage(imageBase64: string, mimeType: string, prompt: string, abort?: AbortSignal): Promise<string> {
-    const body = {
+  async describeImage(imageBase64: string, mimeType: string, prompt: string, systemPrompt?: string, abort?: AbortSignal): Promise<string> {
+    const body: Record<string, unknown> = {
       model: this.model,
       max_tokens: 2048,
       messages: [
@@ -245,6 +261,9 @@ class AnthropicImageVisionProvider implements ImageVisionProvider {
         },
       ],
     };
+    if (systemPrompt && systemPrompt.trim().length > 0) {
+      body.system = systemPrompt;
+    }
 
     const headers: Record<string, string> = {
       "x-api-key": this.apiKey,
@@ -312,8 +331,8 @@ class GeminiImageVisionProvider implements ImageVisionProvider {
     this.proxy = config.proxy;
   }
 
-  async describeImage(imageBase64: string, mimeType: string, prompt: string, abort?: AbortSignal): Promise<string> {
-    const body = {
+  async describeImage(imageBase64: string, mimeType: string, prompt: string, systemPrompt?: string, abort?: AbortSignal): Promise<string> {
+    const body: Record<string, unknown> = {
       contents: [
         {
           role: "user",
@@ -329,6 +348,9 @@ class GeminiImageVisionProvider implements ImageVisionProvider {
         },
       ],
     };
+    if (systemPrompt && systemPrompt.trim().length > 0) {
+      body.system_instruction = { parts: [{ text: systemPrompt }] };
+    }
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",

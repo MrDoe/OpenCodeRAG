@@ -84,6 +84,23 @@ Options:
 | `keywordIndex` | — | Keyword index instance |
 | `keywordWeight` | `0.4` | Hybrid fusion weight |
 | `queryPrefix` | — | Prefix applied to query before embedding |
+| `filter` | — | [`MetadataFilter`](#metadata-filtering) to narrow results before scoring |
+| `explain` | `false` | Include score breakdown / matched terms in results |
+
+## Metadata Filtering
+
+An optional `MetadataFilter` can narrow results **before** scoring in every store (LanceDB, in-memory, keyword index):
+
+| Field | Description |
+|---|---|
+| `pathPatterns` | Glob-style path patterns (e.g. `["src/**"]`) |
+| `languages` | Exact `metadata.language` matches (e.g. `["typescript"]`) |
+| `kinds` | Exact `metadata.kind` matches (`""` = code, `"quirk"` = quirk memory) |
+| `fileExtensions` | Dot-prefixed file extensions (e.g. `[".ts", ".py"]`) — case-insensitive suffix match; accepts `ts` or `.ts`, normalized + deduped by `normalizeFileExtensions` (`src/core/filters.ts`) |
+
+`CODE_SEARCH_FILTER` (`{ kinds: [""] }`) is applied by all code-search paths so quirk memory never surfaces as code results.
+
+**Soft vs hard hints in tool surfaces:** `search_semantic`'s `pathHints`/`languageHints` (plugin tool + MCP handler) are *soft* — appended to the query text to bias the embedding, not a real filter. `fileExtensions` is a *hard* filter everywhere: the plugin tool and MCP handler build a `MetadataFilter`, and the library `search()` / web `/api/retrieve?ext=` pass it straight through.
 
 ## Vector Search
 

@@ -34,9 +34,9 @@ Both should be `"function"`.
 
 **Cause:** The embedding provider (typically Ollama running a local model) takes longer than the configured timeout to process a batch of texts.
 
-**Default values (v1.18+):**
-- `embedding.timeoutMs`: `120000` (120s, was 30s)
-- `indexing.ollamaMaxBatchSize`: `500` (was 4000) — smaller batches mean each individual call completes faster
+**Default values:**
+- `embedding.timeoutMs`: `120000` (120s) — maximum time to wait for a single embedding request
+- `indexing.ollamaMaxBatchSize`: `100` — smaller batches mean each individual call completes faster
 
 **Fix:** If you still hit timeouts, increase further in `opencode-rag.json`:
 

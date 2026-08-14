@@ -341,10 +341,13 @@ export function createDescribeImageTool(
       "Describe an image file using a vision model. " +
       "Reads the file from disk, sends it to the configured vision provider (Ollama, OpenAI, Anthropic, or Google Gemini), " +
       "and returns a natural language description of what the image shows. " +
+      "Optionally accepts a `systemPrompt` to steer the description toward specific features or details you care about " +
+      "(e.g. colors, layout, accessibility, text content, specific UI elements). " +
       "Use when the user refers to a screenshot, diagram, mockup, or any image in the workspace.",
 
     args: {
       filePath: tool.schema.string().min(1, "An image file path is required."),
+      systemPrompt: tool.schema.string().optional(),
     },
 
     async execute(args) {
@@ -388,7 +391,12 @@ export function createDescribeImageTool(
         const b64 = sized.toString("base64");
 
         const provider = visionProvider ?? createImageVisionProvider(imageDescriptionConfig);
-        const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt);
+        const description = await provider.describeImage(
+          b64,
+          mimeType,
+          imageDescriptionConfig.prompt,
+          args.systemPrompt
+        );
 
         return {
           title: `Image description — ${args.filePath}`,

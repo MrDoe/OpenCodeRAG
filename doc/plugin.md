@@ -17,6 +17,7 @@ The primary retrieval tool that any OpenCode agent can invoke to search the inde
 | `query` | Yes | Narrow, specific search query |
 | `pathHints` | No | Up to 10 path filters (e.g., `["src/auth/"]`) |
 | `languageHints` | No | Up to 10 language filters (e.g., `["typescript"]`) |
+| `fileExtensions` | No | Up to 10 dot-prefixed file extensions (e.g., `[".ts", ".py"]`) — hard filter on file suffix, case-insensitive |
 | `topK` | No | Result count (1–25, default 10) |
 
 **Returns:** Formatted markdown with file paths, line ranges, score, language, content preview, and descriptions for each relevant chunk.
@@ -29,7 +30,7 @@ For autonomous agent workflows, the plugin also registers smaller, focused tools
 |------|---------|------|
 | `get_file_skeleton` | Structural file overview via tree-sitter AST | `filePath` (req) |
 | `find_usages` | Find all references to a symbol | `symbolName` (req), `pathHint?`, `topK?` |
-| `describe_image` | Retrieve stored description of an indexed image | `filePath` (req) |
+| `describe_image` | Retrieve stored description of an indexed image | `filePath` (req), `systemPrompt?` |
 
 #### `search_semantic`
 Conceptual code search — answers questions like *"How does authentication work?"* or *"Where is the chunking logic?"*. Uses vector + hybrid keyword search and returns the most relevant code snippets with file paths, line numbers, and relevance scores.
@@ -81,12 +82,13 @@ Usages of "createRagHooks" — 5 references across 2 files
 
 #### `describe_image`
 
-Returns the pre-generated natural-language description for an indexed image file. Does not re-run the vision model — it retrieves the stored description created at index time.
+Returns the pre-generated natural-language description for an indexed image file. Does not re-run the vision model — it retrieves the stored description created at index time. An optional `systemPrompt` steers the vision model toward specific features when generating the description.
 
 **Parameters:**
 | Param | Required | Description |
 |-------|----------|-------------|
 | `filePath` | Yes | Path to the image file (relative or absolute) |
+| `systemPrompt` | No | Optional system prompt steering the description (e.g. "focus on colors and layout") |
 
 **Returns:** Markdown block with file path and the stored description text.
 
@@ -352,6 +354,13 @@ The plugin spawns one `BackgroundIndexer` per workspace directory (via `src/watc
 - **Periodic timer**: Only for `git` backend — runs a full pass every `autoIndex.intervalMs` (default 5 min). Not used with `chokidar` (real FS events are sufficient)
 - **Error recovery**: Detects LanceDB corruption and triggers auto-rebuild
 - **Status file**: Writes `watcher-status.json` to the store path for observability
+
+**One watcher per workspace:** the plugin claims a cross-process lock at
+`{storePath}/watcher.lock` before starting a watcher. If another process
+already runs the watcher (a second OpenCode session, or `opencode-rag index
+--watch`), the new instance stays dormant — no chokidar watcher, no initial
+pass — and takes over ~60s after the owning process exits. This prevents
+multiple watchers from racing on the same store.
 
 ## TUI Settings Menu
 

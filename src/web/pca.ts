@@ -1,11 +1,13 @@
 /**
- * Self-contained, zero-dependency PCA implementation for 2D embedding projection.
+ * Self-contained, zero-dependency PCA implementation for embedding projection.
+ * Supports projecting to 2 or 3 dimensions (top-K eigenvectors via power
+ * iteration + deflation).
  */
-export function computePCA(vectors: number[][]): { x: number; y: number }[] {
+export function computePCA(vectors: number[][], dims: 2 | 3 = 2): { x: number; y: number; z?: number }[] {
   const n = vectors.length;
   if (n === 0) return [];
   const dim = vectors[0]!.length;
-  if (n === 1) return [{ x: 0.5, y: 0.5 }];
+  if (n === 1) return dims === 3 ? [{ x: 0.5, y: 0.5, z: 0.5 }] : [{ x: 0.5, y: 0.5 }];
 
   // 1. Compute column means
   const means = new Array(dim).fill(0);
@@ -19,7 +21,9 @@ export function computePCA(vectors: number[][]): { x: number; y: number }[] {
   // 2. Center data
   const centered = vectors.map(v => v.map((val, j) => val - means[j]!));
 
-  // 3. Compute covariance matrix (dim x dim), upper triangle
+  // 3. Compute covariance matrix (dim x dim); fill the upper triangle then
+  // mirror it so the matrix is symmetric (power iteration needs a symmetric
+  // operator to find the true principal axes).
   const cov: number[][] = Array.from({ length: dim }, () => new Array(dim).fill(0));
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < dim; j++) {
@@ -31,27 +35,42 @@ export function computePCA(vectors: number[][]): { x: number; y: number }[] {
   for (let j = 0; j < dim; j++) {
     for (let k = j; k < dim; k++) {
       cov[j]![k]! /= n - 1;
+      cov[k]![j]! = cov[j]![k]!;
     }
   }
 
-  // 4. Power iteration to find top-2 eigenvectors
-  const pc1 = powerIteration(cov, dim, 50);
+  // 4. Find the top-K eigenvectors: power iteration, then deflate the
+  // covariance by each discovered eigenvector before finding the next.
+  // Once the remaining matrix is numerically ~zero (degenerate / low-rank
+  // input), the rest of the PCs are zero vectors — this keeps PC2/PC3 from
+  // picking up deflation noise and avoids NaN from a 0/0 deflation.
+  const pcs: number[][] = [];
+  let deflated = cov;
+  const threshold = maxAbs(cov) * 1e-12;
+  for (let pc = 0; pc < dims; pc++) {
+    if (maxAbs(deflated) <= threshold) {
+      pcs.push(new Array(dim).fill(0));
+      continue;
+    }
+    const eigen = powerIteration(deflated, dim, 50);
+    pcs.push(eigen);
+    deflated = deflate(deflated, eigen);
+  }
 
-  // Deflate: subtract PC1's contribution to find PC2
-  const deflated = cov.map((row, i) => {
-    const pc1DotRow = pc1.reduce((sum, v, idx) => sum + v * cov[i]![idx]!, 0);
-    const pc1NormSq = pc1.reduce((sum, v) => sum + v * v, 0);
-    return row.map((val, j) => val - (pc1DotRow / pc1NormSq) * pc1[j]!);
+  // 5. Project centered data onto the PCs
+  const projected = centered.map(v => {
+    const point: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
+    for (let pc = 0; pc < dims; pc++) {
+      const s = v.reduce((sum, val, j) => sum + val * pcs[pc]![j]!, 0);
+      if (pc === 0) point.x = s;
+      else if (pc === 1) point.y = s;
+      else point.z = s;
+    }
+    return point;
   });
-  const pc2 = powerIteration(deflated, dim, 50);
 
-  // 5. Project centered data onto PCs
-  const projected = centered.map(v => ({
-    x: v.reduce((sum, val, j) => sum + val * pc1[j]!, 0),
-    y: v.reduce((sum, val, j) => sum + val * pc2[j]!, 0),
-  }));
-
-  // 6. Normalize to [0, 1]
+  // 6. Normalize to [0, 1]. 2D keeps per-axis normalization (unchanged);
+  // 3D uses the max extent across all axes so the cube stays proportional.
   const xs = projected.map(p => p.x);
   const ys = projected.map(p => p.y);
   const minX = Math.min(...xs);
@@ -61,10 +80,45 @@ export function computePCA(vectors: number[][]): { x: number; y: number }[] {
   const rangeX = maxX - minX || 1;
   const rangeY = maxY - minY || 1;
 
+  if (dims === 2) {
+    return projected.map(p => ({
+      x: (p.x - minX) / rangeX,
+      y: (p.y - minY) / rangeY,
+    }));
+  }
+
+  const zs = projected.map(p => p.z);
+  const minZ = Math.min(...zs);
+  const maxZ = Math.max(...zs);
+  const maxRange = Math.max(rangeX, rangeY, maxZ - minZ || 1);
+
   return projected.map(p => ({
-    x: (p.x - minX) / rangeX,
-    y: (p.y - minY) / rangeY,
+    x: (p.x - minX) / maxRange,
+    y: (p.y - minY) / maxRange,
+    z: (p.z - minZ) / maxRange,
   }));
+}
+
+/** Subtract the outer-product contribution of a principal component from a symmetric matrix. */
+function deflate(matrix: number[][], pc: number[]): number[][] {
+  const pcNormSq = pc.reduce((sum, v) => sum + v * v, 0);
+  return matrix.map((row, i) => {
+    const pcDotRow = pc.reduce((sum, v, idx) => sum + v * matrix[i]![idx]!, 0);
+    const scale = pcNormSq > 1e-12 ? pcDotRow / pcNormSq : 0;
+    return row.map((val, j) => val - scale * pc[j]!);
+  });
+}
+
+/** Largest absolute entry of a matrix. */
+function maxAbs(matrix: number[][]): number {
+  let m = 0;
+  for (const row of matrix) {
+    for (const val of row) {
+      const abs = Math.abs(val);
+      if (abs > m) m = abs;
+    }
+  }
+  return m;
 }
 
 /** Power iteration to find the dominant eigenvector of a symmetric matrix. */

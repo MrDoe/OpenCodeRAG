@@ -6,7 +6,7 @@
       "command": ["npx", "-y", "typescript-language-server", "--stdio"],
       "initialization": {
         "tsserver": {
-          "path": "../node_modules/typescript/lib/tsserver.js"
+          "path": "node_modules/typescript/lib/tsserver.js"
         }
       }
     },

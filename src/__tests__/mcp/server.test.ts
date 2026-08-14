@@ -217,6 +217,48 @@ describe("handleSearchSemantic", () => {
 
     assert.equal(capture.options.topK, 7);
   });
+
+  it("passes normalized file extensions into the retrieve filter", async () => {
+    const capture = { query: "", options: {} as RetrieveOptions };
+    await handleSearchSemantic(
+      { query: "test", fileExtensions: [".ts", "py", " TS "] },
+      dummyProvider,
+      makeStore(5, []),
+      cfg,
+      undefined,
+      makeRetrieveCapture(capture)
+    );
+
+    assert.deepEqual(capture.options.filter?.fileExtensions, [".ts", ".py"]);
+  });
+
+  it("keeps the code-search kinds filter when file extensions are provided", async () => {
+    const capture = { query: "", options: {} as RetrieveOptions };
+    await handleSearchSemantic(
+      { query: "test", fileExtensions: [".ts"] },
+      dummyProvider,
+      makeStore(5, []),
+      cfg,
+      undefined,
+      makeRetrieveCapture(capture)
+    );
+
+    assert.deepEqual(capture.options.filter?.kinds, [""]);
+  });
+
+  it("leaves fileExtensions unset when none provided", async () => {
+    const capture = { query: "", options: {} as RetrieveOptions };
+    await handleSearchSemantic(
+      { query: "test" },
+      dummyProvider,
+      makeStore(5, []),
+      cfg,
+      undefined,
+      makeRetrieveCapture(capture)
+    );
+
+    assert.equal(capture.options.filter?.fileExtensions, undefined);
+  });
 });
 
 // ─── Suite: handleFileSkeleton ─────────────────────────────────────────────
@@ -562,6 +604,17 @@ function makeFakeVisionProvider(description = TEST_DESCRIPTION): ImageVisionProv
   };
 }
 
+function makeSpyVisionProvider() {
+  const calls: { prompt?: string; systemPrompt?: string }[] = [];
+  const provider: ImageVisionProvider = {
+    describeImage: async (_b64, _mime, prompt, systemPrompt) => {
+      calls.push({ prompt, systemPrompt });
+      return TEST_DESCRIPTION;
+    },
+  };
+  return { provider, calls };
+}
+
 function makeConfigWithImageDesc(overrides?: Partial<RagConfig>): RagConfig {
   return {
     ...DEFAULT_CONFIG,
@@ -667,6 +720,33 @@ describe("handleDescribeImage", () => {
     const result = await handleDescribeImage({ filePath: pngPath }, cfg, tmpDir, fakeVision);
 
     assert.equal(result.description, TEST_DESCRIPTION);
+  });
+
+  it("forwards systemPrompt to the vision provider", async () => {
+    const cfg = makeConfigWithImageDesc();
+    const { provider, calls } = makeSpyVisionProvider();
+
+    const result = await handleDescribeImage(
+      { filePath: "test.png", systemPrompt: "extract the button labels" },
+      cfg,
+      tmpDir,
+      provider
+    );
+
+    assert.equal(result.description, TEST_DESCRIPTION);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.prompt, "Describe this image");
+    assert.equal(calls[0]?.systemPrompt, "extract the button labels");
+  });
+
+  it("does not pass systemPrompt when omitted", async () => {
+    const cfg = makeConfigWithImageDesc();
+    const { provider, calls } = makeSpyVisionProvider();
+
+    await handleDescribeImage({ filePath: "test.png" }, cfg, tmpDir, provider);
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.systemPrompt, undefined);
   });
 });
 

@@ -37,8 +37,9 @@
     "concurrency": 8,
     "embedBatchSize": 100,
     "embedConcurrency": 3,
-    "ollamaMaxBatchSize": 4000,
-    "descriptionConcurrency": 4
+    "ollamaMaxBatchSize": 100,
+    "descriptionConcurrency": 4,
+    "optimizeIntervalWindows": 8
   },
   "vectorStore": {
     "path": "./.opencode/rag_db"
@@ -79,9 +80,10 @@
     "baseUrl": "http://127.0.0.1:11434/api",
     "model": "qwen2.5:3b",
     "think": false,
-    "numCtx": 4096,
+    "numCtx": 2048,
     "timeoutMs": 60000,
-    "systemPrompt": "Describe this code in 2-3 sentences: purpose, key concepts, inputs/outputs, and dependencies. No code repetition.",
+    "systemPrompt": "Describe this code in ONE concise sentence (max 20 words): purpose, inputs/outputs. No code repetition.",
+    "batchEnabled": false,
     "batchConcurrency": 3,
     "retryMax": 3,
     "retryBaseDelayMs": 1000

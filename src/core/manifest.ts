@@ -101,7 +101,7 @@ export function computeDescriptionConfigHash(config: RagConfig): string | undefi
   const parts: string[] = [];
   if (desc) {
     parts.push(
-      `desc:${desc.provider}|${desc.model}|${desc.baseUrl}|${desc.systemPrompt}`,
+      `desc:${desc.provider}|${desc.model}|${desc.baseUrl}|${desc.systemPrompt}|batch:${desc.batchEnabled === true ? 1 : 0}`,
     );
   }
   if (img) {

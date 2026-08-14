@@ -1,6 +1,6 @@
 {
   "name": "opencode-rag-plugin",
-  "version": "1.19.5",
+  "version": "1.21.0",
   "description": "OpenCode plugin for local-first RAG-based semantic code search",
   "type": "module",
   "main": "./dist/plugin-entry.js",
@@ -53,6 +53,7 @@
     "postbuild": "node scripts/postbuild.js",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit",
+    "typecheck:ui": "tsc -p src/web/ui/tsconfig.json --noEmit",
     "test": "node -e \"const {spawnSync}=require('node:child_process');const {globSync}=require('node:fs');const testFiles=globSync('src/**/*.test.ts').filter(f=>!f.includes('integration.test.ts')&&f!=='src/__tests__/plugin.test.ts'&&f!=='src/__tests__/watcher/integration.test.ts');if(testFiles.length===0){console.log('No test files found under src; skipping npm test.');process.exit(0);}const result=spawnSync(process.execPath,['--import','tsx','--test',...testFiles],{stdio:'inherit'});process.exit(typeof result.status==='number'?result.status:1);\"",
     "test:integration": "node -e \"const {spawnSync}=require('node:child_process');const testFiles=['src/__tests__/integration.test.ts','src/__tests__/plugin.test.ts','src/__tests__/watcher/integration.test.ts'];const result=spawnSync(process.execPath,['--import','tsx','--test',...testFiles],{stdio:'inherit'});process.exit(typeof result.status==='number'?result.status:1);\"",
     "cli": "tsx src/cli/index.ts",
@@ -100,6 +101,7 @@
     "pdfjs-dist": "^5.7.284",
     "picocolors": "^1.1.1",
     "sharp": "^0.35.2",
+    "three": "^0.185.1",
     "web-tree-sitter": "^0.26.9",
     "word-extractor": "^1.0.4"
   },
@@ -111,6 +113,7 @@
     "@preact/preset-vite": "^2.9.3",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.17",
+    "@types/three": "^0.185.4",
     "@types/word-extractor": "^1.0.6",
     "autoprefixer": "^10.5.0",
     "highlight.js": "^11.9.0",

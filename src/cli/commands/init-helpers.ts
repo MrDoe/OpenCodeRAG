@@ -24,6 +24,7 @@ import {
   writeJsonFile,
 } from "../helpers.js";
 import type { PackageMetadata } from "../types.js";
+import type { IndexingTuning } from "./backend-detect.js";
 
 /**
  * Build the workspace-local `.opencode/package.json` content.
@@ -68,8 +69,11 @@ export function buildWorkspacePackageJson(
 /**
  * Build the `.opencode/opencode.json` config object.
  *
- * Ensures the `$schema` key is present and removes any stale `plugin`
- * entries that would trigger erroneous npm installs.
+ * Ensures the `$schema` key is present and removes stale `plugin` entries
+ * (which would trigger erroneous npm installs) plus stale MCP entries that
+ * are not valid local/remote server configs (e.g. a leftover
+ * `mcp.<name>: { enabled: true }` that OpenCode ignores with
+ * "Ignoring MCP config entry without type").
  *
  * @param existing - The existing opencode.json content (if any).
  * @returns The normalized config object.
@@ -84,6 +88,27 @@ export function buildOpencodeConfig(existing: Record<string, unknown> | undefine
   // init versions would trigger npm install (which fails due to native
   // dependencies like sharp) and produce "Plugin export is not a function".
   delete next.plugin;
+
+  // Keep only MCP entries that look like real server configs (have a
+  // "type" of "local" or "remote"). Drop shorthand entries such as
+  // `{ enabled: true }` that OpenCode ignores at startup.
+  if (next.mcp && typeof next.mcp === "object" && !Array.isArray(next.mcp)) {
+    const mcp = next.mcp as Record<string, unknown>;
+    const valid: Record<string, unknown> = {};
+    for (const [name, value] of Object.entries(mcp)) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const entry = value as Record<string, unknown>;
+        if (entry.type === "local" || entry.type === "remote") {
+          valid[name] = value;
+        }
+      }
+    }
+    if (Object.keys(valid).length === 0) {
+      delete next.mcp;
+    } else {
+      next.mcp = valid;
+    }
+  }
 
   return next;
 }
@@ -193,7 +218,7 @@ export function generateSkillFile(): string {
     "2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines",
     "3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`",
     "4. User asks a code question → `search_semantic` to gather context before answering",
-    "5. User asks about an image or visual asset → `describe_image(filePath)` to retrieve its generated description, then optionally `search_semantic` for related code",
+    "5. User asks about an image or visual asset → `describe_image(filePath)` (optionally pass `systemPrompt` to focus on specific features) to retrieve its generated description, then optionally `search_semantic` for related code",
     "6. You encounter an error or need a known pitfall → `recall_quirks(query)`",
     "7. You discover a non-obvious fact or workaround → `add_quirk(content)` to persist it",
     "8. A recalled quirk is outdated or wrong → `update_quirk(id, ...)` to fix it, or `delete_quirk(id)` if it no longer applies",
@@ -216,7 +241,7 @@ export function generateSkillFile(): string {
     "1. **Skeleton first** — call `get_file_skeleton(filePath)` to see structure",
     "2. **Find usages** — call `find_usages(symbolName)` before modifying any symbol",
     "3. **Search** — call `search_semantic(query)` to find relevant code",
-    "4. **Describe images** — call `describe_image(filePath)` when context involves an image file",
+    "4. **Describe images** — call `describe_image(filePath)` when context involves an image file (pass `systemPrompt` to focus on specific features)",
     "5. **Read** — use the `read` tool on specific line ranges identified above",
     "6. **Edit** — now you have full context to make safe changes",
     "",
@@ -230,10 +255,10 @@ export function generateSkillFile(): string {
     "",
     "### Parameters",
     "",
-    "- `search_semantic`: `query` (req), `pathHints?`, `languageHints?`, `topK?`",
+    "- `search_semantic`: `query` (req), `pathHints?`, `languageHints?`, `fileExtensions?`, `topK?`",
     "- `get_file_skeleton`: `filePath` (req)",
     "- `find_usages`: `symbolName` (req), `pathHint?`, `topK?`",
-    "- `describe_image`: `filePath` (req)",
+    "- `describe_image`: `filePath` (req), `systemPrompt?`",
     "- `recall_quirks`: `query` (req), `topK?`, `quirkType?`, `tags?`",
     "- `add_quirk`: `content` (req), `quirkType?`, `tags?`, `sourceRef?`",
     "- `update_quirk`: `id` (req) + at least one of `content?`, `quirkType?`, `tags?`, `confidence?`, `sourceRef?`",
@@ -243,7 +268,9 @@ export function generateSkillFile(): string {
     "",
     "- Use `pathHints` to narrow searches to specific directories",
     "- Use `languageHints` to filter by file type",
+    "- Use `fileExtensions` to filter by file extension (e.g. `\".ts\"`)",
     "- `find_usages` is essential before refactoring — it shows every reference",
+    "- Pass `systemPrompt` to `describe_image` when you need specific details (e.g. `\"focus on the chart's axes and values\"`)",
     "- If no results appear, the workspace may not be indexed yet — run `opencode-rag index`",
     "- Image descriptions are generated at index time using the configured vision provider; ensure `imageDescription` is configured in `opencode-rag.json` if your project includes images",
     "",
@@ -473,9 +500,11 @@ export async function installPluginFromGlobal(
 /**
  * Generate the default `opencode-rag.json` configuration content.
  *
+ * @param tuning - Optional embedding batch tuning (auto-detected from the
+ *   Ollama backend). Falls back to `DEFAULT_CONFIG` for any omitted field.
  * @returns A pretty-printed JSON string with all default configuration values.
  */
-export function generateDefaultConfigJson(): string {
+export function generateDefaultConfigJson(tuning?: Partial<IndexingTuning>): string {
   return JSON.stringify(
     {
       embedding: {
@@ -490,7 +519,9 @@ export function generateDefaultConfigJson(): string {
         chunkOverlap: DEFAULT_CONFIG.indexing.chunkOverlap,
         minFileSizeBytes: DEFAULT_CONFIG.indexing.minFileSizeBytes,
         concurrency: DEFAULT_CONFIG.indexing.concurrency,
-        embedBatchSize: DEFAULT_CONFIG.indexing.embedBatchSize,
+        embedBatchSize: tuning?.embedBatchSize ?? DEFAULT_CONFIG.indexing.embedBatchSize,
+        embedConcurrency: tuning?.embedConcurrency ?? DEFAULT_CONFIG.indexing.embedConcurrency ?? 3,
+        ollamaMaxBatchSize: tuning?.ollamaMaxBatchSize ?? DEFAULT_CONFIG.indexing.ollamaMaxBatchSize ?? 100,
       },
       vectorStore: {
         path: DEFAULT_CONFIG.vectorStore.path,

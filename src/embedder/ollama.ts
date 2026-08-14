@@ -3,6 +3,7 @@
  */
 import type { EmbeddingProvider } from "../core/interfaces.js";
 import type { ProxyConfig } from "../core/config.js";
+import { normalizeKeepAlive } from "../core/ollama.js";
 import { postJson } from "./http.js";
 import path from "node:path";
 import { appendDebugLog } from "../core/fileLogger.js";
@@ -16,6 +17,7 @@ import { appendDebugLog } from "../core/fileLogger.js";
    * @param timeoutMs - Request timeout in milliseconds (default 120000)
  * @param proxy - Optional proxy configuration
  * @param logLevel - Optional logging level for debug output
+ * @param keepAlive - Optional Ollama keep_alive value sent with /api/embed requests (e.g. "-1")
  */
 export class OllamaProvider implements EmbeddingProvider {
   readonly name = "ollama";
@@ -26,14 +28,16 @@ export class OllamaProvider implements EmbeddingProvider {
   private readonly timeoutMs: number;
   private proxy?: ProxyConfig;
   private readonly logLevel?: string;
+  private readonly keepAlive?: string;
 
-  constructor(baseUrl: string, model: string, apiKey?: string, timeoutMs: number = 120000, proxy?: ProxyConfig, logLevel?: string) {
+  constructor(baseUrl: string, model: string, apiKey?: string, timeoutMs: number = 120000, proxy?: ProxyConfig, logLevel?: string, keepAlive?: string) {
     this.baseUrl = baseUrl.replace(/\/+$/, "");
     this.model = model;
     this.apiKey = apiKey;
     this.timeoutMs = timeoutMs;
     this.proxy = proxy;
     this.logLevel = logLevel;
+    this.keepAlive = keepAlive;
   }
 
   private getLogFilePath(): string {
@@ -57,9 +61,18 @@ export class OllamaProvider implements EmbeddingProvider {
     this.debug(`OllamaProvider requesting ${texts.length} embedding vector${texts.length === 1 ? "" : "s"}`);
 
     try {
+      const body: Record<string, unknown> = {
+        model: this.model,
+        input: texts.length === 1 ? texts[0] : texts,
+      };
+      const keepAlive = normalizeKeepAlive(this.keepAlive);
+      if (keepAlive !== undefined) {
+        body.keep_alive = keepAlive;
+      }
+
       const response = await postJson(
         `${this.baseUrl}/embed`,
-        { model: this.model, input: texts.length === 1 ? texts[0] : texts },
+        body,
         headers,
         this.timeoutMs,
         this.proxy

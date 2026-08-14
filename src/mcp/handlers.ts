@@ -1,7 +1,8 @@
 /**
  * @fileoverview Handler implementations for all MCP tools: semantic search, file skeleton, symbol usage lookup, and image description.
  */
-import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult, type MetadataFilter } from "../core/interfaces.js";
+import { normalizeFileExtensions } from "../core/filters.js";
 import type { RagConfig } from "../core/config.js";
 import { SUPPORTED_IMAGE_EXTENSIONS, type ImageVisionProvider } from "../chunker/image.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
@@ -186,6 +187,8 @@ export interface SearchSemanticParams {
   pathHints?: string[];
   /** Optional language hints to filter by language. */
   languageHints?: string[];
+  /** Optional dot-prefixed file extensions to filter by (e.g. [".ts"]). */
+  fileExtensions?: string[];
   /** Maximum number of results (1-25). */
   topK?: number;
 }
@@ -220,6 +223,10 @@ export async function handleSearchSemantic(
   const query = parts.join("\n");
 
   const topK = params.topK ?? cfg.retrieval.topK;
+  const fileExtensions = normalizeFileExtensions(params.fileExtensions);
+  const filter: MetadataFilter = fileExtensions.length > 0
+    ? { ...CODE_SEARCH_FILTER, fileExtensions }
+    : CODE_SEARCH_FILTER;
   const retrieveOpts: RetrieveOptions = {
     topK,
     minScore: cfg.retrieval.minScore,
@@ -227,7 +234,7 @@ export async function handleSearchSemantic(
     keywordWeight: cfg.retrieval.hybridSearch?.keywordWeight,
     hybridEnabled: cfg.retrieval.hybridSearch?.enabled,
     queryPrefix: cfg.embedding.queryPrefix,
-    filter: CODE_SEARCH_FILTER,
+    filter,
   };
 
   const rawResults = await retrieveFn_(query, embedder, store, retrieveOpts);
@@ -321,6 +328,8 @@ export interface FindUsagesResult {
 export interface DescribeImageParams {
   /** Path to the image file. */
   filePath: string;
+  /** Optional system prompt to steer the description toward specific features. */
+  systemPrompt?: string;
 }
 
 /** Result of an image description operation. */
@@ -368,7 +377,7 @@ export async function handleDescribeImage(
   const b64 = sized.toString("base64");
 
   const provider = visionProvider ?? (await import("../chunker/image.js")).createImageVisionProvider(imageDescriptionConfig);
-  const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt);
+  const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt, params.systemPrompt);
 
   const formatted = [
     `**Image description** — ${params.filePath}`,

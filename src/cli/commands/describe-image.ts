@@ -26,6 +26,7 @@ export function registerDescribeImageCommand(program: Command): void {
     .description("Describe an image file using a vision model")
     .argument("<filePath>", "path to image file")
     .option("-c, --config <path>", "path to config file")
+    .option("-s, --system-prompt <text>", "optional system prompt to steer the description toward specific features")
     .action(async (filePath: string, options: CliOptions) => {
       try {
         const cwd = process.cwd();
@@ -69,7 +70,7 @@ export function registerDescribeImageCommand(program: Command): void {
         const b64 = sized.toString("base64");
 
         const provider = createImageVisionProvider(imageDescriptionConfig);
-        const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt);
+        const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt, options.systemPrompt);
 
         logCliInfo(logFilePath, "describe-image", `\n${c.desc(description)}\n`);
         await cleanupContext(ctx);

@@ -1,14 +1,34 @@
 /**
  * @fileoverview Ephemeral in-memory vector store using cosine similarity search.
  */
-import type { VectorStore, Chunk, ChunkSummary, FileSummary, SearchResult, MetadataFilter } from "../core/interfaces.js";
+import type { VectorStore, Chunk, ChunkSummary, FileSummary, SearchResult, MetadataFilter, BulkChunkWrite } from "../core/interfaces.js";
+import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
 
 /** Ephemeral in-memory vector store using cosine similarity search. */
 export class InMemoryVectorStore implements VectorStore {
   private chunks: Chunk[] = [];
 
-  async addChunks(chunks: Chunk[]): Promise<void> {
-    this.chunks.push(...chunks.filter((c) => c.embedding && c.embedding.length > 0));
+  async addChunks(chunks: Chunk[], options?: { dedup?: boolean }): Promise<void> {
+    const valid = chunks.filter((c) => c.embedding && c.embedding.length > 0);
+    if (valid.length === 0) return;
+    if (options?.dedup === false) {
+      this.chunks.push(...valid);
+      return;
+    }
+    // Mirror LanceDB dedup semantics: keep existing rows for touched files
+    // that are part of this write; drop prior-revision rows that aren't.
+    const newIds = new Set(valid.map((c) => c.id));
+    const newPaths = new Set(valid.map((c) => c.metadata.filePath));
+    this.chunks = [
+      ...this.chunks.filter((c) => !newPaths.has(c.metadata.filePath) || newIds.has(c.id)),
+      ...valid,
+    ];
+  }
+
+  async addChunksBulk(items: BulkChunkWrite[]): Promise<void> {
+    for (const item of items) {
+      await this.addChunks(item.chunks, { dedup: item.dedup });
+    }
   }
 
   async search(embedding: number[], topK: number): Promise<SearchResult[]> {
@@ -98,7 +118,7 @@ export class InMemoryVectorStore implements VectorStore {
   }
 
   /** No-op for the in-memory store. */
-  async optimize(): Promise<void> {
+  async optimize(_options?: { aggressive?: boolean }): Promise<void> {
   }
 }
 
@@ -124,6 +144,7 @@ function matchesFilter(chunk: Chunk, filter?: MetadataFilter): boolean {
   if (filter.pathPatterns?.length) {
     return filter.pathPatterns.some((p) => globMatch(p, chunk.metadata.filePath));
   }
+  if (!matchesFileExtension(chunk.metadata.filePath, normalizeFileExtensions(filter.fileExtensions))) return false;
   return true;
 }
 

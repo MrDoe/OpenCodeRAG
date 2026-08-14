@@ -7,7 +7,8 @@ import type { PluginInput } from "@opencode-ai/plugin";
 import type { ToolDefinition } from "@opencode-ai/plugin/tool";
 import { createRagHooks, ragPlugin } from "../plugin.js";
 import { DEFAULT_CONFIG, type RagConfig } from "../core/config.js";
-import type { EmbeddingProvider, SearchResult, VectorStore } from "../core/interfaces.js";
+import type { EmbeddingProvider, SearchResult, VectorStore, MetadataFilter } from "../core/interfaces.js";
+import type { RetrieveOptions } from "../retriever/retriever.js";
 
 function makeConfig(overrides: Partial<RagConfig> = {}): RagConfig {
   return {
@@ -389,6 +390,48 @@ describe("ragPlugin", () => {
     assert.match(structured.title ?? "", /Semantic search/);
     assert.match(structured.output, /auth\.ts:10-25/);
     assert.match(structured.output, /login/);
+  });
+
+  it("passes normalized fileExtensions as a hard filter to retrieval", async () => {
+    const results = [
+      makeResult("chunk-1", "src/auth.ts", 10, 25, "typescript", "export function login() { return 'token'; }", 0.91),
+      makeResult("chunk-2", "src/app.py", 1, 10, "python", "def login(): pass", 0.82),
+    ];
+
+    let seenFilter: MetadataFilter | undefined;
+    const retrieve = async (
+      _query: string,
+      _embedder: EmbeddingProvider,
+      _store: VectorStore,
+      options?: RetrieveOptions
+    ): Promise<SearchResult[]> => {
+      seenFilter = options?.filter;
+      return results;
+    };
+
+    const hooks = createRagHooks({
+      cfg: makeConfig({
+        retrieval: { topK: 7, minScore: 0 },
+        openCode: { enabled: true, maxContextChunks: 5 },
+      }),
+      storePath: "memory://",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store: populatedStore,
+      dependencies: { retrieve },
+      worktree: testWorktree,
+    });
+
+    const semTool = hooks.tool?.["search_semantic"] as ToolDefinition;
+    assert.ok(semTool);
+
+    const result = await semTool.execute(
+      { query: "login", fileExtensions: ["ts", ".PY"] },
+      makeToolContext() as never
+    );
+
+    assert.deepEqual(seenFilter?.fileExtensions, [".ts", ".py"]);
+    const structured = result as { metadata?: Record<string, unknown> };
+    assert.deepEqual(structured.metadata?.fileExtensions, ["ts", ".PY"]);
   });
 
   it("returns empty result when search_semantic finds no matches", async () => {

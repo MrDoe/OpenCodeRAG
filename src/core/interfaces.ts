@@ -169,10 +169,30 @@ export interface FileSummary {
   chunkCount: number;
 }
 
+/**
+ * A single file's chunk payload for a bulk store write.
+ * `dedup: true` removes prior-revision rows for the same file path that are
+ * not part of this write; `dedup: false` appends only (safe when writing into
+ * a freshly-created store where no rows can collide).
+ */
+export interface BulkChunkWrite {
+  chunks: Chunk[];
+  dedup: boolean;
+}
+
 /** Persistent vector storage and retrieval backend (LanceDB or in-memory). */
 export interface VectorStore {
-  /** Store a batch of chunks with their embeddings. */
-  addChunks(chunks: Chunk[]): Promise<void>;
+  /**
+   * Store a batch of chunks with their embeddings.
+   * @param options - `dedup: false` skips prior-revision cleanup (append-only).
+   */
+  addChunks(chunks: Chunk[], options?: { dedup?: boolean }): Promise<void>;
+  /**
+   * Store chunks for multiple files in a single write transaction.
+   * Optional — stores without it fall back to per-file `addChunks` calls.
+   * @param items - Per-file chunk payloads with dedup flags.
+   */
+  addChunksBulk?(items: BulkChunkWrite[]): Promise<void>;
   /** Search for the top-K nearest neighbor chunks by embedding similarity. */
   search(embedding: number[], topK: number): Promise<SearchResult[]>;
   /** Search with optional metadata filtering. */
@@ -195,8 +215,13 @@ export interface VectorStore {
   getChunksByFilePath(filePath: string): Promise<Chunk[]>;
   /** Re-open the store, optionally pointing at a new database path. */
   reopen?(newPath?: string): Promise<void>;
-  /** Compact fragments and prune old versions to prevent version-manifest accumulation. */
-  optimize?(): Promise<void>;
+  /**
+   * Compact fragments and prune old versions to prevent version-manifest
+   * accumulation.
+   * @param options - `aggressive: true` prunes all but the current version
+   *   (only safe when no other process reads the store, e.g. temp rebuilds).
+   */
+  optimize?(options?: { aggressive?: boolean }): Promise<void>;
   /**
    * Verify that the store's data is actually readable.
    * Returns false if data integrity is compromised (e.g., data files missing from disk).
@@ -205,7 +230,7 @@ export interface VectorStore {
   checkIntegrity?(): Promise<boolean>;
 }
 
-/** Filter criteria for narrowing search results by file path, language, or kind. */
+/** Filter criteria for narrowing search results by file path, language, kind, or extension. */
 export interface MetadataFilter {
   /** Glob-style path patterns (e.g. "src/**", "lib/auth/*"). */
   pathPatterns?: string[];
@@ -213,6 +238,8 @@ export interface MetadataFilter {
   languages?: string[];
   /** Synthetic kind filters (e.g. ["quirk"]). */
   kinds?: string[];
+  /** Dot-prefixed file extensions (e.g. [".ts", ".py"]). Matching is case-insensitive. */
+  fileExtensions?: string[];
 }
 
 /**

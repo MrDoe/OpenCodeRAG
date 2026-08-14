@@ -30,6 +30,7 @@ import {
   mergeAgentsMdContent,
   mergeGitignoreContent,
 } from "./init-helpers.js";
+import { detectOllamaBackend } from "./backend-detect.js";
 
 /**
  * Register the `init` command on the given Commander program.
@@ -43,7 +44,17 @@ import {
 export function registerInitCommand(program: Command): void {
   program
     .command("init")
-    .description("Configure the current workspace for OpenCodeRAG")
+    .description("Configure this workspace (files + auto-tuned opencode-rag.json)")
+    .addHelpText(
+      "after",
+      "\nUse cases:\n" +
+      "  - First-time workspace setup: creates .opencode/, the RAG skill file, AGENTS.md\n" +
+      "    guidance, and opencode-rag.json with embedding batches auto-detected for the\n" +
+      "    Ollama backend (GPU vs CPU).\n" +
+      "  - Re-running in an existing workspace: re-syncs plugin/skill files and keeps the\n" +
+      "    existing opencode-rag.json (overwriting requires interactive confirmation).\n" +
+      "\nWorkspace-level step — run AFTER 'opencode-rag setup' on this machine, then 'opencode-rag index'.\n",
+    )
     .option("-f, --force", "overwrite existing files")
     .option("--skip-install", "skip installing workspace-local plugin dependencies")
     .option("--skip-health-check", "skip provider connectivity and model availability check")
@@ -203,8 +214,29 @@ export function registerInitCommand(program: Command): void {
       }
 
       const configExists = existsSync(configPath);
+
+      // Detect the Ollama backend (CPU vs GPU) lazily — only when we are
+      // actually about to write a config — and tune embedding batches for it.
+      let detectedTuning: { embedBatchSize: number; embedConcurrency: number; ollamaMaxBatchSize: number } | undefined;
+      const configContent = async (): Promise<string> => {
+        if (!detectedTuning) {
+          try {
+            const info = await detectOllamaBackend();
+            detectedTuning = info.tuning;
+            const icon =
+              info.backend === "gpu" ? c.success("GPU:") :
+              info.backend === "cpu" ? c.warn("CPU:") :
+              c.dim("Backend:");
+            console.log(`  ${icon} ${info.message}`);
+          } catch {
+            detectedTuning = undefined;
+          }
+        }
+        return generateDefaultConfigJson(detectedTuning);
+      };
+
       if (!configExists) {
-        writeFileSync(configPath, generateDefaultConfigJson(), "utf-8");
+        writeFileSync(configPath, await configContent(), "utf-8");
         console.log(`  ${c.created("Created:")} opencode-rag.json`);
       } else {
         // NEVER overwrite existing config without interactive confirmation
@@ -224,7 +256,7 @@ export function registerInitCommand(program: Command): void {
         if (overwrite) {
           copyFileSync(configPath, `${configPath}.bak`);
           console.log(`  ${c.dim("Backup:")}        opencode-rag.json.bak`);
-          writeFileSync(configPath, generateDefaultConfigJson(), "utf-8");
+          writeFileSync(configPath, await configContent(), "utf-8");
           console.log(`  ${c.updated("Updated:")}  opencode-rag.json`);
         } else {
           console.log(`  ${c.exists("Exists:")}   opencode-rag.json (preserved)`);

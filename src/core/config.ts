@@ -64,7 +64,18 @@ export interface DescriptionConfig {
   proxy?: ProxyConfig;
   /** System prompt instructing the LLM how to describe code. */
   systemPrompt: string;
-  /** Maximum chunks per batch request. */
+  /**
+   * EXPERIMENTAL: enable multi-chunk batch description requests (Ollama
+   * provider only). Off by default — each chunk is described with its own
+   * request. When enabled, up to `batchMaxChunks` chunks share one request
+   * using ordinal labels ([CHUNK 1] ... reply "1: <desc>"); small models can
+   * mangle the structured output, so batches that fail to parse fall back to
+   * individual requests and batching auto-disables after 2 consecutive
+   * failures. Part of the description manifest fingerprint — toggling it
+   * re-describes files.
+   */
+  batchEnabled?: boolean;
+  /** Maximum chunks per batch request. Only applies when `batchEnabled` is true. */
   batchMaxChunks?: number;
   /** Timeout per batch request in milliseconds. */
   batchTimeoutMs?: number;
@@ -78,6 +89,8 @@ export interface DescriptionConfig {
   think?: boolean;
   /** Context window size for the LLM. */
   numCtx?: number;
+  /** Ollama keep_alive value (e.g. "-1" for keep-in-memory) sent with /api/chat requests. */
+  keepAlive?: string;
   /** Maximum content characters sent to the LLM. Chunks exceeding this use fallback descriptions. */
   maxContentChars?: number;
 }
@@ -102,6 +115,8 @@ export interface ImageDescriptionConfig {
   think?: boolean;
   /** Context window size. */
   numCtx?: number;
+  /** Ollama keep_alive value (e.g. "-1" for keep-in-memory) sent with /api/chat requests. */
+  keepAlive?: string;
   /** Proxy configuration. */
   proxy?: ProxyConfig;
   /** Maximum image dimension (pixels) — larger images are resized before sending. */
@@ -240,6 +255,8 @@ export interface RagConfig {
     queryPrefix?: string;
     /** Cached embedding vector dimension. Probed once on first startup, then persisted to config. */
     vectorDimension?: number;
+    /** Ollama keep_alive value (e.g. "-1" for keep-in-memory) sent with /api/embed requests. */
+    keepAlive?: string;
   };
   /** Indexing pipeline controls: what to index, concurrency, batch sizes. */
   indexing: {
@@ -288,6 +305,15 @@ export interface RagConfig {
      * @default 1_048_576 (1 MB)
      */
     maxSvgSizeBytes?: number;
+    /**
+     * Run vector-store compaction + version pruning every N windows during a
+     * long index pass. LanceDB keeps every committed version on disk, so
+     * without periodic maintenance the store phase slows down as the index
+     * grows (version-manifest accumulation). 0 disables mid-run optimization
+     * (the store is still optimized once at the end of a pass).
+     * @default 8
+     */
+    optimizeIntervalWindows?: number;
   };
   /** Vector storage backend configuration. */
   vectorStore: {
@@ -481,9 +507,10 @@ export const DEFAULT_CONFIG: RagConfig = {
     concurrency: 8,
     embedBatchSize: 100,
     embedConcurrency: 3,
-    ollamaMaxBatchSize: 500,
+    ollamaMaxBatchSize: 100,
     descriptionConcurrency: 4,
     maxSvgSizeBytes: 1_048_576,
+    optimizeIntervalWindows: 8,
   },
   vectorStore: {
     path: "./.opencode/rag_db",
@@ -536,7 +563,10 @@ export const DEFAULT_CONFIG: RagConfig = {
     numCtx: 4096,
     timeoutMs: 60000,
     systemPrompt:
-      "Describe this code in 2-3 sentences: purpose, key concepts, inputs/outputs, and dependencies. No code repetition.",
+      "Describe this code in ONE concise sentence (max 20 words): purpose, key inputs/outputs. No code repetition.",
+    batchEnabled: false,
+    batchMaxChunks: 25,
+    batchTimeoutMs: 120000,
     batchConcurrency: 1,
     retryMax: 3,
     retryBaseDelayMs: 1000,
@@ -818,6 +848,12 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     }
     if (config.description.timeoutMs != null && config.description.timeoutMs <= 0) {
       warnings.push("description.timeoutMs must be > 0");
+    }
+    if (config.description.batchEnabled === true) {
+      warnings.push(
+        "description.batchEnabled is EXPERIMENTAL — batching several chunks into one LLM request (Ollama only) " +
+        "is unreliable on small models; disable it if descriptions look wrong",
+      );
     }
   }
 

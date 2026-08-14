@@ -50,7 +50,16 @@ function checkOpenCodeRunning(): void {
 export function registerSetupCommand(program: Command): void {
   program
     .command("setup")
-    .description("Set up the OpenCodeRAG runtime (~/.opencode/) for OpenCode plugin discovery")
+    .description("Install/update the OpenCodeRAG runtime once per machine")
+    .addHelpText(
+      "after",
+      "\nUse cases:\n" +
+      "  - First-time install: run once per machine to install the plugin runtime\n" +
+      "    into ~/.opencode/ so OpenCode can discover the RAG plugin.\n" +
+      "  - Updating: re-sync the runtime to the published plugin version.\n" +
+      "  - Troubleshooting: use --check to inspect the runtime, or --force to reinstall.\n" +
+      "\nMachine-level step — run BEFORE 'opencode-rag init' (init configures each workspace).\n",
+    )
     .option("--uninstall", "remove the runtime and cleanup")
     .option("-f, --force", "force re-setup even if up-to-date")
     .option("--check", "check whether the runtime is correctly installed")

@@ -419,7 +419,7 @@ async function handleSearch(
 
 /**
  * Perform a full vector+hybrid semantic search via the retrieve() pipeline.
- * Accepts GET or POST with query parameters: q, topK, minScore, keywordWeight, hybrid, path, lang, explain.
+ * Accepts GET or POST with query parameters: q, topK, minScore, keywordWeight, hybrid, path, lang, ext, explain.
  * The embedder is lazily initialized on the first call; returns 202 if still initializing.
  */
 async function handleRetrieve(
@@ -457,6 +457,7 @@ async function handleRetrieve(
   const explain = params.get("explain") !== "false";
   const pathFilter = params.get("path") ?? undefined;
   const langFilter = params.get("lang") ?? undefined;
+  const extFilter = params.get("ext") ?? undefined;
 
   try {
     const results = await retrieve(q, embedder, store, {
@@ -470,6 +471,7 @@ async function handleRetrieve(
       filter: {
         pathPatterns: pathFilter ? pathFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         languages: langFilter ? langFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+        fileExtensions: extFilter ? extFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         kinds: CODE_SEARCH_FILTER.kinds,
       },
     } satisfies RetrieveOptions);
@@ -664,8 +666,8 @@ function redactKeys(obj: Record<string, unknown>): void {
 }
 
 /**
- * Project chunk embeddings to 2D via PCA for the Embedding Space Explorer.
- * Capped at 5000 chunks and memoized per (storePath, maxChunks) so the
+ * Project chunk embeddings to 2D/3D via PCA for the Embedding Space Explorer.
+ * Capped at 5000 chunks and memoized per (maxChunks, dims) so the
  * O(n·dim²) computation does not run on every visit.
  */
 let projectionCache: { key: string; body: unknown } | null = null;
@@ -673,9 +675,10 @@ let projectionCache: { key: string; body: unknown } | null = null;
 async function handleEmbeddingProjection(store: LanceDbStore, params: URLSearchParams): Promise<ApiResponse> {
   const rawMaxChunks = parseInt(params.get("maxChunks") ?? "5000", 10);
   const maxChunks = Number.isFinite(rawMaxChunks) ? Math.min(5000, Math.max(1, rawMaxChunks)) : 5000;
+  const dims: 2 | 3 = parseInt(params.get("dims") ?? "2", 10) === 3 ? 3 : 2;
   try {
     // Invalidated after a reindex pass completes (see handleReindex)
-    const cacheKey = `${maxChunks}`;
+    const cacheKey = `${maxChunks}:${dims}`;
     if (projectionCache && projectionCache.key === cacheKey) {
       return { status: 200, body: projectionCache.body };
     }
@@ -686,25 +689,31 @@ async function handleEmbeddingProjection(store: LanceDbStore, params: URLSearchP
       return { status: 200, body: projectionCache.body };
     }
     if (chunks.length === 1) {
-      const body = { points: [{ id: chunks[0]!.id, x: 0.5, y: 0.5, filePath: chunks[0]!.filePath, startLine: chunks[0]!.startLine, endLine: chunks[0]!.endLine, language: chunks[0]!.language, description: chunks[0]!.description }], totalChunks: 1, displayedChunks: 1 };
+      const point: Record<string, unknown> = { id: chunks[0]!.id, x: 0.5, y: 0.5, filePath: chunks[0]!.filePath, startLine: chunks[0]!.startLine, endLine: chunks[0]!.endLine, language: chunks[0]!.language, description: chunks[0]!.description };
+      if (dims === 3) point.z = 0.5;
+      const body = { points: [point], totalChunks: 1, displayedChunks: 1 };
       projectionCache = { key: cacheKey, body };
       return { status: 200, body };
     }
 
     const { computePCA } = await import("./pca.js");
     const vectors = chunks.map(c => c.embedding);
-    const projected = computePCA(vectors);
+    const projected = computePCA(vectors, dims);
 
-    const points = chunks.map((c, i) => ({
-      id: c.id,
-      x: projected[i]!.x,
-      y: projected[i]!.y,
-      filePath: c.filePath,
-      startLine: c.startLine,
-      endLine: c.endLine,
-      language: c.language,
-      description: c.description,
-    }));
+    const points = chunks.map((c, i) => {
+      const point: Record<string, unknown> = {
+        id: c.id,
+        x: projected[i]!.x,
+        y: projected[i]!.y,
+        filePath: c.filePath,
+        startLine: c.startLine,
+        endLine: c.endLine,
+        language: c.language,
+        description: c.description,
+      };
+      if (dims === 3) point.z = projected[i]!.z;
+      return point;
+    });
 
     const body = { points, totalChunks: chunks.length, displayedChunks: points.length };
     projectionCache = { key: cacheKey, body };

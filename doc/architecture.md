@@ -159,13 +159,13 @@ Walks the workspace directory tree, filtering by `includeExtensions` and `exclud
 Dispatches to the appropriate `Chunker` based on file extension. Each chunker splits content into semantically meaningful units (AST nodes, headings, paragraphs, etc.).
 
 ### 3. Description (Optional, `DescriptionProvider`)
-An LLM generates a natural-language description of each chunk. Batches of chunks are processed concurrently (configurable via `description.batchConcurrency`). The embedded text becomes `filePath + "\n\n" + description + "\n\n" + content`. If disabled, the description defaults to `lines N-M, language`.
+An LLM generates a natural-language description of each chunk. By default every chunk gets its own request; the experimental `description.batchEnabled` flag makes the Ollama provider group several chunks into one request (configurable via `description.batchMaxChunks`), with concurrent requests governed by `description.batchConcurrency`. The embedded text becomes `filePath + "\n\n" + description + "\n\n" + content`. If disabled, the description defaults to `lines N-M, language`.
 
 ### 4. Embedding (`embedBatch` in `embedder/factory.ts`)
 Texts are optionally prefixed with `documentPrefix` (e.g., `search_document:`) and sent to the embedding provider in batches. Multiple batches are sent concurrently (configurable via `indexing.embedConcurrency`). The resulting vectors are written to the chunk objects.
 
 ### 5. Storage (`LanceDbStore`)
-Chunks and their embeddings are stored in LanceDB in batched writes. The keyword index is maintained separately as an in-memory TF×IDF inverted index, serialized to `keyword-index.json`.
+Chunks and their embeddings are stored in LanceDB in **bulk window writes**: all chunks of a processing window go in as a single `table.add`, followed by one `table.delete` per modified file (dedup of the prior revision). During a full rebuild (`--force`) the writes are append-only — the temporary rebuild store starts empty, so dedup deletes are skipped entirely. This keeps the number of LanceDB version commits proportional to the number of modified files instead of the number of chunks (previously K+2 transactions per file caused version-manifest accumulation that made the store phase degrade quadratically as the index grew). The store phase is launched as a non-awaited promise so it overlaps the next window's prepare/describe/embed phases, and it is compacted periodically (`indexing.optimizeIntervalWindows`) plus once at the end of a pass to prune old versions. The keyword index is maintained separately as an in-memory TF×IDF inverted index, serialized to `keyword-index.json`.
 
 ### 6. Retrieval (`retrieve` in `retriever/retriever.ts`)
 The query is prefixed with `queryPrefix` and embedded. Vector search returns results. If hybrid search is enabled, keyword search runs in parallel. Results are fused via weighted score: `(1 - kw) * vScore + kw * kScore`.

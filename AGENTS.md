@@ -6,10 +6,10 @@ description: Local-first RAG plugin for semantic code search — tree-sitter chu
 ## Code Navigation
 
 ALWAYS use OpenCodeRAG tools before reading or editing:
-- **Search first** — `search_semantic(query)` instead of grep/glob
+- **Search first** — `search_semantic(query)` instead of grep/glob. Optional args: `pathHints`, `languageHints`, `fileExtensions` (e.g. `[".ts"]`), `topK`
 - **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines
 - **Usages before edit** — `find_usages(symbolName)` before modifying any symbol
-- **Images via describe** — `describe_image(filePath)` — never read raw bytes
+- **Images via describe** — `describe_image(filePath, systemPrompt?)` — never read raw bytes
 
 If no results, run `opencode-rag index`.
 
@@ -25,6 +25,7 @@ Full architecture: [doc/architecture.md](doc/architecture.md).
 
 - **npm install**: use `--legacy-peer-deps` (LanceDB peer dep conflicts)
 - **LanceDB types**: cast through `unknown` — `rows as unknown as Record<string, unknown>[]`
+- **LanceDB index metric**: the IVF index on `embedding` must use `distanceType: "cosine"` to match `searchInternal` (default is `l2`, which makes every query log "Requested metric Cosine is incompatible" and fall back to brute-force). `LanceDbStore.ensureCosineIndex()` self-heals stale L2 indexes on first search. When replacing an index, use a single `createIndex(..., replace: true, waitTimeoutSeconds)` — a `dropIndex` + `createIndex` sequence races and fails with "Retryable commit conflict".
 - **tree-sitter**: WASM-only (no native). `Parser` is a class, `Language` is top-level, use `Node` not `SyntaxNode`
 - **Plugin types**: `@opencode-ai/plugin` lives in `.opencode/node_modules/`, declared locally in `src/types/opencode-plugin.d.ts`
 - **Config loading**: `loadConfig()` deep-merges per section (not recursive). CLI auto-detects `./opencode-rag.json` and `./.opencode/rag.json`
@@ -36,6 +37,7 @@ Full architecture: [doc/architecture.md](doc/architecture.md).
 - **`noUncheckedIndexedAccess`** in `tsconfig.json`: array indexing returns `string | undefined`. Use `for...of` loops instead of indexed `for` in new code to avoid `Object is possibly 'undefined'` errors.
 - **watch.ts ignores both excludeDirs AND excludeFiles**: `createWatchIgnore` uses both matchers — any excludeFiles pattern applies to file-watch ignore too.
 - **`walkFiles` signature changed**: `excludeDirs`/`excludeFiles` params changed from `Set<string>` to `ExcludeMatcher`; `rootDir` param added. If you import `walkFiles` directly, update the call site or use `scanWorkspaceFiles` instead.
+- **Watcher runs once per workspace**: `createBackgroundIndexer` claims `{storePath}/watcher.lock` (atomic O_EXCL create + PID liveness via `process.kill(pid, 0)`). Only ONE process runs the auto-index watcher per workspace; later claimants go dormant (no chokidar/scheduler/passes) and take over via a 60s unref'd re-check timer after the owner exits. CLI `index --watch` shares the same lock — if a plugin watcher already owns the workspace it warns and exits 0. Only the owner's `close()` releases the lock; stale/corrupt lock files are auto-reclaimed.
 
 ## Resource Lifecycle
 
@@ -69,10 +71,10 @@ restart pattern and browser cache troubleshooting.
 ## Code Navigation
 
 ALWAYS use OpenCodeRAG tools before reading or editing:
-- **Search first** — `search_semantic(query)` instead of grep/glob
+- **Search first** — `search_semantic(query)` instead of grep/glob. Optional args: `pathHints`, `languageHints`, `fileExtensions` (e.g. `[".ts"]`), `topK`
 - **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines
 - **Usages before edit** — `find_usages(symbolName)` before modifying any symbol
-- **Images via describe** — `describe_image(filePath)` — never read raw bytes
+- **Images via describe** — `describe_image(filePath, systemPrompt?)` — never read raw bytes
 - **Recall quirks** — `recall_quirks(query)` when you hit a known pitfall
 - **Add quirks** — `add_quirk(content)` when you discover a non-obvious fact
 - **Fix quirks** — `update_quirk(id, ...)` / `delete_quirk(id)` when a stored quirk is outdated or wrong
@@ -84,7 +86,7 @@ If no results, run `opencode-rag index`.
 2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines
 3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`
 4. User asks a code question → `search_semantic` to gather context before answering
-5. User asks about an image or visual asset → `describe_image(filePath)` to retrieve its generated description, then optionally `search_semantic` for related code
+5. User asks about an image or visual asset → `describe_image(filePath)` (optionally pass `systemPrompt` to focus on specific features) to retrieve its generated description, then optionally `search_semantic` for related code
 6. You encounter an error or need to recall a known pitfall → `recall_quirks(query)`
 7. You discover a non-obvious fact or workaround → `add_quirk(content)` to persist it for future sessions
 8. A recalled quirk is outdated or wrong → `update_quirk(id, ...)` to fix it, or `delete_quirk(id)` if it no longer applies

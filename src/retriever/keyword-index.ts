@@ -3,6 +3,7 @@
  */
 import type { Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath } from "../core/manifest.js";
+import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
 
 const INDEX_VERSION = 2;
 
@@ -357,5 +358,6 @@ function matchesFilter(chunk: Chunk, filter?: MetadataFilter): boolean {
   if (filter.pathPatterns?.length) {
     return filter.pathPatterns.some((p) => globMatch(p, chunk.metadata.filePath));
   }
+  if (!matchesFileExtension(chunk.metadata.filePath, normalizeFileExtensions(filter.fileExtensions))) return false;
   return true;
 }

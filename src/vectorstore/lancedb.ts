@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { VectorStore, Chunk, ChunkSummary, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
+import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
 
 const TABLE_NAME = "chunks";
 
@@ -107,6 +108,17 @@ interface ChunkRow {
 }
 
 /**
+ * A single file's chunk payload for a bulk store write.
+ * `dedup: true` removes prior-revision rows for the same file path that are
+ * not part of this write; `dedup: false` appends only (safe when writing into
+ * a freshly-created store where no rows can collide).
+ */
+export interface BulkChunkWrite {
+  chunks: Chunk[];
+  dedup: boolean;
+}
+
+/**
  * A LanceDB-backed vector store with persistent on-disk storage, vector search,
  * and chunk metadata queries. Supports automatic corruption recovery by falling
  * back to prior table versions or dropping and rebuilding the table.
@@ -118,6 +130,14 @@ export class LanceDbStore implements VectorStore {
   private table: Table | null = null;
   private tableInit: Promise<Table> | null = null;
   private writeLock = Promise.resolve<void>(void 0);
+  /**
+   * Memoized once-per-process index-metric repair. Stores built by versions
+   * before the cosine search switch carry an IVF index trained with the
+   * default L2 metric, which makes every cosine query log
+   * "Requested metric Cosine is incompatible with index metric L2" and fall
+   * back to brute-force. This repairs that stale index on first search.
+   */
+  private indexRepairPromise: Promise<void> | null = null;
 
   /**
    * Execute an async function under an exclusive write lock.
@@ -325,19 +345,27 @@ export class LanceDbStore implements VectorStore {
 
   /**
    * Store chunks in the LanceDB table. New rows are inserted first, then
-   * any old rows at the same (filePath, startLine) with different IDs are
-   * removed. This ensures no data is lost if the process aborts between
-   * insert and cleanup. Automatically attempts repair on corruption errors.
+   * old rows for the same file that are not part of this write are removed
+   * in a single delete per file. This ensures no data is lost if the process
+   * aborts between insert and cleanup. Automatically attempts repair on
+   * corruption errors.
+   *
+   * When `options.dedup` is `false` the cleanup step is skipped entirely —
+   * a pure append. Use this when writing into a store that provably has no
+   * prior rows for these files (e.g. a freshly-created rebuild store).
+   *
    * @param chunks - The chunks to add.
+   * @param options - Optional write options (`dedup`, default `true`).
    */
-  async addChunks(chunks: Chunk[]): Promise<void> {
+  async addChunks(chunks: Chunk[], options?: { dedup?: boolean }): Promise<void> {
     if (chunks.length === 0) return;
+    const dedup = options?.dedup ?? true;
     await this.withWriteLock(async () => {
       try {
-        await this.addChunksInternal(chunks);
+        await this.addChunksInternal(chunks, dedup);
       } catch (err) {
         if (isCorruptionError(err) && await this.tryRepair()) {
-          await this.addChunksInternal(chunks);
+          await this.addChunksInternal(chunks, dedup);
           return;
         }
         throw err;
@@ -345,78 +373,121 @@ export class LanceDbStore implements VectorStore {
     });
   }
 
-  private async addChunksInternal(chunks: Chunk[]): Promise<void> {
-    const table = await this.getTable();
-    const rows: ChunkRow[] = chunks
-      .filter((c) => c.embedding && c.embedding.length > 0)
-      .map((c) => ({
-        id: c.id,
-        content: c.content,
-        description: c.description ?? "",
-        embedding: l2Normalize(c.embedding!),
-        filePath: normalizeFilePath(c.metadata.filePath),
-        startLine: c.metadata.startLine,
-        endLine: c.metadata.endLine,
-        language: c.metadata.language,
-        kind: c.metadata.kind ?? "",
-        quirkType: c.metadata.quirkType ?? "",
-        tags: c.metadata.tags ? JSON.stringify(c.metadata.tags) : "",
-      }));
+  /**
+   * Store chunks for many files in a single transaction: one `table.add`
+   * across all items, then one `table.delete` per item that needs dedup.
+   * This collapses what used to be a per-file add + per-startLine deletes
+   * (K+2 LanceDB versions per file) into ~1 + M versions per batch.
+   *
+   * @param items - Per-file chunk payloads with their dedup flags.
+   */
+  async addChunksBulk(items: BulkChunkWrite[]): Promise<void> {
+    const active = items.filter((item) => item.chunks.length > 0);
+    if (active.length === 0) return;
+    await this.withWriteLock(async () => {
+      try {
+        await this.addChunksBulkInternal(active);
+      } catch (err) {
+        if (isCorruptionError(err) && await this.tryRepair()) {
+          await this.addChunksBulkInternal(active);
+          return;
+        }
+        throw err;
+      }
+    });
+  }
 
-    if (rows.length === 0) return;
+  /** Map a chunk to its internal row shape, or null if it has no embedding. */
+  private chunkToRow(c: Chunk): ChunkRow | null {
+    if (!c.embedding || c.embedding.length === 0) return null;
+    return {
+      id: c.id,
+      content: c.content,
+      description: c.description ?? "",
+      embedding: l2Normalize(c.embedding),
+      filePath: normalizeFilePath(c.metadata.filePath),
+      startLine: c.metadata.startLine,
+      endLine: c.metadata.endLine,
+      language: c.metadata.language,
+      kind: c.metadata.kind ?? "",
+      quirkType: c.metadata.quirkType ?? "",
+      tags: c.metadata.tags ? JSON.stringify(c.metadata.tags) : "",
+    };
+  }
 
-    // Build a map: (filePath, startLine) → set of new IDs for dedup after insert
-    const newIdsByLine = new Map<string, Set<string>>();
+  /** Group new rows by file path for dedup deletes. */
+  private rowsByFilePath(rows: ChunkRow[]): Map<string, string[]> {
+    const byFile = new Map<string, string[]>();
     for (const row of rows) {
-      const key = `${row.filePath}:${row.startLine}`;
-      const ids = newIdsByLine.get(key);
+      const ids = byFile.get(row.filePath);
       if (ids) {
-        ids.add(row.id);
+        ids.push(row.id);
       } else {
-        newIdsByLine.set(key, new Set([row.id]));
+        byFile.set(row.filePath, [row.id]);
       }
     }
+    return byFile;
+  }
+
+  private async addChunksInternal(chunks: Chunk[], dedup = true): Promise<void> {
+    const table = await this.getTable();
+    const rows = chunks
+      .map((c) => this.chunkToRow(c))
+      .filter((r): r is ChunkRow => r !== null);
+
+    if (rows.length === 0) return;
 
     // INSERT FIRST: data is safely stored before any delete
     await table.add(rows as unknown as Record<string, unknown>[]);
 
-    // THEN DEDUP: remove old rows at the same (filePath, startLine) positions,
-    // but preserve the newly inserted rows by filtering out their IDs.
-    // IMPORTANT: use a single NOT IN clause per position so that when multiple
-    // new IDs share the same startLine they don't delete each other.
-    for (const [key, newIds] of newIdsByLine) {
-      const colonIdx = key.lastIndexOf(":");
-      const filePath = key.slice(0, colonIdx);
-      const startLine = parseInt(key.slice(colonIdx + 1), 10);
+    if (!dedup) return;
+
+    // THEN DEDUP: one delete per file removes prior-revision rows at the
+    // same (filePath, startLine) positions AND stale startLines, while the
+    // NOT IN clause preserves the newly inserted rows (so multiple new IDs
+    // sharing a startLine never delete each other).  Insert-first ordering
+    // keeps an abort between insert and delete from losing data.
+    const byFile = this.rowsByFilePath(rows);
+    for (const [filePath, ids] of byFile) {
       const escapedPath = filePath.replace(/'/g, "''");
-      const idList = [...newIds]
-        .map((id) => `'${id.replace(/'/g, "''")}'`)
-        .join(", ");
+      const idList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
       await table.delete(
-        `filePath = '${escapedPath}' AND startLine = ${startLine} AND id NOT IN (${idList})`,
+        `filePath = '${escapedPath}' AND id NOT IN (${idList})`,
       );
     }
+  }
 
-    // FINALLY: remove stale chunks for the same file that belong to a
-    // previous revision (different startLines).  Exclude the new inserts
-    // so an abort never orphans data.
-    const filePathsDone = new Set<string>();
-    for (const [key] of newIdsByLine) {
-      const colonIdx = key.lastIndexOf(":");
-      const filePath = key.slice(0, colonIdx);
-      if (filePathsDone.has(filePath)) continue;
-      filePathsDone.add(filePath);
+  private async addChunksBulkInternal(items: BulkChunkWrite[]): Promise<void> {
+    const table = await this.getTable();
+    const allRows: ChunkRow[] = [];
+    const dedupByFile = new Map<string, string[]>();
 
-      // Collect all new IDs inserted for this file
-      const fileNewIds: string[] = [];
-      for (const [k, ids] of newIdsByLine) {
-        if (k.startsWith(filePath + ":")) {
-          fileNewIds.push(...ids);
+    for (const item of items) {
+      const rows = item.chunks
+        .map((c) => this.chunkToRow(c))
+        .filter((r): r is ChunkRow => r !== null);
+      if (rows.length === 0) continue;
+      allRows.push(...rows);
+      if (item.dedup) {
+        for (const [filePath, ids] of this.rowsByFilePath(rows)) {
+          const existing = dedupByFile.get(filePath);
+          if (existing) {
+            existing.push(...ids);
+          } else {
+            dedupByFile.set(filePath, [...ids]);
+          }
         }
       }
+    }
 
+    if (allRows.length === 0) return;
+
+    // INSERT FIRST (single add for the whole batch), then per-file dedup
+    await table.add(allRows as unknown as Record<string, unknown>[]);
+
+    for (const [filePath, ids] of dedupByFile) {
       const escapedPath = filePath.replace(/'/g, "''");
-      const idList = fileNewIds.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
+      const idList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
       await table.delete(
         `filePath = '${escapedPath}' AND id NOT IN (${idList})`,
       );
@@ -733,6 +804,11 @@ export class LanceDbStore implements VectorStore {
     const count = await table.countRows();
     if (count === 0) return [];
 
+    // One-time per-process repair: drop any stale L2 index so the cosine query
+    // below doesn't log "Requested metric Cosine is incompatible" and degrade
+    // to brute-force. Await it so the repair completes before this search.
+    await this.withWriteLock(() => this.ensureCosineIndex());
+
     const whereClause = buildWhereClause(filter);
 
     let results: Record<string, unknown>[];
@@ -791,38 +867,103 @@ export class LanceDbStore implements VectorStore {
   }
 
   /**
-   * Compact fragments and prune old version manifests to prevent the
-   * version-manifest accumulation that causes countRows() to hang.
-   * Should be called at the end of a successful index pass.
+   * Ensure the ANN index on the `embedding` column uses the cosine metric,
+   * matching the `distanceType` requested by searchInternal.
+   *
+   * Older stores built the IVF index with the ivfFlat default (L2), so every
+   * cosine query hit "Requested metric Cosine is incompatible with index
+   * metric L2" and silently fell back to brute-force O(N) scans. This lazily
+   * replaces such an index with a cosine one — once per process.
+   *
+   * Callers must hold the write lock (searchInternal wraps the call in
+   * withWriteLock; optimize runs under it already).
    */
-  async optimize(): Promise<void> {
+  private ensureCosineIndex(): Promise<void> {
+    if (!this.indexRepairPromise) {
+      this.indexRepairPromise = this.repairIndexMetricOnce();
+    }
+    return this.indexRepairPromise;
+  }
+
+  /**
+   * Perform a single index-metric repair pass. Skips stores that have no
+   * index and fewer than 1000 rows (brute-force is optimal there). Uses a
+   * single `createIndex` with `replace: true` — a dropIndex + createIndex
+   * sequence races in LanceDB ("Retryable commit conflict") and leaves the
+   * stale index in place. On failure the memo is cleared so the next
+   * search/optimize retries.
+   */
+  private async repairIndexMetricOnce(): Promise<void> {
+    try {
+      const table = await this.getTable();
+      const count = await table.countRows().catch(() => 0);
+      const indices = await table.listIndices();
+      const vecIndex = indices.find((i) => i.columns.includes("embedding"));
+      const idxName = vecIndex?.name ?? "embedding_idx";
+      const stats = await table.indexStats(idxName);
+      if (stats && stats.distanceType === "cosine") return; // already healthy
+      if (!stats && count < 1000) return; // tiny store, no index — leave brute-force
+
+      const numPartitions = Math.max(16, Math.min(256, Math.floor(count / 256)));
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await table.createIndex("embedding", {
+            config: lancedb.Index.ivfFlat({ numPartitions, distanceType: "cosine" }),
+            replace: true,
+            name: idxName,
+            // Wait for the commit so the repair is deterministic and cannot
+            // race a background index-creation from another process.
+            waitTimeoutSeconds: 120,
+          } as never);
+          return;
+        } catch (err) {
+          const retriable =
+            err instanceof Error &&
+            (err.message.includes("Retryable commit conflict") || err.message.includes("Please retry"));
+          if (!retriable || attempt === 3) throw err;
+          await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
+        }
+      }
+    } catch (err) {
+      this.indexRepairPromise = null; // allow retry on a later search/optimize
+      console.warn(
+        `[lancedb] index metric repair failed (queries continue in brute-force): ` +
+          `${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  /**
+   * Compact fragments and prune old version manifests to prevent the
+   * version-manifest accumulation that causes countRows() to hang and the
+   * store phase to slow down as the index grows. Should be called at the
+   * end of a successful index pass, and periodically during long passes.
+   *
+   * @param options - `aggressive: true` prunes every version but the current
+   *   one with `deleteUnverified`. Only safe for a private store that no other
+   *   process reads (e.g. a temporary rebuild store). For the shared store,
+   *   versions newer than 1 hour are retained so in-flight queries (Web UI,
+   *   background auto-index) can finish before their data files are reclaimed.
+   */
+  async optimize(options?: { aggressive?: boolean }): Promise<void> {
     await this.withWriteLock(async () => {
       try {
         const table = await this.getTable();
-        // Clean up versions older than 1 hour �?" not "right now" �?" so in-flight
-        // queries (e.g. Web UI search, background auto-index) can finish before
-        // their data files are reclaimed.  Using new Date() here caused data-file
-        // race conditions where a reader got "Not found: �?� .lance" because the
-        // GC deleted fragments that the current version still referenced.
-        const threshold = new Date(Date.now() - 60 * 60 * 1000);
-        await table.optimize({ cleanupOlderThan: threshold, deleteUnverified: false });
+        if (options?.aggressive) {
+          await table.optimize({ cleanupOlderThan: new Date(), deleteUnverified: true });
+        } else {
+          const threshold = new Date(Date.now() - 60 * 60 * 1000);
+          await table.optimize({ cleanupOlderThan: threshold, deleteUnverified: false });
+        }
 
         // Build the ANN vector index — without it every vectorSearch() is a
-        // brute-force O(N) flat scan (slow at 50k+ chunks).
-        try {
-          const count = await table.countRows().catch(() => 0);
-          const numPartitions = count > 0 ? Math.max(16, Math.min(256, Math.floor(count / 256))) : 16;
-          // The index metric MUST match the search metric ("cosine", see
-          // searchInternal).  The ivfFlat default is "l2", which makes LanceDB
-          // ignore the index and fall back to brute-force on every query.
-          await table.createIndex("embedding", {
-            config: lancedb.Index.ivfFlat({ numPartitions, distanceType: "cosine" }),
-          } as never);
-        } catch {
-          // Index creation is best-effort — queries still work, just slower.
-        }
-      } catch {
-        // Optimize is best-effort �?" must not break indexing.
+        // brute-force O(N) flat scan (slow at 50k+ chunks). Skips early when
+        // an index with the correct cosine metric already exists.
+        await this.ensureCosineIndex();
+      } catch (err) {
+        // Optimize is best-effort — must not break indexing, but surface the
+        // failure instead of swallowing it silently.
+        console.warn(`[lancedb] optimize failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     });
   }
@@ -1155,6 +1296,10 @@ function buildWhereClause(filter?: MetadataFilter): string | undefined {
     });
     parts.push(`(${likes.join(" OR ")})`);
   }
+  if (filter.fileExtensions?.length) {
+    const likes = normalizeFileExtensions(filter.fileExtensions).map((ext) => `filePath LIKE '%${ext}'`);
+    parts.push(`(${likes.join(" OR ")})`);
+  }
   return parts.length ? parts.join(" AND ") : undefined;
 }
 
@@ -1166,6 +1311,7 @@ function matchesFilterLocal(chunk: Chunk, filter?: MetadataFilter): boolean {
   if (filter.pathPatterns?.length) {
     return filter.pathPatterns.some((p) => globMatchLocal(p, chunk.metadata.filePath));
   }
+  if (!matchesFileExtension(chunk.metadata.filePath, normalizeFileExtensions(filter.fileExtensions))) return false;
   return true;
 }
 
