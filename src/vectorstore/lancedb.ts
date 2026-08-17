@@ -40,16 +40,69 @@ export type StoreWarn = (message: string) => void;
  * store holds one per built index, while a store whose index commits fail
  * accumulates one per attempt (and eventually degrades / corrupts).
  *
+ * Empty directories are the husks of pruned versions (Lance removes the files
+ * but leaves the directory behind) and are harmless — they must not count
+ * toward the corruption threshold.
+ *
  * @param tablePath - Filesystem path of the table directory (e.g. `.../chunks.lance`).
+ * @param options - `withFiles: true` counts only directories that still contain index files.
  * @returns The number of index-version directories, or 0 when unavailable.
  */
-export function countIndexVersionDirs(tablePath: string): number {
+export function countIndexVersionDirs(
+  tablePath: string,
+  options?: { withFiles?: boolean },
+): number {
   try {
     const entries = fsSync.readdirSync(path.join(tablePath, "_indices"), { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).length;
+    const dirs = entries.filter((e) => e.isDirectory());
+    if (!options?.withFiles) return dirs.length;
+    let count = 0;
+    for (const dir of dirs) {
+      try {
+        if (fsSync.readdirSync(path.join(tablePath, "_indices", dir.name)).length > 0) count++;
+      } catch {
+        // unreadable dir — count it conservatively
+        count++;
+      }
+    }
+    return count;
   } catch {
     return 0;
   }
+}
+
+/**
+ * Remove stale empty index-version directories (husks of versions whose files
+ * Lance already pruned). Empty directories are never referenced by the index,
+ * so removing them is safe; only husks older than `MIN_HUSK_AGE_MS` are swept
+ * so a concurrent createIndex from another process can never lose its
+ * freshly-created (and momentarily empty) version directory.
+ *
+ * @param tablePath - Filesystem path of the table directory (e.g. `.../chunks.lance`).
+ * @returns The number of removed directories.
+ */
+export function sweepEmptyIndexVersionDirs(tablePath: string): number {
+  const MIN_HUSK_AGE_MS = 10 * 60 * 1000;
+  let removed = 0;
+  try {
+    const indicesDir = path.join(tablePath, "_indices");
+    for (const name of fsSync.readdirSync(indicesDir)) {
+      const full = path.join(indicesDir, name);
+      try {
+        const stat = fsSync.statSync(full);
+        if (!stat.isDirectory()) continue;
+        if (Date.now() - stat.mtimeMs < MIN_HUSK_AGE_MS) continue;
+        if (fsSync.readdirSync(full).length > 0) continue;
+        fsSync.rmdirSync(full);
+        removed++;
+      } catch {
+        // best-effort — skip unreadable/racing entries
+      }
+    }
+  } catch {
+    // best-effort
+  }
+  return removed;
 }
 
 /**
@@ -941,16 +994,17 @@ export class LanceDbStore implements VectorStore {
 
     try {
       // Guard against a store that never converges: each failed createIndex
-      // leaves a new index-version directory behind. If many stale versions
-      // accumulated, building yet another index only entrenches the problem.
-      // The store must be rebuilt instead (see doc/troubleshooting.md).
-      const staleVersions = this.dbPath.startsWith("memory://")
+      // leaves a new index-version directory behind. Empty directories are
+      // the husks of already-pruned versions and are harmless — only
+      // versions that still carry index files count (see countIndexVersionDirs).
+      const activeVersions = this.dbPath.startsWith("memory://")
         ? 0
-        : countIndexVersionDirs(path.join(this.dbPath, TABLE_NAME + ".lance"));
-      if (staleVersions > MAX_STALE_INDEX_VERSIONS) {
+        : countIndexVersionDirs(path.join(this.dbPath, TABLE_NAME + ".lance"), { withFiles: true });
+      if (activeVersions > MAX_STALE_INDEX_VERSIONS) {
         report(
-          `[lancedb] ${staleVersions} stale index versions detected in ${this.dbPath} — ` +
-          `skipping index rebuild (the store is corrupted). Delete the rag_db directory and re-index.`,
+          `[lancedb] ${activeVersions} active index versions detected in ${this.dbPath} — ` +
+          `index rebuild skipped to avoid retrain churn. The store cannot converge; ` +
+          `delete the rag_db directory and re-index.`,
         );
         // Resolve the memo so no further attempts run this process.
         return;
@@ -976,6 +1030,18 @@ export class LanceDbStore implements VectorStore {
             // race a background index-creation from another process.
             waitTimeoutSeconds: 120,
           } as never);
+          // Verify the index actually registered. On a store whose index
+          // commits never register, createIndex can return successfully
+          // while leaving the table without a visible index — the failure
+          // mode that caused constant retraining and "partition N is empty,
+          // skipping" warning spam. Detect it and stop retraining.
+          const verify = await table.indexStats(idxName).catch(() => undefined);
+          if (!verify || verify.distanceType !== "cosine") {
+            throw new Error(
+              `index build did not register (store cannot converge) — ` +
+              `delete the rag_db directory and re-index`,
+            );
+          }
           this.indexRepairFailures = 0;
           return;
         } catch (err) {
@@ -1027,6 +1093,18 @@ export class LanceDbStore implements VectorStore {
         } else {
           const threshold = new Date(Date.now() - 60 * 60 * 1000);
           await table.optimize({ cleanupOlderThan: threshold, deleteUnverified: false });
+        }
+
+        // Remove stale empty index-version directories (husks Lance leaves
+        // behind after pruning a version's files). Keeps the directory count
+        // from growing unboundedly and prevents false positives in the
+        // index-repair stale-version guard.
+        if (!this.dbPath.startsWith("memory://")) {
+          const swept = sweepEmptyIndexVersionDirs(path.join(this.dbPath, TABLE_NAME + ".lance"));
+          if (swept > 0) {
+            const message = `[lancedb] swept ${swept} stale index-version directories`;
+            (options?.logger ?? console.warn)(message);
+          }
         }
 
         // Build the ANN vector index — without it every vectorSearch() is a

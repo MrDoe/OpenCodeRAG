@@ -144,22 +144,35 @@ version-manifest accumulation). Each retry leaves a new directory under
 `rag_db/chunks.lance/_indices/` and re-trains KMeans, spamming the warning.
 
 **Fix:**
-1. Delete or rename `rag_db` and re-index:
+1. If the store is otherwise healthy, the accumulation is harmless and
+   self-limiting: `optimize()` prunes old index-version files (leaving empty
+   husks that are swept automatically) and the repair only ever builds one
+   index. No action needed.
+2. If you see the explicit `index build did not register (store cannot
+   converge)` message, delete or rename `rag_db` and re-index:
    ```bash
    # while no OpenCode session is using the workspace
    mv .opencode/rag_db .opencode/rag_db.broken   # or: rmdir /s /q .opencode\rag_db
    opencode-rag index
    ```
-2. If warnings still repeat after a clean re-index, check
+3. If warnings still repeat after a clean re-index, check
    `opencode-rag status` and the plugin log for `[lancedb]` messages.
 
 **Built-in protection:** since this was diagnosed, the index repair path
 (`repairIndexMetricOnce` in `src/vectorstore/lancedb.ts`) has three guards:
-- it refuses to build yet another index once more than 40 stale index-version
-  directories have accumulated (actionable error instead of retrain spam),
-- it gives up after 3 failed repair attempts per process, and
-- full rebuilds skip index creation on the temporary store (the index is built
+- it only counts index-version directories that still carry files — the empty
+  directories Lance leaves behind after pruning a version are harmless husks
+  and never trip the guard (and `optimize()` sweeps them away),
+- it verifies after a successful `createIndex` that the index actually
+  registered (`indexStats` reports it) — a store whose index commits never
+  register is detected immediately instead of being retrained forever, and
+- it gives up after 3 failed repair attempts per process and skips index
+  creation on the temporary store during full rebuilds (the index is built
   exactly once on the final store).
+
+If you still get the "cannot converge" message, the store is genuinely broken
+(no index build ever registers) and must be rebuilt — nothing else works.
+
 
 
 ## Description Generation Failures
