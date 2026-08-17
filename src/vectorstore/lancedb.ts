@@ -4,6 +4,7 @@
 import * as lancedb from "@lancedb/lancedb";
 import type { Connection, Table, Version } from "@lancedb/lancedb";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import path from "node:path";
 import type { VectorStore, Chunk, ChunkSummary, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
@@ -12,6 +13,44 @@ import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.j
 const TABLE_NAME = "chunks";
 
 const QUERY_COLUMNS = ["id", "content", "description", "filePath", "startLine", "endLine", "language", "kind", "quirkType", "tags"];
+
+/**
+ * Upper bound for the number of failed index-creation attempts per process.
+ * Beyond this the repair gives up for the process lifetime instead of
+ * retraining the IVF index on every optimize/search call (each attempt runs
+ * a full KMeans training pass and logs "partition N is empty, skipping").
+ */
+const MAX_INDEX_REPAIR_ATTEMPTS = 3;
+
+/**
+ * Upper bound for stale index-version directories under `chunks.lance/_indices`.
+ * Healthy stores have one per built index; a store whose index registration
+ * keeps failing accumulates one directory per attempt and never converges.
+ * Above this threshold the repair refuses to create yet another version and
+ * instead tells the user to rebuild the store.
+ */
+const MAX_STALE_INDEX_VERSIONS = 40;
+
+/** Minimal warning sink for store diagnostics (defaults to console.warn). */
+export type StoreWarn = (message: string) => void;
+
+/**
+ * Count index-version directories in a LanceDB table directory. Each
+ * `createIndex` writes a new `<uuid>/` directory under `_indices`; a healthy
+ * store holds one per built index, while a store whose index commits fail
+ * accumulates one per attempt (and eventually degrades / corrupts).
+ *
+ * @param tablePath - Filesystem path of the table directory (e.g. `.../chunks.lance`).
+ * @returns The number of index-version directories, or 0 when unavailable.
+ */
+export function countIndexVersionDirs(tablePath: string): number {
+  try {
+    const entries = fsSync.readdirSync(path.join(tablePath, "_indices"), { withFileTypes: true });
+    return entries.filter((e) => e.isDirectory()).length;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * L2-normalize a vector to unit length. Cosine models require unit vectors
@@ -138,6 +177,8 @@ export class LanceDbStore implements VectorStore {
    * back to brute-force. This repairs that stale index on first search.
    */
   private indexRepairPromise: Promise<void> | null = null;
+  /** Consecutive failed repair attempts — bounded so a broken store cannot retrain forever. */
+  private indexRepairFailures = 0;
 
   /**
    * Execute an async function under an exclusive write lock.
@@ -878,9 +919,9 @@ export class LanceDbStore implements VectorStore {
    * Callers must hold the write lock (searchInternal wraps the call in
    * withWriteLock; optimize runs under it already).
    */
-  private ensureCosineIndex(): Promise<void> {
+  private ensureCosineIndex(warn?: StoreWarn): Promise<void> {
     if (!this.indexRepairPromise) {
-      this.indexRepairPromise = this.repairIndexMetricOnce();
+      this.indexRepairPromise = this.repairIndexMetricOnce(warn);
     }
     return this.indexRepairPromise;
   }
@@ -893,8 +934,28 @@ export class LanceDbStore implements VectorStore {
    * stale index in place. On failure the memo is cleared so the next
    * search/optimize retries.
    */
-  private async repairIndexMetricOnce(): Promise<void> {
+  private async repairIndexMetricOnce(warn?: StoreWarn): Promise<void> {
+    const report = (message: string): void => {
+      (warn ?? console.warn)(message);
+    };
+
     try {
+      // Guard against a store that never converges: each failed createIndex
+      // leaves a new index-version directory behind. If many stale versions
+      // accumulated, building yet another index only entrenches the problem.
+      // The store must be rebuilt instead (see doc/troubleshooting.md).
+      const staleVersions = this.dbPath.startsWith("memory://")
+        ? 0
+        : countIndexVersionDirs(path.join(this.dbPath, TABLE_NAME + ".lance"));
+      if (staleVersions > MAX_STALE_INDEX_VERSIONS) {
+        report(
+          `[lancedb] ${staleVersions} stale index versions detected in ${this.dbPath} — ` +
+          `skipping index rebuild (the store is corrupted). Delete the rag_db directory and re-index.`,
+        );
+        // Resolve the memo so no further attempts run this process.
+        return;
+      }
+
       const table = await this.getTable();
       const count = await table.countRows().catch(() => 0);
       const indices = await table.listIndices();
@@ -915,6 +976,7 @@ export class LanceDbStore implements VectorStore {
             // race a background index-creation from another process.
             waitTimeoutSeconds: 120,
           } as never);
+          this.indexRepairFailures = 0;
           return;
         } catch (err) {
           const retriable =
@@ -925,11 +987,22 @@ export class LanceDbStore implements VectorStore {
         }
       }
     } catch (err) {
-      this.indexRepairPromise = null; // allow retry on a later search/optimize
-      console.warn(
+      this.indexRepairFailures++;
+      const message =
         `[lancedb] index metric repair failed (queries continue in brute-force): ` +
-          `${err instanceof Error ? err.message : String(err)}`
-      );
+        `${err instanceof Error ? err.message : String(err)}`;
+      if (this.indexRepairFailures >= MAX_INDEX_REPAIR_ATTEMPTS) {
+        // Stop retrying for this process — a store that fails repeatedly would
+        // otherwise be retrained (with KMeans "partition empty" warning spam)
+        // on every optimize() and search() call.
+        report(
+          `${message} — giving up after ${this.indexRepairFailures} attempts this session. ` +
+          `Delete the rag_db directory and re-index.`,
+        );
+        return; // memo stays resolved: no further attempts this process
+      }
+      this.indexRepairPromise = null; // allow retry on a later search/optimize
+      report(message);
     }
   }
 
@@ -945,7 +1018,7 @@ export class LanceDbStore implements VectorStore {
    *   versions newer than 1 hour are retained so in-flight queries (Web UI,
    *   background auto-index) can finish before their data files are reclaimed.
    */
-  async optimize(options?: { aggressive?: boolean }): Promise<void> {
+  async optimize(options?: { aggressive?: boolean; skipIndex?: boolean; logger?: StoreWarn }): Promise<void> {
     await this.withWriteLock(async () => {
       try {
         const table = await this.getTable();
@@ -958,12 +1031,17 @@ export class LanceDbStore implements VectorStore {
 
         // Build the ANN vector index — without it every vectorSearch() is a
         // brute-force O(N) flat scan (slow at 50k+ chunks). Skips early when
-        // an index with the correct cosine metric already exists.
-        await this.ensureCosineIndex();
+        // an index with the correct cosine metric already exists, and can be
+        // skipped entirely for a private temporary store that is never
+        // searched (the rebuild pipeline builds the index once at the end).
+        if (!options?.skipIndex) {
+          await this.ensureCosineIndex(options?.logger);
+        }
       } catch (err) {
         // Optimize is best-effort — must not break indexing, but surface the
         // failure instead of swallowing it silently.
-        console.warn(`[lancedb] optimize failed: ${err instanceof Error ? err.message : String(err)}`);
+        const message = `[lancedb] optimize failed: ${err instanceof Error ? err.message : String(err)}`;
+        (options?.logger ?? console.warn)(message);
       }
     });
   }

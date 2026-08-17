@@ -129,6 +129,39 @@ To manually force a rebuild:
 opencode-rag index --force
 ```
 
+## "partition N is empty, skipping" Warnings
+
+**Symptom:** LanceDB's native logger repeatedly prints
+`WARN: [... lance::index::vector::builder] partition N is empty, skipping`
+to the terminal while OpenCode is running.
+
+**Cause:** The warning is emitted during IVF index training (KMeans) when the
+training sample contains duplicate or degenerate vectors. One or two per index
+build are benign — e.g. the index built at the end of a full rebuild. Constant
+repetition means the ANN index is being **retrained over and over** because
+its commit never registers in the store (typically a store corrupted by
+version-manifest accumulation). Each retry leaves a new directory under
+`rag_db/chunks.lance/_indices/` and re-trains KMeans, spamming the warning.
+
+**Fix:**
+1. Delete or rename `rag_db` and re-index:
+   ```bash
+   # while no OpenCode session is using the workspace
+   mv .opencode/rag_db .opencode/rag_db.broken   # or: rmdir /s /q .opencode\rag_db
+   opencode-rag index
+   ```
+2. If warnings still repeat after a clean re-index, check
+   `opencode-rag status` and the plugin log for `[lancedb]` messages.
+
+**Built-in protection:** since this was diagnosed, the index repair path
+(`repairIndexMetricOnce` in `src/vectorstore/lancedb.ts`) has three guards:
+- it refuses to build yet another index once more than 40 stale index-version
+  directories have accumulated (actionable error instead of retrain spam),
+- it gives up after 3 failed repair attempts per process, and
+- full rebuilds skip index creation on the temporary store (the index is built
+  exactly once on the final store).
+
+
 ## Description Generation Failures
 
 If the LLM description provider is unavailable or times out, affected files are automatically flagged in the manifest with `descriptionFailed: true`. On the next `opencode-rag index` run, these files are fully re-indexed (re-chunked and re-described) without requiring `--force`.

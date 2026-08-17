@@ -1,9 +1,9 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { LanceDbStore, l2Normalize } from "../../vectorstore/lancedb.js";
+import { LanceDbStore, l2Normalize, countIndexVersionDirs } from "../../vectorstore/lancedb.js";
 import { normalizeFilePath } from "../../core/manifest.js";
 
 describe("LanceDbStore (memory)", () => {
@@ -558,5 +558,112 @@ describe("LanceDbStore (disk corruption recovery)", () => {
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("countIndexVersionDirs", () => {
+  it("counts only directories under _indices", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-idx-"));
+    try {
+      mkdirSync(join(tmpDir, "_indices"), { recursive: true });
+      for (let i = 0; i < 3; i++) mkdirSync(join(tmpDir, "_indices", `idx-${i}`));
+      writeFileSync(join(tmpDir, "_indices", "stray.txt"), "x");
+      assert.equal(countIndexVersionDirs(tmpDir), 3);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns 0 when the directory does not exist", () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-idx-"));
+    try {
+      assert.equal(countIndexVersionDirs(tmpDir), 0);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("LanceDbStore index-repair hardening", () => {
+  it("skips index creation when many stale index versions accumulated", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-idx-"));
+    try {
+      const store = new LanceDbStore(tmpDir, 4);
+      const repair = (warn?: (m: string) => void) =>
+        (store as unknown as {
+          repairIndexMetricOnce: (warn?: (m: string) => void) => Promise<void>;
+        }).repairIndexMetricOnce(warn);
+      const warns: string[] = [];
+      await repair((m) => warns.push(m));
+      assert.equal(warns.length, 0, "healthy empty store must not warn");
+
+      // Simulate the accumulation left behind by index commits that never
+      // registered (the state that caused constant index retraining).
+      const indicesDir = join(tmpDir, "chunks.lance", "_indices");
+      mkdirSync(indicesDir, { recursive: true });
+      for (let i = 0; i < 45; i++) mkdirSync(join(indicesDir, `idx-${i}`));
+
+      await repair((m) => warns.push(m));
+      assert.ok(
+        warns.some((w) => w.includes("stale index versions")),
+        `expected stale-index warning, got: ${warns.join(" | ")}`,
+      );
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("gives up after repeated index-repair failures instead of retraining forever", async () => {
+    const store = new LanceDbStore("memory://", 4);
+    let indexStatsCalls = 0;
+    let createIndexCalls = 0;
+    const fakeTable = {
+      optimize: async () => {},
+      countRows: async () => 1500,
+      listIndices: async () => [],
+      indexStats: async () => {
+        indexStatsCalls++;
+        throw new Error("boom");
+      },
+      createIndex: async () => {
+        createIndexCalls++;
+      },
+    };
+    (store as unknown as { table: unknown }).table = fakeTable;
+
+    const warns: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      await store.optimize({ logger: (m) => warns.push(m) });
+    }
+
+    assert.equal(indexStatsCalls, 3, "repair must be attempted at most MAX_INDEX_REPAIR_ATTEMPTS times");
+    assert.equal(createIndexCalls, 0, "createIndex must never run when indexStats throws");
+    assert.ok(
+      warns.some((w) => w.includes("giving up")),
+      `expected give-up warning, got: ${warns.join(" | ")}`,
+    );
+  });
+
+  it("skipIndex skips index creation during optimize", async () => {
+    let createIndexCalls = 0;
+    const makeStore = (): LanceDbStore => {
+      const store = new LanceDbStore("memory://", 4);
+      (store as unknown as { table: unknown }).table = {
+        optimize: async () => {},
+        countRows: async () => 1500,
+        listIndices: async () => [],
+        indexStats: async () => undefined,
+        createIndex: async () => {
+          createIndexCalls++;
+        },
+      };
+      return store;
+    };
+
+    await makeStore().optimize({ skipIndex: true });
+    assert.equal(createIndexCalls, 0, "skipIndex must suppress the index build");
+
+    await makeStore().optimize({});
+    assert.equal(createIndexCalls, 1, "regular optimize must build the missing index");
   });
 });

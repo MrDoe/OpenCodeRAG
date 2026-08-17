@@ -220,8 +220,11 @@ export interface VectorStore {
    * accumulation.
    * @param options - `aggressive: true` prunes all but the current version
    *   (only safe when no other process reads the store, e.g. temp rebuilds).
+   *   `skipIndex: true` skips ANN index creation/repair (private temp stores
+   *   are never searched — the rebuild pipeline builds the index once at the
+   *   end). `logger` receives diagnostics instead of the console.
    */
-  optimize?(options?: { aggressive?: boolean }): Promise<void>;
+  optimize?(options?: { aggressive?: boolean; skipIndex?: boolean; logger?: (message: string) => void }): Promise<void>;
   /**
    * Verify that the store's data is actually readable.
    * Returns false if data integrity is compromised (e.g., data files missing from disk).

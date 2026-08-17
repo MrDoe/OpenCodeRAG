@@ -118,7 +118,7 @@ export class InMemoryVectorStore implements VectorStore {
   }
 
   /** No-op for the in-memory store. */
-  async optimize(_options?: { aggressive?: boolean }): Promise<void> {
+  async optimize(_options?: { aggressive?: boolean; skipIndex?: boolean; logger?: (message: string) => void }): Promise<void> {
   }
 }
 

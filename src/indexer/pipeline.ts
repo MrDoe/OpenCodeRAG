@@ -520,7 +520,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
    * version-manifest accumulation (K+2 versions per file) that made the
    * store phase degrade quadratically as the index grew.
    */
-  async function storeWindow(prepared: PreparedFile[], windowEarlyResults: ReadonlyMap<number, WorkerResult>): Promise<void> {
+  async function storeWindow(prepared: PreparedFile[], windowEarlyResults: ReadonlyMap<number, WorkerResult>): Promise<number> {
     const filesToStore = prepared.filter((p) => !windowEarlyResults.has(prepared.indexOf(p)) && p.chunks && (p.textToEmbed?.length ?? 0) > 0).length;
     const storePhaseStart = Date.now();
     logger.info(`Store phase: storing ${filesToStore} file(s) into vector database...`);
@@ -673,6 +673,12 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       prep.chunks = undefined;
       prep.textToEmbed = undefined;
     }
+
+    // Number of files whose chunks were actually bulk-written this window.
+    // The caller uses this to skip mid-run compaction on idle passes that
+    // wrote nothing (no fragments were added, so nothing needs compacting,
+    // and the store avoids unnecessary index-repair churn).
+    return storePayloads.length;
   }
 
   // ── Windowed pipeline ────────────────────────────────────────────────────
@@ -689,7 +695,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   const allFinalResults: WorkerResult[] = [];
   let abortedInWindow = false;
   const earlyWorkerResults = new Map<number, WorkerResult>();
-  let prevStore: Promise<void> | null = null;
+  let prevStore: Promise<number> | null = null;
   let windowCount = 0;
   const optimizeInterval = options.config.indexing.optimizeIntervalWindows ?? 8;
 
@@ -1011,12 +1017,20 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   prevStore = storeWindow(prepared, new Map(earlyWorkerResults));
 
   // Periodically compact fragments and prune old versions so the store
-  // phase doesn't slow down as the index grows during long runs.
+  // phase doesn't slow down as the index grows during long runs. Skipped on
+  // windows that wrote nothing — an idle pass (no changed files) adds no
+  // fragments, so compaction would only churn the index-repair path.
   if (optimizeInterval > 0 && windowCount % optimizeInterval === 0) {
-    await prevStore;
+    const storedInWindow = await prevStore;
     prevStore = null;
-    logger.info("Optimizing vector store (mid-run compaction, pruning old versions)...");
-    await effectiveStore.optimize?.(tempStorePath ? { aggressive: true } : undefined);
+    if (storedInWindow > 0) {
+      logger.info("Optimizing vector store (mid-run compaction, pruning old versions)...");
+      await effectiveStore.optimize?.(
+        tempStorePath
+          ? { aggressive: true, skipIndex: true, logger: logger.warn }
+          : { logger: logger.warn },
+      );
+    }
   }
 
   if (abortedInWindow) break;
@@ -1095,7 +1109,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     const optimizeStart = Date.now();
     try {
       const optimizeTarget = tempStorePath ? options.store : effectiveStore;
-      await optimizeTarget.optimize?.(tempStorePath ? { aggressive: true } : undefined);
+      await optimizeTarget.optimize?.(tempStorePath ? { aggressive: true, logger: logger.warn } : { logger: logger.warn });
       logger.info(`Vector store optimized in ${((Date.now() - optimizeStart) / 1000).toFixed(1)}s`);
     } catch (err) {
       logger.warn(`Vector store optimization failed: ${(err as Error).message}`);
