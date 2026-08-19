@@ -153,7 +153,7 @@ See [Web UI](webui.md) for the full dashboard reference.
 ## Pipeline Stages
 
 ### 1. Scanning (`scanWorkspace` in `indexer.ts`)
-Walks the workspace directory tree, filtering by `includeExtensions` and `excludeDirs`. Reads text files as UTF-8, binary files (PDF, DOCX, DOC, Excel) via extraction libraries. Supports incremental scanning via git-diff — when a previous git commit is recorded in the manifest, only changed/untracked files are scanned.
+Walks the workspace directory tree, filtering by `includeExtensions`, `includeDirs` (root-anchored folder whitelist; root files are skipped when set) and `excludeDirs`. Reads text files as UTF-8, binary files (PDF, DOCX, DOC, Excel) via extraction libraries. Supports incremental scanning via git-diff — when a previous git commit is recorded in the manifest, only changed/untracked files are scanned. Out-of-scope files (e.g. after an `includeDirs` change) are removed from the index by the pipeline's stale-path cleanup during a full pass; git-incremental passes only remove git-deleted files.
 
 ### 2. Chunking (`chunkFile` in `chunker/factory.ts`)
 Dispatches to the appropriate `Chunker` based on file extension. Each chunker splits content into semantically meaningful units (AST nodes, headings, paragraphs, etc.).

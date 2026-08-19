@@ -285,6 +285,21 @@ export interface RagConfig {
      * patterns are anchored to the workspace root.
      */
     excludeFiles?: string[];
+    /**
+     * Workspace-relative folder paths to **restrict indexing to**.
+     *
+     * When non-empty, only files inside these folders (and their
+     * subfolders) are indexed; files directly in the workspace root are
+     * NOT indexed. `excludeDirs`/`excludeFiles` still apply inside the
+     * included folders. Empty or omitted = whole workspace (default).
+     *
+     * Semantics:
+     * - Entries are **anchored to the workspace root** (unlike
+     *   `excludeDirs`, plain names do NOT match at any depth).
+     * - Supports globs (`docs/**`, `src/{a,b}`); use `/` as separator
+     *   (converted automatically). Matching is case-insensitive.
+     */
+    includeDirs?: string[];
     /** Number of overlapping lines between adjacent chunks. */
     chunkOverlap: number;
     /** Minimum file size in bytes to index (0 = no minimum). */
@@ -1047,5 +1062,37 @@ export function persistProbedDimension(configPath: string, dimension: number): v
     writeFileSync(configPath, JSON.stringify(obj, null, 2), "utf-8");
   } catch {
     // best-effort
+  }
+}
+
+/**
+ * Set a value at a dotted path inside the config JSON file, creating
+ * intermediate objects as needed, and write it back with 2-space
+ * indentation. Reads/writes the raw file, so comments or formatting of
+ * unrelated keys are preserved as parsed (the file is re-serialized).
+ *
+ * @param configPath - Absolute path to the config JSON file.
+ * @param path       - Dotted path segments, e.g. `["indexing", "includeDirs"]`.
+ * @param value      - Value to write at the target path.
+ * @returns `true` when the file was updated, `false` on any error.
+ */
+export function updateConfigValue(configPath: string, path: string[], value: unknown): boolean {
+  try {
+    let raw = readFileSync(configPath, "utf-8");
+    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    let target = data;
+    for (let i = 0; i < path.length - 1; i++) {
+      const key = path[i]!;
+      if (!target[key] || typeof target[key] !== "object") {
+        target[key] = {};
+      }
+      target = target[key] as Record<string, unknown>;
+    }
+    target[path[path.length - 1]!] = value;
+    writeFileSync(configPath, JSON.stringify(data, null, 2), "utf-8");
+    return true;
+  } catch {
+    return false;
   }
 }

@@ -230,6 +230,15 @@ A collapsible directory tree in the left sidebar:
 - **Filter input** at the top narrows the tree by path substring
 - Clicking a file navigates to the Chunks view filtered to that file
 
+### Indexing scope
+
+Above the file tree, an **Indexing scope** section edits `indexing.includeDirs` directly from the browser:
+
+- Tri-state checkbox tree of the workspace folders (checked = folder included with all subfolders, indeterminate = partially included)
+- "Whole workspace" = empty `includeDirs` (the default)
+- **Save scope** writes `includeDirs` to `opencode-rag.json` via `PUT /api/config`, then asks whether to reindex now
+- When `includeDirs` is non-empty, files directly in the workspace root are not indexed; the background watcher applies the new scope after an OpenCode restart
+
 ## Global Search
 
 A quick keyword search input in the top-right header:
@@ -274,6 +283,8 @@ The web server exposes a REST API under `/api/`:
 | `/api/quirks/lint` | GET | Health-check quirks |
 | `/api/quirks/:id` | DELETE | Delete a quirk |
 | `/api/file?path=` | GET | Serve workspace file content (base64-encoded); used for displaying image files in the chunk detail view |
+| `/api/tree` | GET | Workspace directory tree (dirs only, `excludeDirs` applied) for the scope editor |
+| `/api/config` | GET/PUT | Read redacted config / write validated `indexing` string-array values (e.g. `includeDirs`) to the config file |
 
 All endpoints return JSON with `Access-Control-Allow-Origin: *`.
 

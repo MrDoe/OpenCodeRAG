@@ -6,6 +6,7 @@ import { ToastContainer } from "./components/Toast";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { FileTree } from "./components/FileTree";
+import { ScopeSelector } from "./components/ScopeSelector";
 
 import { Dashboard } from "./views/Dashboard";
 import { Chunks } from "./views/Chunks";
@@ -98,6 +99,7 @@ export function App() {
               role="tree"
               aria-label="File tree"
             >
+              <ScopeSelector />
               <FileTree />
             </aside>
           </>

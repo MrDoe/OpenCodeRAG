@@ -38,12 +38,17 @@ export function registerUiCommand(program: Command): void {
         const openBrowser = options.open !== false && (config.ui?.openBrowser ?? true);
 
         const { startWebUi } = await import("../../web/server.js");
+        const { findConfigFile } = await import("../../core/config.js");
+        const configPath = options.config
+          ? path.resolve(cwd, options.config)
+          : findConfigFile(cwd);
         const server = await startWebUi(
           storePath,
           port,
           cwd,
           config.embedding.vectorDimension ?? 384,
           config,
+          configPath,
         );
 
         const url = `http://127.0.0.1:${server.port}/?token=${server.token}`;

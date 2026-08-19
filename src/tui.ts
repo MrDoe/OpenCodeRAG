@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import type { Provider } from "@opencode-ai/sdk/v2";
 import { loadRuntimeOverrides, saveRuntimeOverride } from "./core/runtime-overrides.js";
 import { PROVIDER_DEFAULTS } from "./core/provider-defaults.js";
-import { loadConfig } from "./core/config.js";
+import { loadConfig, updateConfigValue } from "./core/config.js";
 import { setPendingRagInjection } from "./core/rag-injection-flag.js";
 
 /** Cached plugin version string from package.json. */
@@ -360,25 +360,6 @@ function resolveProviderBaseUrl(provider: Provider): string {
  * Write a single config value at a dotted path into the opencode-rag.json file.
  * Creates intermediate objects as needed.
  */
-function saveConfigValue(configPath: string, path: string[], value: unknown): void {
-  try {
-    let raw = readFileSync(configPath, "utf-8");
-    if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
-    const data: Record<string, unknown> = JSON.parse(raw);
-    let target = data;
-    for (let i = 0; i < path.length - 1; i++) {
-      const key = path[i]!;
-      if (!target[key] || typeof target[key] !== "object") {
-        target[key] = {};
-      }
-      target = target[key] as Record<string, unknown>;
-    }
-    target[path[path.length - 1]!] = value;
-    writeFileSync(configPath, JSON.stringify(data, null, 2), "utf-8");
-  } catch {
-  }
-}
-
 /**
  * Mirror the watcher status file that the server plugin maintains, so the
  * sidebar reflects a watcher toggle from the settings dialog immediately:
@@ -425,12 +406,12 @@ function saveModelSelection(
   const baseUrl = provider ? resolveProviderBaseUrl(provider) : "";
 
   saveRuntimeOverride(storePath, [section, "provider"], ragProvider);
-  saveConfigValue(configPath, [section, "provider"], ragProvider);
+  updateConfigValue(configPath, [section, "provider"], ragProvider);
   saveRuntimeOverride(storePath, [section, "model"], modelId);
-  saveConfigValue(configPath, [section, "model"], modelId);
+  updateConfigValue(configPath, [section, "model"], modelId);
   if (baseUrl) {
     saveRuntimeOverride(storePath, [section, "baseUrl"], baseUrl);
-    saveConfigValue(configPath, [section, "baseUrl"], baseUrl);
+    updateConfigValue(configPath, [section, "baseUrl"], baseUrl);
   }
 
   const apiKey = (provider?.options?.apiKey as string) ?? "";
@@ -834,7 +815,7 @@ async function openSettingsDialog(api: {
             } else if (entry.type === "boolean") {
               const newVal = !entry.currentValue;
               saveRuntimeOverride(storePath, entry.path, newVal);
-              saveConfigValue(configPath!, entry.path, newVal);
+              updateConfigValue(configPath!, entry.path, newVal);
               api.ui.toast({
                 variant: "success",
                 title: "Settings",
@@ -861,7 +842,7 @@ async function openSettingsDialog(api: {
                       const num = parseFloat(input);
                       if (!isNaN(num)) {
                         saveRuntimeOverride(storePath, entry.path, num);
-                        saveConfigValue(configPath!, entry.path, num);
+                        updateConfigValue(configPath!, entry.path, num);
                         api.ui.toast({
                           variant: "success",
                           title: "Settings",
@@ -896,7 +877,7 @@ async function openSettingsDialog(api: {
                           return;
                         }
                         saveRuntimeOverride(storePath, entry.path, parsed as Record<string, unknown>);
-                        saveConfigValue(configPath!, entry.path, parsed);
+                        updateConfigValue(configPath!, entry.path, parsed);
                         api.ui.toast({
                           variant: "success",
                           title: "Settings",
@@ -926,7 +907,7 @@ async function openSettingsDialog(api: {
                     value: String(entry.currentValue),
                     onConfirm: (input: string) => {
                       saveRuntimeOverride(storePath, entry.path, input);
-                      saveConfigValue(configPath!, entry.path, input);
+                      updateConfigValue(configPath!, entry.path, input);
                       api.ui.toast({
                         variant: "success",
                         title: "Settings",
@@ -968,7 +949,7 @@ async function openSettingsDialog(api: {
                         entry.currentValue = saved;
                       } else if (input) {
                         saveRuntimeOverride(storePath, entry.path, input);
-                        saveConfigValue(configPath!, entry.path, input);
+                        updateConfigValue(configPath!, entry.path, input);
                         entry.currentValue = input;
                       }
                       api.onSettingsChanged?.();

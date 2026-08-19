@@ -2,7 +2,7 @@
  * @fileoverview REST API handler for the OpenCodeRAG Web UI with search, file, chunk, eval, and token analysis endpoints.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, join, resolve as resolvePathModule } from "node:path";
 import { createHash } from "node:crypto";
 import { LanceDbStore } from "../vectorstore/lancedb.js";
@@ -11,7 +11,8 @@ import { listSessions, getSession, deleteSession, compareSessions, validateSessi
 import { analyzeTokenUsage, compareTokenAnalyses, projectTokenSavings } from "../eval/token-analysis.js";
 import { listQuirks, lintQuirks, removeQuirk, type QuirkStoreDeps } from "../quirks/quirk-store.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
-import type { RagConfig } from "../core/config.js";
+import { updateConfigValue, type RagConfig } from "../core/config.js";
+import { createExcludeMatcher } from "../core/exclude.js";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider } from "../core/interfaces.js";
 
 const FILE_MIME_TYPES: Record<string, string> = {
@@ -109,6 +110,9 @@ function sendJson(res: ServerResponse, response: ApiResponse, origin: string | n
  * @param storePath    - Filesystem path to the store directory (used by eval endpoints).
  * @param cwd          - Optional workspace root for resolving file paths.
  * @param cfg          - Active RAG configuration (used by quirk endpoints).
+ * @param getEmbedder  - Lazily-created embedder for /api/retrieve and reindex passes.
+ * @param token        - Per-run auth token required on every request.
+ * @param configPath   - Path to the opencode-rag.json config file, used by PUT /api/config.
  * @returns An async handler that returns `true` when a route matched or `false` otherwise.
  */
 export function createApiHandler(
@@ -118,8 +122,14 @@ export function createApiHandler(
   cwd?: string,
   cfg?: RagConfig,
   getEmbedder?: () => Promise<EmbeddingProvider>,
-  token?: string
+  token?: string,
+  configPath?: string
 ) {
+  // Mutable config reference so PUT /api/config can update the in-memory
+  // config used by subsequent requests (retrieve, reindex, quirk endpoints).
+  const configRef: { current?: RagConfig } = { current: cfg };
+  const effectiveConfig = (): RagConfig => configRef.current ?? cfg ?? ({} as RagConfig);
+
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
     const url = req.url ?? "/";
     const method = req.method ?? "GET";
@@ -166,7 +176,7 @@ export function createApiHandler(
       embedder: stubEmbedder,
       store,
       keywordIndex,
-      cfg: cfg ?? ({} as RagConfig),
+      cfg: effectiveConfig(),
       storePath,
     };
 
@@ -178,6 +188,8 @@ export function createApiHandler(
         response = await handleStats(store);
       } else if (path === "/api/files") {
         response = await handleFiles(store);
+      } else if (path === "/api/tree" && method === "GET") {
+        response = handleTree(cwd, effectiveConfig());
       } else if (path === "/api/chunks" && !path.includes("/api/chunks/")) {
         response = await handleChunks(store, params);
       } else if (path.startsWith("/api/chunks/")) {
@@ -188,13 +200,16 @@ export function createApiHandler(
       } else if (path === "/api/compare") {
         response = await handleCompare(store, params);
       } else if (path === "/api/retrieve") {
-        response = await handleRetrieve(store, keywordIndex, getEmbedder, cfg!, params);
+        response = await handleRetrieve(store, keywordIndex, getEmbedder, effectiveConfig(), params);
       } else if (path === "/api/indexing/status") {
         response = await handleIndexingStatus(storePath, cwd);
       } else if (path === "/api/indexing/reindex" && method === "POST") {
-        response = await handleReindex(cwd!, cfg!, storePath, store, getEmbedder);
-      } else if (path === "/api/config") {
-        response = await handleConfig(cfg!);
+        response = await handleReindex(cwd!, effectiveConfig(), storePath, store, getEmbedder);
+      } else if (path === "/api/config" && method === "GET") {
+        response = await handleConfig(effectiveConfig());
+      } else if (path === "/api/config" && method === "PUT") {
+        const body = await readBody(req);
+        response = handleConfigUpdate(configPath, configRef, body);
       } else if (path === "/api/embeddings/projection") {
         response = await handleEmbeddingProjection(store, params);
       }
@@ -312,6 +327,53 @@ async function handleStats(store: LanceDbStore): Promise<ApiResponse> {
 async function handleFiles(store: LanceDbStore): Promise<ApiResponse> {
   const files = await store.listFiles();
   return { status: 200, body: files };
+}
+
+/** A single directory node in the workspace tree returned by `/api/tree`. */
+interface TreeDir {
+  name: string;
+  path: string;
+  children: TreeDir[];
+}
+
+/**
+ * Respond with the workspace **directory** tree (dirs only), used by the UI's
+ * indexing-scope folder selector. `indexing.excludeDirs` are pruned so the
+ * tree stays clean (node_modules, build output, ...); `includeDirs` are NOT
+ * applied — users must be able to see and select every selectable folder.
+ */
+function handleTree(cwd: string | undefined, cfg: RagConfig): ApiResponse {
+  if (!cwd) {
+    return { status: 400, body: { error: "Workspace path not configured" } };
+  }
+  const excludeMatcher = createExcludeMatcher(cfg.indexing.excludeDirs);
+  const MAX_DIRS = 10_000;
+  let visited = 0;
+
+  function walk(dir: string, rel: string): TreeDir[] {
+    const children: TreeDir[] = [];
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return children;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (excludeMatcher.excluded(childRel)) continue;
+      if (++visited > MAX_DIRS) continue;
+      children.push({
+        name: entry.name,
+        path: childRel,
+        children: walk(join(dir, entry.name), childRel),
+      });
+    }
+    children.sort((a, b) => a.name.localeCompare(b.name));
+    return children;
+  }
+
+  return { status: 200, body: { tree: walk(cwd, "") } };
 }
 
 // ── Quirk Memory API ─────────────────────────────────────────────────
@@ -663,6 +725,78 @@ function redactKeys(obj: Record<string, unknown>): void {
       redactKeys(obj[key] as Record<string, unknown>);
     }
   }
+}
+
+/**
+ * Config keys under `indexing` that the UI may write. Values must be arrays
+ * of strings. Add keys here when the UI learns to edit more settings.
+ */
+const INDEXING_STRING_ARRAY_KEYS = new Set([
+  "includeExtensions",
+  "excludeDirs",
+  "excludeFiles",
+  "includeDirs",
+]);
+
+/**
+ * Apply a validated config patch (`{ indexing: { includeDirs: [...] } }`)
+ * to the on-disk config file and refresh the in-memory config used by
+ * subsequent API requests. Only known sections/keys with validated types
+ * are accepted; anything else is rejected with a 400.
+ */
+function handleConfigUpdate(
+  configPath: string | undefined,
+  configRef: { current?: RagConfig },
+  body: unknown,
+): ApiResponse {
+  if (!configPath) {
+    return {
+      status: 400,
+      body: { error: "Config file path unavailable — the UI server was started without a config file" },
+    };
+  }
+  const patch = body as Record<string, unknown> | null;
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    return { status: 400, body: { error: "Invalid config patch" } };
+  }
+
+  const otherSections = Object.keys(patch).filter((k) => k !== "indexing");
+  if (otherSections.length > 0) {
+    return { status: 400, body: { error: `Unsupported config section(s): ${otherSections.join(", ")}` } };
+  }
+
+  const indexingPatch = patch.indexing as Record<string, unknown> | undefined;
+  if (indexingPatch !== undefined) {
+    if (typeof indexingPatch !== "object" || indexingPatch === null || Array.isArray(indexingPatch)) {
+      return { status: 400, body: { error: "Invalid 'indexing' section" } };
+    }
+    for (const [key, value] of Object.entries(indexingPatch)) {
+      if (!INDEXING_STRING_ARRAY_KEYS.has(key)) {
+        return { status: 400, body: { error: `Unsupported indexing key '${key}'` } };
+      }
+      if (!Array.isArray(value) || value.some((v) => typeof v !== "string")) {
+        return { status: 400, body: { error: `'indexing.${key}' must be an array of strings` } };
+      }
+    }
+  }
+
+  if (indexingPatch) {
+    for (const [key, value] of Object.entries(indexingPatch)) {
+      const ok = updateConfigValue(configPath, ["indexing", key], value);
+      if (!ok) {
+        return { status: 500, body: { error: `Failed to write 'indexing.${key}' to ${configPath}` } };
+      }
+    }
+    const current = configRef.current ?? ({} as RagConfig);
+    configRef.current = {
+      ...current,
+      indexing: { ...current.indexing, ...indexingPatch },
+    };
+  }
+
+  const redacted = JSON.parse(JSON.stringify(configRef.current)) as Record<string, unknown>;
+  redactKeys(redacted);
+  return { status: 200, body: { config: redacted } };
 }
 
 /**

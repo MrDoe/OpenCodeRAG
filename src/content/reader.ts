@@ -7,7 +7,7 @@ import path from "node:path";
 import pLimit from "p-limit";
 import type { RagConfig } from "../core/config.js";
 import { computeFileHash, computeDescriptionConfigHash, normalizeFilePath, type FileManifest } from "../core/manifest.js";
-import { createExcludeMatcher, type ExcludeMatcher } from "../core/exclude.js";
+import { createExcludeMatcher, createIncludeMatcher, type ExcludeMatcher, type IncludedMatcher } from "../core/exclude.js";
 import { DescriptionCache } from "../core/desc-cache.js";
 import {
   createImageVisionProvider,
@@ -49,6 +49,7 @@ export async function walkFiles(
   extensions: Set<string>,
   excludeDirs: ExcludeMatcher,
   excludeFiles?: ExcludeMatcher,
+  includeDirs?: IncludedMatcher,
   rootDir = dir,
   logger?: Logger,
   dirCount?: { value: number },
@@ -62,7 +63,8 @@ export async function walkFiles(
     const fullPath = path.join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      if (excludeDirs.excluded(path.relative(rootDir, fullPath))) continue;
+      const rel = path.relative(rootDir, fullPath);
+      if ((includeDirs && !includeDirs.included(rel)) || excludeDirs.excluded(rel)) continue;
       if (dirCount) {
         dirCount.value++;
         if (dirCount.value % 100 === 0) {
@@ -77,7 +79,7 @@ export async function walkFiles(
         logger?.warn(`Exceeded ${maxResults} matching files — truncating walk at ${fullPath}`);
         return results;
       }
-      results.push(...(await walkFiles(fullPath, extensions, excludeDirs, excludeFiles, rootDir, logger, dirCount, maxDirs, maxResults)));
+      results.push(...(await walkFiles(fullPath, extensions, excludeDirs, excludeFiles, includeDirs, rootDir, logger, dirCount, maxDirs, maxResults)));
     } else if (entry.isFile()) {
       if (results.length >= maxResults) {
         logger?.warn(`Exceeded ${maxResults} matching files — truncating walk`);
@@ -161,6 +163,7 @@ export async function scanWorkspaceFiles(
 
   const excludeDirMatcher = createExcludeMatcher(config.indexing.excludeDirs);
   const excludeFileMatcher = createExcludeMatcher(config.indexing.excludeFiles ?? []);
+  const includeDirMatcher = createIncludeMatcher(config.indexing.includeDirs ?? []);
 
   let files: string[];
   if (filterPaths && filterPaths.length > 0) {
@@ -172,7 +175,7 @@ export async function scanWorkspaceFiles(
         if (!extensions.has(ext) && !extensions.has(basename)) return false;
         const rel = path.relative(cwd, fp);
         if (rel.startsWith("..")) return false;
-        return !excludeDirMatcher.excluded(rel) && !excludeFileMatcher.excluded(rel);
+        return includeDirMatcher.included(rel) && !excludeDirMatcher.excluded(rel) && !excludeFileMatcher.excluded(rel);
       });
   } else {
     logger?.info("Walking directory tree...");
@@ -183,6 +186,7 @@ export async function scanWorkspaceFiles(
       extensions,
       excludeDirMatcher,
       excludeFileMatcher,
+      includeDirMatcher,
       cwd,
       logger,
       dirCount,

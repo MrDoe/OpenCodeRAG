@@ -4,7 +4,7 @@
 import path from "node:path";
 import { manifestPathFor } from "../core/manifest.js";
 import type { RagConfig } from "../core/config.js";
-import { createExcludeMatcher } from "../core/exclude.js";
+import { createExcludeMatcher, createIncludeMatcher } from "../core/exclude.js";
 
 /** Scheduler that coordinates debounced re-index passes triggered by file-system changes. */
 export interface WatchPassScheduler {
@@ -124,7 +124,9 @@ export function createWatchPassScheduler(
 /**
  * Build a predicate that returns `true` for paths that should be ignored by
  * a file watcher (store directory, manifest file, and configured exclude
- * directories).
+ * directories). When `indexing.includeDirs` is non-empty, any path outside
+ * the included folders is ignored as well, so out-of-scope changes never
+ * trigger re-index passes.
  *
  * @param cwd       - Workspace root directory.
  * @param config    - RAG configuration containing `indexing.excludeDirs`.
@@ -140,6 +142,7 @@ export function createWatchIgnore(
   const manifestPath = manifestPathFor(storePath);
   const dirMatcher = createExcludeMatcher(config.indexing.excludeDirs);
   const fileMatcher = createExcludeMatcher(config.indexing.excludeFiles ?? []);
+  const includeMatcher = createIncludeMatcher(config.indexing.includeDirs ?? []);
 
   // Prefix check with a trailing separator so sibling dirs like
   // `<storePath>2` are NOT ignored; case-insensitive on win32 so a
@@ -156,6 +159,6 @@ export function createWatchIgnore(
 
     const relative = path.relative(cwd, resolved);
     if (!relative || relative.startsWith("..")) return false;
-    return dirMatcher.excluded(relative) || fileMatcher.excluded(relative);
+    return !includeMatcher.included(relative) || dirMatcher.excluded(relative) || fileMatcher.excluded(relative);
   };
 }

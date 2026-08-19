@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { createExcludeMatcher } from "../../core/exclude.js";
+import { createExcludeMatcher, createIncludeMatcher } from "../../core/exclude.js";
 
 describe("createExcludeMatcher", () => {
   it("plain name matches that basename at any depth", () => {
@@ -105,5 +105,78 @@ describe("createExcludeMatcher", () => {
     assert.equal(m.excluded(""), false);
     assert.equal(m.excluded("RequestPortal"), false);
     assert.equal(m.excluded("RequestPortal/Migrations"), false);
+  });
+});
+
+describe("createIncludeMatcher", () => {
+  it("empty patterns include everything (whole workspace)", () => {
+    const m = createIncludeMatcher([]);
+    assert.equal(m.included(""), true);
+    assert.equal(m.included("src"), true);
+    assert.equal(m.included("src/index.ts"), true);
+    assert.equal(m.included("docs/readme.md"), true);
+  });
+
+  it("root is always included so the walk can descend", () => {
+    const m = createIncludeMatcher(["docs"]);
+    assert.equal(m.included(""), true);
+  });
+
+  it("plain folder matches that folder and everything under it", () => {
+    const m = createIncludeMatcher(["docs"]);
+    assert.equal(m.included("docs"), true);
+    assert.equal(m.included("docs/sub"), true);
+    assert.equal(m.included("docs/sub/file.md"), true);
+  });
+
+  it("plain folder is anchored to the root (no any-depth matching)", () => {
+    const m = createIncludeMatcher(["docs"]);
+    assert.equal(m.included("src"), false);
+    assert.equal(m.included("src/docs"), false);
+    assert.equal(m.included("src/docs/file.md"), false);
+    assert.equal(m.included("other-docs"), false);
+  });
+
+  it("multi-segment folder matches only that root-anchored subtree", () => {
+    const m = createIncludeMatcher(["a/b"]);
+    assert.equal(m.included("a"), false);
+    assert.equal(m.included("a/b"), true);
+    assert.equal(m.included("a/b/c/file.ts"), true);
+    assert.equal(m.included("a/x"), false);
+    assert.equal(m.included("x/a/b"), false);
+  });
+
+  it("glob patterns are root-anchored", () => {
+    const m = createIncludeMatcher(["docs/**"]);
+    assert.equal(m.included("docs"), true);
+    assert.equal(m.included("docs/sub/file.md"), true);
+    assert.equal(m.included("other/docs/sub/file.md"), false);
+  });
+
+  it("brace expansion matches multiple folders", () => {
+    const m = createIncludeMatcher(["src/{a,b}"]);
+    assert.equal(m.included("src/a"), true);
+    assert.equal(m.included("src/b/file.ts"), true);
+    assert.equal(m.included("src/c"), false);
+  });
+
+  it("multiple patterns are OR-ed", () => {
+    const m = createIncludeMatcher(["docs", "src"]);
+    assert.equal(m.included("docs/readme.md"), true);
+    assert.equal(m.included("src/index.ts"), true);
+    assert.equal(m.included("tests"), false);
+  });
+
+  it("normalizes backslashes and dot-slash prefixes", () => {
+    const m = createIncludeMatcher(["./docs/", "src\\nested"]);
+    assert.equal(m.included("docs"), true);
+    assert.equal(m.included("src/nested"), true);
+    assert.equal(m.included("src/nested/x.ts"), true);
+    assert.equal(m.included("src/other"), false);
+  });
+
+  it("is case-insensitive", () => {
+    const m = createIncludeMatcher(["Docs"]);
+    assert.equal(m.included("docs/sub/file.md"), true);
   });
 });

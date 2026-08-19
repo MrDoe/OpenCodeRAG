@@ -71,4 +71,27 @@ describe("createWatchIgnore", () => {
     // Non-matching wildcard should NOT be ignored
     assert.equal(ignore(path.join(workspaceDir, "src", "api.ts")), false);
   });
+
+  it("includeDirs restricts watching to the selected folders", () => {
+    const cfg = testConfig();
+    cfg.indexing.includeDirs = ["docs", "src"];
+    const ignore = createWatchIgnore(workspaceDir, cfg, storeDir);
+
+    // Inside included folders: not ignored
+    assert.equal(ignore(path.join(workspaceDir, "docs", "readme.md")), false);
+    assert.equal(ignore(path.join(workspaceDir, "src", "index.ts")), false);
+
+    // Outside included folders: ignored (including files in the root)
+    assert.equal(ignore(path.join(workspaceDir, "tests", "x.test.ts")), true);
+    assert.equal(ignore(path.join(workspaceDir, "index.ts")), true);
+    assert.equal(ignore(path.join(workspaceDir, "other", "docs", "file.ts")), true);
+
+    // Excludes still apply inside included folders
+    assert.equal(ignore(path.join(workspaceDir, "docs", "node_modules", "dep.ts")), true);
+    assert.equal(ignore(path.join(workspaceDir, "src", "ignored-dir", "file.ts")), true);
+    assert.equal(ignore(path.join(workspaceDir, "docs", "types.generated.ts")), true);
+
+    // Store dir still ignored
+    assert.equal(ignore(storeDir), true);
+  });
 });

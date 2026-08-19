@@ -32,6 +32,7 @@
     "excludeFiles": [
       "package-lock.json"
     ],
+    "includeDirs": [],
     "chunkOverlap": 0,
     "minFileSizeBytes": 0,
     "concurrency": 8,

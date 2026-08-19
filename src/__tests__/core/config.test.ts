@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, DEFAULT_CONFIG, resolveLogConfig, validateConfig } from "../../core/config.js";
+import { loadConfig, DEFAULT_CONFIG, resolveLogConfig, validateConfig, updateConfigValue } from "../../core/config.js";
 import { getRegisteredExtensions } from "../../chunker/factory.js";
 
 describe("loadConfig", () => {
@@ -89,6 +89,52 @@ describe("loadConfig", () => {
       assertion(config);
     });
   }
+});
+
+describe("updateConfigValue", () => {
+  let tmpFile: string;
+
+  before(() => {
+    tmpFile = join(tmpdir(), `opencode-rag-update-${Date.now()}.json`);
+  });
+
+  after(() => {
+    try {
+      unlinkSync(tmpFile);
+    } catch {
+      // ignore
+    }
+  });
+
+  it("writes a nested value and round-trips through loadConfig", () => {
+    writeFileSync(tmpFile, JSON.stringify({ indexing: { includeDirs: [] } }), "utf-8");
+    const ok = updateConfigValue(tmpFile, ["indexing", "includeDirs"], ["docs", "src"]);
+    assert.equal(ok, true);
+    const config = loadConfig(tmpFile);
+    assert.deepStrictEqual(config.indexing.includeDirs, ["docs", "src"]);
+  });
+
+  it("creates the parent object when the key does not exist yet", () => {
+    writeFileSync(tmpFile, "{}", "utf-8");
+    const ok = updateConfigValue(tmpFile, ["indexing", "includeDirs"], ["docs"]);
+    assert.equal(ok, true);
+    const config = loadConfig(tmpFile);
+    assert.deepStrictEqual(config.indexing.includeDirs, ["docs"]);
+  });
+
+  it("returns false for a missing file", () => {
+    const missing = join(tmpdir(), `opencode-rag-does-not-exist-${Date.now()}.json`);
+    assert.equal(updateConfigValue(missing, ["indexing", "includeDirs"], ["docs"]), false);
+  });
+
+  it("preserves other keys and tolerates a BOM", () => {
+    writeFileSync(tmpFile, "\uFEFF{\"embedding\": {\"model\": \"keep-me\"}}", "utf-8");
+    const ok = updateConfigValue(tmpFile, ["indexing", "includeDirs"], ["docs"]);
+    assert.equal(ok, true);
+    const config = loadConfig(tmpFile);
+    assert.equal(config.embedding.model, "keep-me");
+    assert.deepStrictEqual(config.indexing.includeDirs, ["docs"]);
+  });
 });
 
 describe("DEFAULT_CONFIG", () => {

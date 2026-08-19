@@ -80,6 +80,7 @@ export interface WebUiServer {
  * @param cwd             - Optional workspace root used to resolve file paths for the file API.
  * @param vectorDimension - Embedding vector dimension (default 384).
  * @param cfg             - Active RAG configuration (used by quirk endpoints).
+ * @param configPath      - Path to the opencode-rag.json config file (used by PUT /api/config).
  * @returns A {@link WebUiServer} handle for the running server.
  */
 export async function startWebUi(
@@ -87,7 +88,8 @@ export async function startWebUi(
   port: number,
   cwd?: string,
   vectorDimension: number = 384,
-  cfg?: import("../core/config.js").RagConfig
+  cfg?: import("../core/config.js").RagConfig,
+  configPath?: string
 ): Promise<WebUiServer> {
   const store = new LanceDbStore(storePath, vectorDimension);
   const keywordIndex = await KeywordIndex.load(storePath);
@@ -104,7 +106,7 @@ export async function startWebUi(
 
   const html = getStaticHtml();
   const token = randomBytes(24).toString("hex");
-  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg, getEmbedder, token);
+  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg, getEmbedder, token, configPath);
 
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {

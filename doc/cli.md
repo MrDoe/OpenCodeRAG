@@ -69,7 +69,7 @@ opencode-rag index [options]
 | `-c, --config <path>` | auto-detected | Path to config file |
 
 **How it works:**
-1. Scans workspace files matching `indexing.includeExtensions`
+1. Scans workspace files matching `indexing.includeExtensions`, restricted to `indexing.includeDirs` folders when set (files directly in the workspace root are skipped then)
 2. Compares file hashes against the manifest
 3. Clears any files previously flagged with `descriptionFailed` so they are fully re-indexed
 4. Chunks changed/new files via the appropriate chunker
@@ -78,6 +78,8 @@ opencode-rag index [options]
 7. Serializes manifest and keyword index
 
 **Incremental:** Only changed files are reprocessed. Unchanged files are skipped. Files with `descriptionFailed` in the manifest are automatically retried.
+
+**Scope changes (`includeDirs`):** Files that fall out of scope are removed from the index during a full pass (`index` without `--force` still runs a full scan when the stored manifest doesn't match the current file set). Git-incremental passes only remove git-deleted files, so after changing `includeDirs` run a plain `opencode-rag index` (or reindex from the Web UI) to apply the new scope.
 
 **Full rebuild (`--force`):** Clears the store, clears keyword index, and re-indexes everything.
 

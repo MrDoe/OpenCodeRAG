@@ -74,6 +74,7 @@ Controls file discovery and chunking behavior.
       "node_modules", ".git", ".opencode", "dist", "build",
       "__pycache__", ".venv"
     ],
+    "includeDirs": [],
     "chunkOverlap": 0,
     "minFileSizeBytes": 0,
     "concurrency": 4,
@@ -88,6 +89,8 @@ Controls file discovery and chunking behavior.
 |---|---|---|
 | `includeExtensions` | *(40+ extensions)* | File extensions to index |
 | `excludeDirs` | *(7 dirs)* | Directories to skip |
+| `excludeFiles` | — | File-name patterns to skip (plain names match any file with that basename at any depth; `/`-anchored patterns are matched against the workspace root) |
+| `includeDirs` | `[]` | Restrict indexing to workspace-relative folders (including their subfolders). Entries are anchored to the workspace root (`"docs"` = `<root>/docs`); globs are supported (`docs/**`, `src/{a,b}`). When non-empty, **files directly in the workspace root are NOT indexed**. `excludeDirs`/`excludeFiles` still apply inside the included folders. Empty or omitted = whole workspace. Editable from the Web UI sidebar ("Indexing scope") |
 | `chunkOverlap` | `0` | Overlap between adjacent chunks |
 | `minFileSizeBytes` | `0` | Skip files smaller than this (files below threshold are also removed from index) |
 | `concurrency` | `4` | Max files processed in parallel during indexing. Higher values speed up indexing but increase memory and embedding API pressure |
