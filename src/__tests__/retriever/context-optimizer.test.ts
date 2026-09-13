@@ -122,6 +122,20 @@ describe("optimizeContext", () => {
     assert.equal(opt[0]!.optimized!.dedupedFrom![0], "b");
   });
 
+  it("keeps the later chunk without crashing when it outscores the earlier one (regression)", () => {
+    const results = [
+      makeResult("a", "file.ts", 1, 40, "function foo() { return x + y; }", 0.7),
+      makeResult("b", "file.ts", 50, 90, "function foo() { return x + y; }", 0.9),
+    ];
+    const opt = optimizeContext(results, defaultOptions({
+      config: { ...DEFAULT_CONTEXT_OPTIMIZATION, mergeAdjacent: false, similarityThreshold: 0.3 },
+    }));
+    assert.equal(opt.length, 1);
+    assert.equal(opt[0]!.chunk.id, "b");
+    assert.equal(opt[0]!.score, 0.9);
+    assert.deepEqual(opt[0]!.optimized!.dedupedFrom, ["a"]);
+  });
+
   it("keeps both chunks when similarity is below threshold", () => {
     const results = [
       makeResult("a", "file.ts", 1, 40, "function foo() { return x; }", 0.9),

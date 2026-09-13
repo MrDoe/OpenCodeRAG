@@ -166,8 +166,7 @@ function dedupeSimilar(
           const [keepIdx, removeIdx] =
             kept[i]!.score >= kept[j]!.score ? [i, j] : [j, i];
           const removedId = kept[removeIdx]!.chunk.id;
-          kept.splice(removeIdx, 1);
-          kept[keepIdx] = {
+          const keeper = {
             ...kept[keepIdx]!,
             optimized: {
               ...kept[keepIdx]!.optimized,
@@ -177,6 +176,13 @@ function dedupeSimilar(
               ],
             },
           };
+          if (removeIdx < keepIdx) {
+            kept.splice(removeIdx, 1);
+            kept[keepIdx - 1] = keeper;
+          } else {
+            kept[keepIdx] = keeper;
+            kept.splice(removeIdx, 1);
+          }
           changed = true;
           break;
         }
