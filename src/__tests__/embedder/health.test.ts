@@ -24,7 +24,7 @@ function baseConfig(overrides: Partial<RagConfig["embedding"]> = {}): RagConfig 
     retrieval: { topK: 20, minScore: 0.1 },
     openCode: { enabled: false, maxContextChunks: 10 },
     description: undefined,
-    tui: { fileListKeybinding: "", chunksKeybinding: "" },
+    tui: { fileListKeybinding: "", chunksKeybinding: "", settingsKeybinding: "" },
     logging: { level: "none", logFilePath: "" },
   };
 }

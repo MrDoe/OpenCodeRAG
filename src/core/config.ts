@@ -199,6 +199,8 @@ export interface TuiConfig {
   fileListKeybinding: string;
   /** Keybinding to toggle the chunk viewer panel. */
   chunksKeybinding: string;
+  /** Keybinding to open the RAG settings dialog. Must be distinguishable by the terminal (see docs). */
+  settingsKeybinding: string;
 }
 
 /** Configuration for the standalone MCP (Model Context Protocol) server. */
@@ -704,6 +706,7 @@ export const DEFAULT_CONFIG: RagConfig = {
   tui: {
     fileListKeybinding: "ctrl+enter",
     chunksKeybinding: "ctrl+alt+enter",
+    settingsKeybinding: "ctrl+shift+r",
   },
   logging: {
     level: "info",

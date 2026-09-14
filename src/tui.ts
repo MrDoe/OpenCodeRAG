@@ -197,7 +197,7 @@ function renderSidebar(
   theme: { accent: unknown; text: unknown; textMuted: unknown },
   version: string,
   status: RagStatus,
-  tuiConfig?: { fileListKeybinding: string; chunksKeybinding: string },
+  tuiConfig?: { fileListKeybinding: string; chunksKeybinding: string; settingsKeybinding: string },
   tokenStats?: { inputTokens: number; ragCtxTokens: number; reads: number; ragTools: number; queries: number },
 ): JSX.Element {
   const statusLine = status.indexed
@@ -214,6 +214,7 @@ function renderSidebar(
 
   const fileListKey = tuiConfig?.fileListKeybinding ?? "ctrl+enter";
   const chunksKey = tuiConfig?.chunksKeybinding ?? "ctrl+alt+enter";
+  const settingsKey = tuiConfig?.settingsKeybinding ?? "ctrl+shift+r";
 
   return box(
     {
@@ -244,7 +245,7 @@ function renderSidebar(
       text({ fg: theme.text }, [statusLine]),
       text({ fg: theme.textMuted }, [timeLine]),
       text({ fg: watcher.running ? theme.accent : theme.textMuted }, [watcherLine]),
-      text({ fg: theme.textMuted }, ["Ctrl+Shift+R → Settings"]),
+      text({ fg: theme.textMuted }, [`${formatKeybinding(settingsKey)} → Settings`]),
       text({ fg: theme.textMuted }, [`${formatKeybinding(fileListKey)} → Add File List`]),
       text({ fg: theme.textMuted }, [`${formatKeybinding(chunksKey)} → Add Chunks`]),
       ...(tokenStats && tokenStats.queries > 0 ? [
@@ -700,6 +701,12 @@ function buildSettingCategories(
       description: "Configure keyboard shortcuts",
       entries: [
         {
+          path: ["tui", "settingsKeybinding"],
+          label: "Open settings",
+          type: "string",
+          currentValue: (tuiRo.settingsKeybinding as string) ?? (tuiCfg.settingsKeybinding as string) ?? "ctrl+shift+r",
+        },
+        {
           path: ["tui", "fileListKeybinding"],
           label: "Add file list",
           type: "string",
@@ -1003,7 +1010,7 @@ const plugin: TuiPluginModule & { id: string } = {
     const REFRESH_INTERVAL_MS = Number(process.env.OPENCODE_RAG_TUI_REFRESH_MS) || 30000;
 
     // Load tui config for keybinding display
-    let tuiConfig: { fileListKeybinding: string; chunksKeybinding: string } | undefined;
+    let tuiConfig: { fileListKeybinding: string; chunksKeybinding: string; settingsKeybinding: string } | undefined;
     const worktree = api.state.path.worktree;
     if (worktree) {
       const configPath = getConfigPath(worktree);
@@ -1099,10 +1106,11 @@ const plugin: TuiPluginModule & { id: string } = {
       }
     }
 
-    // Register keybinding for settings dialog
+    // Register keybinding for settings dialog (configurable)
     try {
+      const settingsKey = tuiConfig?.settingsKeybinding ?? "ctrl+shift+r";
       api.keymap.registerLayer({
-        bindings: [{ key: "ctrl+shift+r", cmd: "opencode-rag:settings" }],
+        bindings: [{ key: settingsKey, cmd: "opencode-rag:settings" }],
         commands: [
           {
             name: "opencode-rag:settings",

@@ -54,6 +54,7 @@ export interface RuntimeOverrides {
   tui?: {
     fileListKeybinding?: string;
     chunksKeybinding?: string;
+    settingsKeybinding?: string;
   };
 }
 
@@ -187,6 +188,7 @@ export function applyRuntimeOverrides(
       ...(merged.tui ?? {}),
       fileListKeybinding: overrides.tui.fileListKeybinding ?? merged.tui?.fileListKeybinding ?? DEFAULT_CONFIG.tui.fileListKeybinding,
       chunksKeybinding: overrides.tui.chunksKeybinding ?? merged.tui?.chunksKeybinding ?? DEFAULT_CONFIG.tui.chunksKeybinding,
+      settingsKeybinding: overrides.tui.settingsKeybinding ?? merged.tui?.settingsKeybinding ?? DEFAULT_CONFIG.tui.settingsKeybinding,
     };
   }
 

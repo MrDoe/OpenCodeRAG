@@ -24,7 +24,7 @@ const MINIMAL_CFG = {
   indexing: { includeExtensions: [], excludeDirs: [], chunkOverlap: 0, concurrency: 1, embedBatchSize: 1 },
   retrieval: { topK: 10, minScore: 0, hybridSearch: { enabled: false, keywordWeight: 0 }, contextOptimization: { enabled: false, maxPerFile: 0, mergeAdjacent: false, adjacentGapThreshold: 0, similarityThreshold: 0 } },
   openCode: { enabled: false, maxContextChunks: 5 },
-  tui: { fileListKeybinding: "", chunksKeybinding: "" },
+  tui: { fileListKeybinding: "", chunksKeybinding: "", settingsKeybinding: "" },
   logging: { level: "none" as const, logFilePath: "" },
   memory: { enabled: true, autoInject: false, minConfidence: 0.3, recallMinScore: 0, autoInjectMinScore: 0.6, autoInjectTopK: 2, autoInjectMinTokenOverlap: 1, autoInjectLatencyBudgetMs: 2000, decay: { enabled: false, halfLifeDays: 30 } },
 } as unknown as RagConfig;
