@@ -120,6 +120,7 @@ export function registerIndexCommand(program: Command): void {
         }
 
         logCliInfo(logFilePath, "index", `${c.label("Scanning:")} ${c.file(cwd)}`);
+        let incomplete = false;
         const runPass = async (
           watchTriggered: boolean = false,
           abortSignal?: AbortSignal,
@@ -143,6 +144,21 @@ export function registerIndexCommand(program: Command): void {
 
           if (!watchTriggered) {
             logIndexSummary(logFilePath, stats);
+            if (stats.embeddingUnavailable) {
+              incomplete = true;
+              logCliInfo(
+                logFilePath,
+                "index",
+                `\n${c.error("Indexing incomplete:")} the embedding provider was unavailable — nothing was stored. Fix the provider and run the index again.`,
+              );
+            } else if (stats.totalChunks === 0 && stats.newFiles + stats.modifiedFiles > 0) {
+              incomplete = true;
+              logCliInfo(
+                logFilePath,
+                "index",
+                `\n${c.warn("Indexing incomplete:")} files were processed but no chunks were stored. Check the log for details.`,
+              );
+            }
             logCliInfo(
               logFilePath,
               "index",
@@ -164,7 +180,7 @@ export function registerIndexCommand(program: Command): void {
 
         if (!options.watch) {
           await cleanupContext(ctx);
-          process.exit(sigReceived ? 130 : 0);
+          process.exit(sigReceived ? 130 : incomplete ? 1 : 0);
         }
 
         // Only one watcher may run per workspace — a background auto-indexer

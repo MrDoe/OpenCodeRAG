@@ -7,9 +7,10 @@ import path from "node:path";
 import { loadConfig, findConfigFile, resolveLogConfig, DEFAULT_CONFIG, type RagConfig } from "./config.js";
 import { resolveApiKey } from "./resolve-api-key.js";
 import { loadChunkersFromConfig } from "../chunker/loader.js";
-import { createEmbedder } from "../embedder/factory.js";
+import { createEmbedder, probeEmbeddingDimension } from "../embedder/factory.js";
 import { createDescriptionProvider } from "../describer/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
+import { readStoreDimension } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import type {
   EmbeddingProvider,
@@ -50,25 +51,56 @@ export interface RagContext {
   dimension: number;
   /** Resolved path to the debug log file. */
   logFilePath: string;
+  /** Resolved path to the config file, or undefined when built-in defaults are used. */
+  configPath?: string;
 }
 
-/** Probe the embedding provider to determine the vector dimension. Falls back to 384 on failure. */
-async function probeDimension(embedder: EmbeddingProvider): Promise<number> {
-  try {
-    const probe = await embedder.embed(["dimension-probe"], "query");
-    if (probe && probe[0] && probe[0].length > 0 && typeof probe[0][0] === "number") {
-      return (probe[0] as number[]).length;
-    }
-  } catch {
-    // fallback to 384
+/**
+ * Resolve the embedding dimension for the store.
+ *
+ * Precedence: an explicit `embedding.vectorDimension` in the config wins (it
+ * is persisted after the first successful probe), then a live probe of the
+ * provider, then the dimension of an existing store table, then the 384
+ * fallback. The old behavior always probed and fell back to 384 — which
+ * silently created 384-dimensional stores whenever the provider was down,
+ * even though the config declared the real dimension.
+ *
+ * @param embedder - Configured embedding provider (probed only when needed).
+ * @param storePath - Vector store path, used to read an existing schema.
+ * @param skipProbe - When true, never call the provider (read-only commands).
+ * @returns The resolved dimension.
+ */
+async function resolveDimension(
+  embedder: EmbeddingProvider,
+  storePath: string,
+  skipProbe: boolean,
+  configured?: number,
+): Promise<number> {
+  if (configured && configured > 0) {
+    return configured;
   }
-  // A wrong dimension is only discovered later as cryptic LanceDB errors —
-  // surface the fallback loudly so misconfigured providers are easy to spot.
-  console.warn(
-    "[bootstrap] Could not probe embedding dimension — falling back to 384. " +
-    "If indexing later fails with dimension errors, set embedding.vectorDimension explicitly.",
-  );
-  return 384;
+
+  if (!skipProbe) {
+    const probe = await probeEmbeddingDimension(embedder);
+    if (probe.dimension !== undefined) {
+      return probe.dimension;
+    }
+    const storeDimension = await readStoreDimension(storePath);
+    if (storeDimension !== undefined) {
+      console.warn(
+        `[bootstrap] Could not probe embedding dimension (${probe.error?.message ?? "unknown error"}) — ` +
+        `using the existing store's dimension ${storeDimension}.`,
+      );
+      return storeDimension;
+    }
+    console.warn(
+      `[bootstrap] Could not probe embedding dimension (${probe.error?.message ?? "unknown error"}) — ` +
+      "falling back to 384. Set embedding.vectorDimension explicitly if the provider produces a different size.",
+    );
+    return 384;
+  }
+
+  return (await readStoreDimension(storePath)) ?? 384;
 }
 
 /** Load the keyword index from disk, or create a new empty one if loading fails. */
@@ -112,8 +144,25 @@ export async function resolveRagContext(
   );
 
   const embedder = createEmbedder(cfg);
-  const dimension = opts.skipProbe ? 384 : await probeDimension(embedder);
   const storePath = path.resolve(workDir, cfg.vectorStore.path);
+  const dimension = await resolveDimension(
+    embedder,
+    storePath,
+    opts.skipProbe ?? false,
+    cfg.embedding.vectorDimension,
+  );
+
+  // Warn (but do not block) when the existing store schema disagrees with the
+  // resolved dimension: the next index pass rebuilds automatically, and search
+  // callers would otherwise see only cryptic LanceDB errors.
+  const storeDimension = await readStoreDimension(storePath);
+  if (storeDimension !== undefined && storeDimension !== dimension) {
+    console.warn(
+      `[bootstrap] Store was built with vector dimension ${storeDimension} but the current embedder produces ${dimension} — ` +
+      "run 'opencode-rag index' to rebuild the index with the current model.",
+    );
+  }
+
   const store = createVectorStore(cfg, storePath, dimension);
   const keywordIndex = opts.skipKeywordIndex
     ? new KeywordIndex(storePath)
@@ -134,5 +183,6 @@ export async function resolveRagContext(
     descriptionProvider,
     dimension,
     logFilePath,
+    configPath,
   };
 }

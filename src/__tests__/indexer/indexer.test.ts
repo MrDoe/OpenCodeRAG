@@ -622,7 +622,8 @@ describe("indexer", () => {
       const trackingEmbedder: EmbeddingProvider = {
         name: "test",
         async embed(texts: string[], _purpose?: "query" | "document"): Promise<number[][]> {
-          embeddedTexts.push(...texts);
+          // Ignore the pipeline's preflight health probe — it is not a document.
+          embeddedTexts.push(...texts.filter((t) => t !== "dimension-probe"));
           return texts.map(() => [0.1, 0.2, 0.3, 0.4]);
         },
       };
@@ -692,6 +693,58 @@ describe("indexer", () => {
         // filePath should be followed by optional metadata header, then description, then content
         return t.includes("src/e.ts\n\n") && t.includes("An epsilon function.") && t.includes("function epsilon()");
       }));
+    });
+
+    it("omits descriptions from embedded text when embedDescriptions is false", async () => {
+      await writeFile(path.join(workspaceDir, "src", "g.ts"), "function golf() { return 7; }\n");
+
+      const descProvider: DescriptionProvider = {
+        async generateDescription(): Promise<string> {
+          return "A golf function.";
+        },
+        async generateBatchDescriptions(chunks: Chunk[]): Promise<Map<string, string>> {
+          const result = new Map<string, string>();
+          for (const chunk of chunks) {
+            result.set(chunk.id, "A golf function.");
+          }
+          return result;
+        },
+        async generateText(): Promise<string> { return ""; },
+      };
+
+      const embeddedTexts: string[] = [];
+      const trackingEmbedder: EmbeddingProvider = {
+        name: "test",
+        async embed(texts: string[]): Promise<number[][]> {
+          embeddedTexts.push(...texts.filter((t) => t !== "dimension-probe"));
+          return texts.map(() => [0.1, 0.2, 0.3, 0.4]);
+        },
+      };
+
+      const cfg: RagConfig = {
+        ...testConfig(),
+        indexing: { ...testConfig().indexing, embedDescriptions: false },
+      };
+
+      await runIndexPass({
+        cwd: workspaceDir,
+        storePath: storeDir,
+        config: cfg,
+        store,
+        embedder: trackingEmbedder,
+        descriptionProvider: descProvider,
+      });
+
+      assert.ok(embeddedTexts.length > 0, "chunks must still be embedded");
+      assert.ok(
+        !embeddedTexts.some((t) => t.includes("A golf function.")),
+        "descriptions must not appear in embedded text when disabled",
+      );
+      assert.ok(embeddedTexts.some((t) => t.includes("function golf")), "code content must be embedded");
+
+      // The description is still stored on the chunk for display.
+      const stored = await store.getChunksByFilePath(path.join(workspaceDir, "src", "g.ts"));
+      assert.ok(stored.some((c) => (c.description ?? "").includes("A golf function.")));
     });
 
     it("flags files with description failures in the manifest", async () => {
@@ -942,5 +995,136 @@ describe("indexer", () => {
     assert.ok(filePaths.some((p) => p.endsWith("src/util.ts") || p.endsWith("util.ts")));
     assert.ok(!filePaths.some((p) => p.endsWith("util.generated.ts")));
     assert.ok(!filePaths.some((p) => p.endsWith("settings.ts")));
+  });
+
+  it("aborts before chunking/description when the embedding provider is down", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+
+    class DownEmbedder implements EmbeddingProvider {
+      readonly name = "down";
+      async embed(): Promise<number[][]> {
+        throw new Error("connect ECONNREFUSED 127.0.0.1:11434");
+      }
+    }
+
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder: new DownEmbedder(),
+    });
+
+    assert.equal(stats.embeddingUnavailable, true);
+    assert.equal(stats.totalChunks, 0);
+    assert.equal(stats.newFiles, 0, "no file may be recorded as indexed");
+    assert.equal(await store.count(), 0, "nothing may be stored");
+  });
+
+  it("aborts when the provider dimension disagrees with the configured dimension", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+
+    class EightDimEmbedder implements EmbeddingProvider {
+      readonly name = "eight-dim";
+      async embed(texts: string[]): Promise<number[][]> {
+        return texts.map(() => new Array(8).fill(0.1));
+      }
+    }
+
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder: new EightDimEmbedder(),
+      dimension: 4,
+    });
+
+    assert.equal(stats.embeddingUnavailable, true);
+    assert.equal(stats.totalChunks, 0);
+    assert.equal(await store.count(), 0);
+  });
+
+  it("auto-rebuilds the store when the embedding dimension changes", async () => {
+    const storePath = path.join(storeDir, "rag_db");
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+
+    class EightDimEmbedder implements EmbeddingProvider {
+      readonly name = "eight-dim";
+      async embed(texts: string[]): Promise<number[][]> {
+        return texts.map(() => new Array(8).fill(0.1));
+      }
+    }
+
+    // First pass with an 8-dimensional model.
+    const store8 = new LanceDbStore(storePath, 8);
+    const first = await runIndexPass({
+      cwd: workspaceDir,
+      storePath,
+      config: testConfig(),
+      store: store8,
+      embedder: new EightDimEmbedder(),
+      dimension: 8,
+    });
+    assert.equal(first.totalChunks, 1);
+    assert.equal(await store8.getVectorDimension(), 8);
+
+    // Model switch: a 4-dimensional embedder with a fresh handle. The store
+    // schema (8) no longer matches the configured dimension (4) — the pass
+    // must rebuild instead of writing padded vectors.
+    const store4 = new LanceDbStore(storePath, 4);
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath,
+      config: testConfig(),
+      store: store4,
+      embedder,
+      dimension: 4,
+    });
+
+    assert.equal(stats.rebuildPerformed, true, "dimension drift must trigger a rebuild");
+    assert.equal(stats.totalChunks, 1);
+
+    const reopened = new LanceDbStore(storePath, 4);
+    assert.equal(await reopened.getVectorDimension(), 4, "store must be rebuilt at the new dimension");
+    assert.ok((await reopened.count()) > 0, "rebuilt store must contain the indexed chunks");
+    await reopened.close();
+    await store4.close();
+    await store8.close();
+  });
+
+  it("rebuilds an empty store whose schema dimension is stale", async () => {
+    const storePath = path.join(storeDir, "rag_db_empty");
+    await writeFile(path.join(workspaceDir, "src", "b.ts"), "function bravo() { return 2; }\n");
+
+    // Materialize an empty table at dimension 8 (stale model), then remove its row.
+    const stale = new LanceDbStore(storePath, 8);
+    await stale.addChunks([{
+      id: "old",
+      content: "old row",
+      embedding: new Array(8).fill(0.1),
+      metadata: { filePath: "src/old.ts", startLine: 1, endLine: 1, language: "typescript" },
+    }]);
+    await stale.deleteByFilePath("src/old.ts");
+    assert.equal(await stale.count(), 0);
+    assert.equal(await stale.getVectorDimension(), 8);
+
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath,
+      config: testConfig(),
+      store: stale,
+      embedder,
+      dimension: 4,
+    });
+
+    assert.equal(stats.rebuildPerformed, true, "stale schema must trigger a rebuild even when empty");
+    assert.equal(stats.totalChunks, 1);
+
+    const reopened = new LanceDbStore(storePath, 4);
+    assert.equal(await reopened.getVectorDimension(), 4);
+    assert.ok((await reopened.count()) > 0);
+    await reopened.close();
+    await stale.close();
   });
 });

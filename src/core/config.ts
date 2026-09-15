@@ -317,6 +317,18 @@ export interface RagConfig {
     /** Maximum concurrent description generation requests. */
     descriptionConcurrency?: number;
     /**
+     * Include LLM-generated chunk descriptions in the text that gets embedded.
+     *
+     * Descriptions help general-purpose embedding models align natural-language
+     * queries with raw code. Code-specialized models (e.g. jina-code-embeddings,
+     * trained for NL→code retrieval with instruction prefixes) do not need the
+     * crutch — and their passage prompt expects a code snippet, not prose.
+     * When false, descriptions are still generated and stored (search results,
+     * web UI), but only path/meta header/content are embedded.
+     * @default true
+     */
+    embedDescriptions?: boolean;
+    /**
      * Maximum file size in bytes for SVG/XML files before chunking is skipped.
      * Large SVGs can cause tree-sitter to hang. Set to 0 for no limit.
      * @default 1_048_576 (1 MB)
@@ -526,6 +538,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     embedConcurrency: 3,
     ollamaMaxBatchSize: 100,
     descriptionConcurrency: 4,
+    embedDescriptions: true,
     maxSvgSizeBytes: 1_048_576,
     optimizeIntervalWindows: 8,
   },

@@ -117,7 +117,7 @@ export async function resolveCliContext(
     configPath: opt.config,
     ...bootstrapOpts,
   });
-  logCliInfo(logFilePath, "config", `${c.label("Config:")} ${c.file(ctx.logFilePath)}`);
+  logCliInfo(logFilePath, "config", `${c.label("Config:")} ${c.file(ctx.configPath ?? "(built-in defaults)")}`);
   logConfigDetails(logFilePath, ctx.config);
   return ctx;
 }
@@ -131,6 +131,9 @@ export async function resolveCliContext(
 function logConfigDetails(logFilePath: string, config: RagConfig): void {
   logCliInfo(logFilePath, "config", `  ${c.label("Embedding provider:")} ${c.value(config.embedding.provider)}`);
   logCliInfo(logFilePath, "config", `  ${c.label("Embedding model:")}    ${c.value(config.embedding.model)}`);
+  if (config.embedding.vectorDimension && config.embedding.vectorDimension > 0) {
+    logCliInfo(logFilePath, "config", `  ${c.label("Embedding dim:")}      ${c.num(config.embedding.vectorDimension)}`);
+  }
   logCliInfo(logFilePath, "config", `  ${c.label("Vector store:")}       ${c.file(config.vectorStore.path)}`);
 }
 
@@ -182,7 +185,17 @@ export function logIndexSummary(logFilePath: string, stats: IndexRunStats): void
   if (stats.descriptionFailedFiles > 0) {
     logCliInfo(logFilePath, "index", `  ${c.label("Desc failed:")}     ${c.num(stats.descriptionFailedFiles)}`);
   }
+  if (stats.embeddingFailures > 0) {
+    logCliInfo(logFilePath, "index", `  ${c.label("Embed failed:")}    ${c.num(stats.embeddingFailures)} chunk(s) without vectors — retried next pass`);
+  }
   logCliInfo(logFilePath, "index", `  ${c.label("Chunks written:")}   ${c.num(stats.totalChunks)}`);
+  if (stats.embeddingUnavailable) {
+    logCliInfo(
+      logFilePath,
+      "index",
+      `  ${c.error("Embedding provider unavailable during this pass — no chunks were stored.")}`,
+    );
+  }
 }
 
 /**

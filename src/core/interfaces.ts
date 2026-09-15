@@ -231,6 +231,14 @@ export interface VectorStore {
    * Used by the index pipeline to detect silent corruption before scanning.
    */
   checkIntegrity?(): Promise<boolean>;
+  /**
+   * Return the actual embedding dimension of the stored vector column, or
+   * `undefined` when the store has no table yet. Used to detect a store that
+   * was built with a different embedding model than the currently configured
+   * one — a mismatch makes every vector search fail and silently corrupts
+   * writes, so the pipeline rebuilds the index instead.
+   */
+  getVectorDimension?(): Promise<number | undefined>;
 }
 
 /** Filter criteria for narrowing search results by file path, language, kind, or extension. */

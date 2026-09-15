@@ -51,6 +51,7 @@ Controls how code chunks are converted to vector embeddings.
 | `proxy.noProxy` | — | Comma-separated bypass list |
 | `documentPrefix` | — | Prepended to document text before embedding (e.g., `search_document:`) |
 | `queryPrefix` | — | Prepended to query text before embedding (e.g., `search_query:`) |
+| `vectorDimension` | *(probed once)* | Cached embedding dimension. Honored by the CLI and plugin; when unset the provider is probed and the result is persisted. On probe failure the existing store's schema dimension is used before falling back to 384 |
 
 See [Embedding](embedding.md) for model recommendations and proxy details.
 
@@ -80,7 +81,8 @@ Controls file discovery and chunking behavior.
     "concurrency": 4,
     "embedBatchSize": 100,
     "embedConcurrency": 3,
-    "descriptionConcurrency": 4
+    "descriptionConcurrency": 4,
+    "embedDescriptions": true
   }
 }
 ```
@@ -97,6 +99,7 @@ Controls file discovery and chunking behavior.
 | `embedBatchSize` | `100` | Texts per embedding API call. Larger batches reduce round-trips. Ollama supports up to ~100 |
 | `embedConcurrency` | `3` | Number of embedding batch requests sent in parallel. Higher values speed up embedding but increase API pressure |
 | `descriptionConcurrency` | `4` | Number of files processed in parallel during description generation. Higher values speed up descriptions but increase LLM pressure |
+| `embedDescriptions` | `true` | Include LLM-generated chunk descriptions in the embedded text. Descriptions help general-purpose embedding models align natural-language queries with code. Set to `false` for code-specialized models (e.g. `jina-code-embeddings`, whose passage prompt expects a code snippet): descriptions are still generated and shown in search results/Web UI, but only path/meta header/content are embedded |
 | `optimizeIntervalWindows` | `8` | Run vector-store compaction + version pruning every N processing windows during a long index pass. LanceDB keeps every committed version on disk, so without periodic maintenance the store phase slows down as the index grows (version-manifest accumulation). `0` disables mid-run optimization (the store is still optimized once at the end of a pass) |
 
 ### `vectorStore`

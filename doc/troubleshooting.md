@@ -173,6 +173,43 @@ version-manifest accumulation). Each retry leaves a new directory under
 If you still get the "cannot converge" message, the store is genuinely broken
 (no index build ever registers) and must be rebuilt — nothing else works.
 
+## Embedding Dimension Mismatch
+
+**Symptoms:**
+- `GenericFailure, Invalid input, No vector column found to match with the query vector dimension: 1024`
+  (the number is whatever the current embedder produces)
+- Search returns nothing while the log reports chunks were "stored"
+- `opencode-rag status` shows a `Dimension mismatch: yes` line (store dimension vs. embedder dimension)
+
+**Cause:** the vector store was built with a different embedding model than the
+one currently configured (e.g. you switched from `qwen3-embedding:4b`, 2560-dim,
+to a 1024-dim model). LanceDB fixes the vector column length at table creation.
+Mismatched **writes do not fail** — Lance silently zero-pads or truncates the
+vectors into the fixed-size column, so rows become unreachable garbage. Mismatched
+**queries** fail with the cryptic error above.
+
+**Built-in protection:**
+- `LanceDbStore` validates every write against the table's real schema dimension
+  and throws `DimensionMismatchError` instead of silently padding.
+- Search compares the query vector against the table's schema dimension (not the
+  handle's expected dimension) and returns empty with an actionable warning.
+- `runIndexPass` treats a schema mismatch as a rebuild condition: the manifest is
+  cleared and the index is rebuilt atomically into `rag_db_tmp` at the configured
+  dimension (works for `opencode-rag index`, `--force`, and the auto-index watcher).
+- Full rebuilds preserve `quirks.jsonl`, `.desc-cache.json`, `keyword-index.json`,
+  `runtime-overrides.json` and `eval-sessions/` when swapping directories.
+
+**Fix:** make the config match the model actually being served, then rebuild:
+
+```bash
+opencode-rag status          # check "Store dimension" vs "Embedder dim"
+opencode-rag index           # auto-rebuilds on dimension drift
+```
+
+If a provider outage caused a wrong-dimension store (e.g. the CLI used to fall
+back to 384), the next successful `index` run now rebuilds it automatically. To
+pin the dimension explicitly, set `embedding.vectorDimension` in the config.
+
 
 
 ## Description Generation Failures

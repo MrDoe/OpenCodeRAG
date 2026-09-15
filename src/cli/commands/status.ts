@@ -89,6 +89,26 @@ export function registerStatusCommand(program: Command): void {
         logCliInfo(logFilePath, "status", `${c.label("Store path:")}        ${c.file(storePath)}`);
         logCliInfo(logFilePath, "status", `${c.label("Embedding provider:")} ${c.value(config.embedding.provider)}`);
         logCliInfo(logFilePath, "status", `${c.label("Embedding model:")}   ${c.value(config.embedding.model)}`);
+        const storeDimension = await store.getVectorDimension?.();
+        const embedderDimension = config.embedding.vectorDimension;
+        if (embedderDimension && embedderDimension > 0) {
+          logCliInfo(logFilePath, "status", `${c.label("Embedder dim:")}      ${c.num(embedderDimension)}`);
+        }
+        if (storeDimension !== undefined) {
+          logCliInfo(logFilePath, "status", `${c.label("Store dimension:")}   ${c.num(storeDimension)}`);
+        }
+        if (
+          storeDimension !== undefined &&
+          embedderDimension !== undefined &&
+          embedderDimension > 0 &&
+          storeDimension !== embedderDimension
+        ) {
+          logCliInfo(
+            logFilePath,
+            "status",
+            `${c.label("Dimension mismatch:")} ${c.warn("yes")} — the store was built with a different embedding model. Run 'opencode-rag index' to rebuild.`,
+          );
+        }
         logCliInfo(logFilePath, "status", `${c.label("File extensions:")}   ${config.indexing.includeExtensions.join(", ")}`);
         logCliInfo(logFilePath, "status", `${c.label("Excluded dirs:")}     ${config.indexing.excludeDirs.join(", ")}`);
         logCliInfo(logFilePath, "status", `${c.label("Default top-K:")}     ${c.num(config.retrieval.topK)}`);

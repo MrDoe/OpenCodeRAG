@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { resolveRagContext } from "../../core/bootstrap.js";
 import { DEFAULT_CONFIG } from "../../core/config.js";
+import { LanceDbStore } from "../../vectorstore/lancedb.js";
 
 describe("resolveRagContext", () => {
   let tmpDir: string;
@@ -124,5 +125,50 @@ describe("resolveRagContext", () => {
 
     const ctx = await resolveRagContext({ cwd: tmpDir });
     assert.equal(ctx.descriptionProvider, undefined);
+  });
+
+  it("uses the configured vectorDimension without probing", async () => {
+    writeFileSync(join(tmpDir, "opencode-rag.json"), JSON.stringify({
+      embedding: { provider: "ollama", model: "test-model", vectorDimension: 1234 },
+    }), "utf-8");
+
+    const ctx = await resolveRagContext({ cwd: tmpDir });
+    assert.equal(ctx.dimension, 1234);
+  });
+
+  it("falls back to the existing store's schema dimension when the probe fails", async () => {
+    // Deterministic provider outage: port 9 (discard) is never listening.
+    writeFileSync(join(tmpDir, "opencode-rag.json"), JSON.stringify({
+      embedding: {
+        provider: "openai",
+        baseUrl: "http://127.0.0.1:9/v1",
+        model: "unreachable",
+        apiKey: "test-key",
+      },
+    }), "utf-8");
+
+    const storePath = resolve(tmpDir, DEFAULT_CONFIG.vectorStore.path);
+    const store = new LanceDbStore(storePath, 7);
+    await store.addChunks([{
+      id: "seed",
+      content: "seed",
+      embedding: new Array(7).fill(0.1),
+      metadata: { filePath: "src/seed.ts", startLine: 1, endLine: 1, language: "typescript" },
+    }]);
+    await store.close();
+
+    const ctx = await resolveRagContext({ cwd: tmpDir });
+    assert.equal(ctx.dimension, 7);
+  });
+
+  it("exposes the resolved config path", async () => {
+    const ctxDefault = await resolveRagContext({ cwd: tmpDir });
+    assert.equal(ctxDefault.configPath, undefined);
+
+    writeFileSync(join(tmpDir, "opencode-rag.json"), JSON.stringify({
+      embedding: { provider: "ollama", model: "path-test" },
+    }), "utf-8");
+    const ctx = await resolveRagContext({ cwd: tmpDir });
+    assert.equal(ctx.configPath, join(tmpDir, "opencode-rag.json"));
   });
 });

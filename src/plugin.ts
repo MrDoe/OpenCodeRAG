@@ -9,7 +9,8 @@ import { tool } from "@opencode-ai/plugin/tool";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type VectorStore, type SearchResult, type MetadataFilter } from "./core/interfaces.js";
 import { normalizeFileExtensions } from "./core/filters.js";
 import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
-import { createEmbedder } from "./embedder/factory.js";
+import { createEmbedder, probeEmbeddingDimension } from "./embedder/factory.js";
+import { readStoreDimension } from "./vectorstore/lancedb.js";
 import { createDescriptionProvider } from "./describer/factory.js";
 import { createVectorStore } from "./vectorstore/factory.js";
 import { retrieve } from "./retriever/retriever.js";
@@ -558,7 +559,12 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     ...options.dependencies,
   };
   const embedder = options.embedder ?? dependencies.createEmbedder(options.cfg);
-  const store = options.store ?? dependencies.createStore(options.storePath, 384, options.cfg);
+  const configuredDimension = options.cfg.embedding.vectorDimension;
+  const store = options.store ?? dependencies.createStore(
+    options.storePath,
+    configuredDimension && configuredDimension > 0 ? configuredDimension : 384,
+    options.cfg,
+  );
   const keywordIndex = options.keywordIndex;
 
   // Runtime overrides for live config editing from TUI
@@ -1655,6 +1661,8 @@ export const ragPlugin: Plugin = async (
 
   // Use cached dimension from config if available (avoids blocking startup with an API call)
   // If not set, probe the embedding provider once and persist the result.
+  // When the probe fails, prefer the existing store's schema over the 384
+  // default — a transient outage must not downgrade the store's dimension.
   const embedder = createEmbedder(effectiveCfg);
   let vectorDimension = effectiveCfg.embedding.vectorDimension;
   if (vectorDimension && vectorDimension > 0) {
@@ -1663,31 +1671,45 @@ export const ragPlugin: Plugin = async (
       message: `Vector dimension: ${vectorDimension} (cached in config)`,
     }, logLevel);
   } else {
-    vectorDimension = 384;
-    try {
-      const probe = await embedder.embed(["dimension-probe"], "query");
-      if (probe && probe[0] && probe[0].length > 0 && typeof probe[0][0] === "number") {
-        vectorDimension = (probe[0] as number[]).length;
-        const configPath = findConfigFile(input.directory);
-        if (configPath) {
-          try { persistProbedDimension(configPath, vectorDimension); } catch { /* best-effort */ }
-        }
+    const probe = await probeEmbeddingDimension(embedder);
+    if (probe.dimension !== undefined) {
+      vectorDimension = probe.dimension;
+      const configPath = findConfigFile(input.directory);
+      if (configPath) {
+        try { persistProbedDimension(configPath, vectorDimension); } catch { /* best-effort */ }
       }
       appendDebugLog(logFilePath, {
         scope: "plugin",
         message: `Vector dimension: ${vectorDimension}`,
       }, logLevel);
-    } catch (err) {
+    } else {
+      vectorDimension = (await readStoreDimension(storePath)) ?? 384;
       appendDebugLog(logFilePath, {
         scope: "plugin",
         message: `Dimension probe failed, falling back to ${vectorDimension}`,
-        error: err,
+        error: probe.error,
       }, logLevel);
     }
   }
 
   const store = createVectorStore(effectiveCfg, storePath, vectorDimension);
   ragStores.set(input.directory, store);
+
+  // Warn when the store was built by a different embedding model — vector
+  // search fails (or silently degrades) until the index is rebuilt.
+  try {
+    const storeDimension = await store.getVectorDimension?.();
+    if (storeDimension !== undefined && storeDimension !== vectorDimension) {
+      appendDebugLog(logFilePath, {
+        scope: "plugin",
+        message:
+          `Store vector dimension is ${storeDimension} but the configured embedder produces ${vectorDimension} — ` +
+          "run 'opencode-rag index' to rebuild the index with the current model.",
+      }, logLevel);
+    }
+  } catch {
+    // best-effort — dimension introspection must never block plugin startup
+  }
 
   // Load or create keyword index for hybrid search
   const keywordIndex = await loadKeywordIndex(storePath, logFilePath, logLevel);

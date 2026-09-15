@@ -53,6 +53,38 @@ export function createEmbedder(config: RagConfig): EmbeddingProvider {
   throw new Error(`Unknown embedding provider: ${provider}`);
 }
 
+/** Result of probing an embedding provider for its output dimension. */
+export interface EmbeddingProbeResult {
+  /** Detected vector dimension, or `undefined` when the probe failed. */
+  dimension?: number;
+  /** Error raised by the provider (or an empty response), when the probe failed. */
+  error?: Error;
+}
+
+/**
+ * Probe an embedding provider with a single short text to discover the
+ * dimension of the vectors it produces.
+ *
+ * Used as a health/dimension preflight before expensive index work: a provider
+ * that is down (server not running, model not pulled) fails here in
+ * milliseconds instead of after chunking and describing every file. Errors are
+ * captured in the result rather than thrown.
+ *
+ * @param embedder - The embedding provider to probe.
+ * @returns The detected dimension, or the failure reason.
+ */
+export async function probeEmbeddingDimension(embedder: EmbeddingProvider): Promise<EmbeddingProbeResult> {
+  try {
+    const probe = await embedder.embed(["dimension-probe"], "query");
+    if (probe && probe[0] && probe[0].length > 0 && typeof probe[0][0] === "number") {
+      return { dimension: probe[0].length };
+    }
+    return { error: new Error("Embedding provider returned an empty probe vector") };
+  } catch (err) {
+    return { error: err instanceof Error ? err : new Error(String(err)) };
+  }
+}
+
 /**
  * HTTP statuses that indicate a permanent failure — retrying cannot help
  * (auth errors, bad requests, missing resources). Providers raise these as

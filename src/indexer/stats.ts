@@ -35,6 +35,10 @@ export interface IndexRunStats {
   extractionErrors: Array<{ filePath: string; error: string }>;
   /** Number of files where description generation failed. */
   descriptionFailedFiles: number;
+  /** Number of chunks whose embedding request failed (kept for retry on the next pass). */
+  embeddingFailures: number;
+  /** True when the pass could not embed at all (provider unavailable or dimension mismatch) — nothing was stored. */
+  embeddingUnavailable: boolean;
   /** True when the pass was skipped because another pass holds the lock. */
   skipped: boolean;
 }
@@ -88,6 +92,8 @@ export function createIndexStats(
     extractionFailures: 0,
     extractionErrors: [],
     descriptionFailedFiles: 0,
+    embeddingFailures: 0,
+    embeddingUnavailable: false,
     skipped: false,
   };
 }

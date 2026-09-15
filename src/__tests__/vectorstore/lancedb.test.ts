@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, utimesSync } from "node:
 import fs from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { LanceDbStore, l2Normalize, countIndexVersionDirs, sweepEmptyIndexVersionDirs } from "../../vectorstore/lancedb.js";
+import { LanceDbStore, l2Normalize, countIndexVersionDirs, sweepEmptyIndexVersionDirs, isDimensionMismatchError, readStoreDimension, swapStoreDirectories } from "../../vectorstore/lancedb.js";
 import { normalizeFilePath } from "../../core/manifest.js";
 
 describe("LanceDbStore (memory)", () => {
@@ -762,5 +762,136 @@ describe("LanceDbStore index-repair hardening", () => {
 
     await makeStore().optimize({});
     assert.equal(createIndexCalls, 1, "regular optimize must build the missing index");
+  });
+});
+
+describe("LanceDbStore dimension integrity", () => {
+  it("rejects addChunks when embeddings do not match the table dimension", async () => {
+    const store = new LanceDbStore("memory://", 8);
+    await store.count(); // materialize the table with dimension 8
+    await assert.rejects(
+      () => store.addChunks([{
+        id: "bad-dim",
+        content: "wrong size",
+        embedding: new Array(4).fill(0.1),
+        metadata: { filePath: "src/a.ts", startLine: 1, endLine: 1, language: "typescript" },
+      }]),
+      (err: unknown) => {
+        if (!isDimensionMismatchError(err)) return false;
+        assert.equal(err.storeDimension, 8);
+        assert.equal(err.embeddingDimension, 4);
+        return true;
+      },
+    );
+    assert.equal(await store.count(), 0, "mismatched rows must not be stored");
+  });
+
+  it("rejects addChunksBulk when embeddings do not match the table dimension", async () => {
+    const store = new LanceDbStore("memory://", 8);
+    await store.count();
+    await assert.rejects(
+      () => store.addChunksBulk!([{
+        dedup: false,
+        chunks: [{
+          id: "bad-bulk",
+          content: "wrong size",
+          embedding: new Array(16).fill(0.1),
+          metadata: { filePath: "src/b.ts", startLine: 1, endLine: 1, language: "typescript" },
+        }],
+      }]),
+      (err: unknown) => isDimensionMismatchError(err),
+    );
+    assert.equal(await store.count(), 0, "mismatched rows must not be stored");
+  });
+
+  it("exposes the actual table dimension via getVectorDimension", async () => {
+    const store = new LanceDbStore("memory://", 8);
+    assert.equal(await store.getVectorDimension(), undefined, "no table yet");
+    await store.addChunks([{
+      id: "dim-probe",
+      content: "materialize the table",
+      embedding: new Array(8).fill(0.1),
+      metadata: { filePath: "src/dim.ts", startLine: 1, endLine: 1, language: "typescript" },
+    }]);
+    assert.equal(await store.getVectorDimension(), 8);
+  });
+});
+
+describe("LanceDbStore dimension drift (disk)", () => {
+  it("detects a store built by a different model and refuses mismatched writes/searches", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-dim-"));
+    try {
+      const storePath = join(tmpDir, "rag_db");
+      // Build a store with dimension 4.
+      const original = new LanceDbStore(storePath, 4);
+      await original.addChunks([{
+        id: "seed",
+        content: "original model row",
+        embedding: new Array(4).fill(0.1),
+        metadata: { filePath: "src/seed.ts", startLine: 1, endLine: 1, language: "typescript" },
+      }]);
+      await original.close();
+
+      // Re-open with a different (drifted) dimension, as a config change would.
+      const drifted = new LanceDbStore(storePath, 8);
+      assert.equal(await drifted.getVectorDimension(), 4, "schema dimension must win over the handle default");
+      assert.equal(await readStoreDimension(storePath), 4);
+
+      // Search with the new model's vectors must short-circuit, not crash.
+      const results = await drifted.searchWithFilter(new Array(8).fill(0.1), 5);
+      assert.equal(results.length, 0, "mismatched search must return empty");
+
+      // Writes with the new model's vectors must fail loudly instead of padding.
+      await assert.rejects(
+        () => drifted.addChunks([{
+          id: "drifted",
+          content: "new model row",
+          embedding: new Array(8).fill(0.1),
+          metadata: { filePath: "src/new.ts", startLine: 1, endLine: 1, language: "typescript" },
+        }]),
+        (err: unknown) => isDimensionMismatchError(err),
+      );
+      await drifted.close();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("readStoreDimension returns undefined when no store exists", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-dim-"));
+    try {
+      assert.equal(await readStoreDimension(join(tmpDir, "missing")), undefined);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("swapStoreDirectories artifact preservation", () => {
+  it("keeps quirks.jsonl and other non-Lance artifacts across a swap", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-swap-"));
+    try {
+      const realPath = join(tmpDir, "rag_db");
+      const tempPath = `${realPath}_tmp`;
+      mkdirSync(join(realPath, "chunks.lance"), { recursive: true });
+      writeFileSync(join(realPath, "chunks.lance", "old-data"), "old");
+      writeFileSync(join(realPath, "quirks.jsonl"), "{\"id\":\"q1\"}\n");
+      writeFileSync(join(realPath, "manifest.json"), "{\"files\":{}}");
+      mkdirSync(join(realPath, "eval-sessions"), { recursive: true });
+      writeFileSync(join(realPath, "eval-sessions", "session.json"), "{}");
+
+      mkdirSync(join(tempPath, "chunks.lance"), { recursive: true });
+      writeFileSync(join(tempPath, "chunks.lance", "new-data"), "new");
+      writeFileSync(join(tempPath, "manifest.json"), "{\"files\":{\"a\":1}}");
+
+      await swapStoreDirectories(tempPath, realPath);
+
+      assert.equal(fs.readFileSync(join(realPath, "chunks.lance", "new-data"), "utf-8"), "new");
+      assert.equal(fs.readFileSync(join(realPath, "quirks.jsonl"), "utf-8"), "{\"id\":\"q1\"}\n");
+      assert.equal(fs.readFileSync(join(realPath, "manifest.json"), "utf-8"), "{\"files\":{\"a\":1}}");
+      assert.equal(fs.readFileSync(join(realPath, "eval-sessions", "session.json"), "utf-8"), "{}");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });

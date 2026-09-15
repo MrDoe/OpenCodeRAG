@@ -17,7 +17,7 @@ import type {
   VectorStore,
 } from "../core/interfaces.js";
 import type { ImageVisionProvider } from "../chunker/image.js";
-import { embedBatch } from "../embedder/factory.js";
+import { embedBatch, probeEmbeddingDimension } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { swapStoreDirectories } from "../vectorstore/lancedb.js";
 import { createIndexStats, type IndexRunStats, type IndexStatusSummary } from "./stats.js";
@@ -225,6 +225,134 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // this pre-clear ensures the description cache is consulted during re-description.
   // (Files with same hash but different descHash already fall through in prepareFile.)
 
+  // ── Store health checks (run BEFORE the scan) ──────────────────────────
+  // The checks below can invalidate the manifest and trigger a full rebuild.
+  // They must run before scanWorkspaceFiles: the reader skips reading the
+  // contents of unchanged files when a manifest entry matches (mtime + size +
+  // descHash unchanged), so clearing the manifest after the scan would leave
+  // those files with empty content and turn them into bogus "removed" entries.
+  logger.info(`Querying vector store for existing chunk count...`);
+  const storeCountStart = Date.now();
+  const existingCount = await options.store.count();
+  logger.info(`Store has ${existingCount} existing chunks (${((Date.now() - storeCountStart) / 1000).toFixed(1)}s)`);
+
+  // Direct data-integrity check: try to actually read a row from the store.
+  // LanceDB's countRows() may return a value from the version manifest
+  // even when the underlying data files are missing from disk, so we need
+  // an explicit probe.  If this fails, treat the store as corrupt.
+  if (!options.force && manifestStatus === "ok" && Object.keys(manifest.files).length > 0) {
+    try {
+      const isIntact: boolean | undefined = await (options.store as any).checkIntegrity?.();
+      if (isIntact === false) {
+        logger.warn(
+          "Vector store data integrity check failed — data files are missing " +
+          `(${existingCount} chunks in manifest but store can't be read). Re-indexing all files.`
+        );
+        for (const key of Object.keys(manifest.files)) {
+          delete manifest.files[key];
+        }
+        manifest.lastIndexedAt = undefined;
+        manifestStatus = "missing";
+      }
+    } catch {
+      // checkIntegrity not available (older VectorStore impl) — skip
+    }
+  }
+
+  // Detect data loss: if the store has far fewer chunks than the manifest expects,
+  // treat it as a corrupt store (e.g. schema migration dropped the old table).
+  if (!options.force && manifestStatus === "ok" && existingCount > 0) {
+    const manifestTotalChunks = Object.values(manifest.files).reduce(
+      (sum, entry) => sum + entry.chunkCount, 0
+    );
+    if (manifestTotalChunks > 0 && existingCount < manifestTotalChunks * 0.5) {
+      logger.warn(
+        `Store has ${existingCount} chunks but manifest expects ~${manifestTotalChunks}. ` +
+        `Data appears to have been lost — re-indexing all files.`
+      );
+      for (const key of Object.keys(manifest.files)) {
+        delete manifest.files[key];
+      }
+      manifest.lastIndexedAt = undefined;
+      manifestStatus = "missing";
+    }
+  }
+
+  // ── Detect a store built by a different embedding model ────────────────
+  // LanceDB silently zero-pads/truncates mismatched vectors on write, and
+  // every vector query then fails with "No vector column found to match with
+  // the query vector dimension". Treat a schema dimension mismatch like a
+  // corrupt store: clear the manifest so this pass rebuilds everything into a
+  // fresh store at the configured dimension.
+  let dimensionMismatch = false;
+  try {
+    const storeDimension = await options.store.getVectorDimension?.();
+    if (
+      !options.force &&
+      storeDimension !== undefined &&
+      options.dimension !== undefined &&
+      storeDimension !== options.dimension
+    ) {
+      dimensionMismatch = true;
+      logger.warn(
+        `Store was built with vector dimension ${storeDimension} but the configured embedding model produces ` +
+        `${options.dimension} — rebuilding the full index with the current model.`,
+      );
+      if (manifestStatus === "ok") {
+        for (const key of Object.keys(manifest.files)) delete manifest.files[key];
+        manifest.lastIndexedAt = undefined;
+        manifestStatus = "missing";
+      }
+    }
+  } catch {
+    // getVectorDimension is best-effort — proceed without the drift check.
+  }
+
+  // Effective store used throughout the pass — may be a temp store for atomic rebuild.
+  let effectiveStore: VectorStore = options.store;
+  let tempStorePath: string | undefined;
+  /** Set when the temporary rebuild store actually received rows. */
+  let tempStoreWroteChunks = false;
+
+  if (options.force || (manifestStatus !== "ok" && (existingCount > 0 || dimensionMismatch))) {
+    for (const key of Object.keys(manifest.files)) {
+      delete manifest.files[key];
+    }
+    manifest.lastIndexedAt = undefined;
+    rebuildPerformed = existingCount > 0 || !!options.force || dimensionMismatch;
+    if (manifestStatus !== "ok" && existingCount > 0) {
+      logger.warn("Manifest missing or corrupt; rebuilding full index.");
+    }
+    manifestStatus = options.force ? "missing" : manifestStatus;
+
+    // Build the new index into a temporary store first, then atomically
+    // swap on completion.  Original data stays untouched if the process
+    // is aborted (Ctrl+C, crash) before the swap completes.
+    if (options.dimension) {
+      tempStorePath = options.storePath + "_tmp";
+      try { await fs.rm(tempStorePath, { recursive: true, force: true }); } catch { /* may not exist */ }
+      effectiveStore = createVectorStore(options.config, tempStorePath, options.dimension);
+      logger.debug(`Rebuilding index in temporary store at ${tempStorePath}`);
+      // Only clear the shared in-memory keyword index once the rebuild is
+      // guaranteed to proceed — the guard below may still bail out, and
+      // clearing it there would degrade live hybrid search for nothing.
+      options.keywordIndex?.clear();
+    } else if (existingCount > 0) {
+      // NEVER destroy existing data when we can't do an atomic rebuild.
+      // Abort and ask the user to run 'opencode-rag index --force' manually.
+      logger.warn(
+        "Cannot rebuild safely without embedding dimension — aborting to protect existing data. " +
+        "Run 'opencode-rag index --force' manually to rebuild."
+      );
+      // Restore manifest entries we just deleted so the next pass can retry incrementally
+      return createIndexStats(0, manifestStatus);
+    } else {
+      // No existing data — safe to proceed with in-place indexing (no clear needed)
+      options.keywordIndex?.clear();
+      logger.debug("No existing data; indexing from scratch.");
+    }
+  }
+
   let filterPaths: string[] | undefined;
   let gitDeletedPaths: string[] = [];
 
@@ -273,98 +401,40 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   const scanSec = ((Date.now() - scanStart) / 1000).toFixed(1);
   logger.info(`Workspace scan complete: ${workspaceFiles.length} files in ${scanSec}s`);
 
-  logger.info(`Querying vector store for existing chunk count...`);
-  const storeCountStart = Date.now();
-  const existingCount = await options.store.count();
-  logger.info(`Store has ${existingCount} existing chunks (${((Date.now() - storeCountStart) / 1000).toFixed(1)}s)`);
-
-  // Direct data-integrity check: try to actually read a row from the store.
-  // LanceDB's countRows() may return a value from the version manifest
-  // even when the underlying data files are missing from disk, so we need
-  // an explicit probe.  If this fails, treat the store as corrupt.
-  if (!options.force && manifestStatus === "ok" && Object.keys(manifest.files).length > 0) {
-    try {
-      const isIntact: boolean | undefined = await (options.store as any).checkIntegrity?.();
-      if (isIntact === false) {
-        logger.warn(
-          "Vector store data integrity check failed — data files are missing " +
-          `(${existingCount} chunks in manifest but store can't be read). Re-indexing all files.`
-        );
-        for (const key of Object.keys(manifest.files)) {
-          delete manifest.files[key];
-        }
-        manifest.lastIndexedAt = undefined;
-        manifestStatus = "missing";
-      }
-    } catch {
-      // checkIntegrity not available (older VectorStore impl) — skip
-    }
-  }
-
-  // Detect data loss: if the store has far fewer chunks than the manifest expects,
-  // treat it as a corrupt store (e.g. schema migration dropped the old table).
-  if (!options.force && manifestStatus === "ok" && existingCount > 0) {
-    const manifestTotalChunks = Object.values(manifest.files).reduce(
-      (sum, entry) => sum + entry.chunkCount, 0
-    );
-    if (manifestTotalChunks > 0 && existingCount < manifestTotalChunks * 0.5) {
+  // ── Preflight: verify the embedding provider before expensive work ─────
+  // A provider outage used to burn the entire pass (chunking + describing
+  // every file) and then store nothing, reporting success. Probe once here
+  // so the pass aborts in milliseconds with an actionable message.
+  const pendingEmbeddingWork = options.force || workspaceFiles.some((f) => {
+    if (f.isEmpty || f.isTooSmall) return false;
+    const previous = manifest.files[f.normalizedPath];
+    return !previous || previous.hash !== f.hash;
+  });
+  if (pendingEmbeddingWork && !(options.abortSignal?.aborted ?? false)) {
+    const probe = await probeEmbeddingDimension(options.embedder);
+    if (probe.dimension === undefined) {
       logger.warn(
-        `Store has ${existingCount} chunks but manifest expects ~${manifestTotalChunks}. ` +
-        `Data appears to have been lost — re-indexing all files.`
+        `Embedding provider unavailable (${probe.error?.message ?? "probe failed"}) — ` +
+        "aborting index pass before chunking/description; nothing was stored.",
       );
-      for (const key of Object.keys(manifest.files)) {
-        delete manifest.files[key];
-      }
-      manifest.lastIndexedAt = undefined;
-      manifestStatus = "missing";
+      const failedStats = createIndexStats(workspaceFiles.length, manifestStatus);
+      failedStats.embeddingUnavailable = true;
+      return failedStats;
     }
-  }
-
-  // Effective store used throughout the pass — may be a temp store for atomic rebuild.
-  let effectiveStore: VectorStore = options.store;
-  let tempStorePath: string | undefined;
-
-  if (options.force || (manifestStatus !== "ok" && existingCount > 0)) {
-    for (const key of Object.keys(manifest.files)) {
-      delete manifest.files[key];
-    }
-    manifest.lastIndexedAt = undefined;
-    rebuildPerformed = existingCount > 0 || !!options.force;
-    if (manifestStatus !== "ok" && existingCount > 0) {
-      logger.warn("Manifest missing or corrupt; rebuilding full index.");
-    }
-    manifestStatus = options.force ? "missing" : manifestStatus;
-
-    // Build the new index into a temporary store first, then atomically
-    // swap on completion.  Original data stays untouched if the process
-    // is aborted (Ctrl+C, crash) before the swap completes.
-    if (options.dimension) {
-      tempStorePath = options.storePath + "_tmp";
-      try { await fs.rm(tempStorePath, { recursive: true, force: true }); } catch { /* may not exist */ }
-      effectiveStore = createVectorStore(options.config, tempStorePath, options.dimension);
-      logger.debug(`Rebuilding index in temporary store at ${tempStorePath}`);
-      // Only clear the shared in-memory keyword index once the rebuild is
-      // guaranteed to proceed — the guard below may still bail out, and
-      // clearing it there would degrade live hybrid search for nothing.
-      options.keywordIndex?.clear();
-    } else if (existingCount > 0) {
-      // NEVER destroy existing data when we can't do an atomic rebuild.
-      // Abort and ask the user to run 'opencode-rag index --force' manually.
+    if (options.dimension !== undefined && probe.dimension !== options.dimension) {
       logger.warn(
-        "Cannot rebuild safely without embedding dimension — aborting to protect existing data. " +
-        "Run 'opencode-rag index --force' manually to rebuild."
+        `Embedding provider produces ${probe.dimension}-dimensional vectors but this index is configured for ` +
+        `${options.dimension} — aborting to avoid writing incompatible vectors. ` +
+        "Set embedding.vectorDimension to the provider's dimension and run the index again.",
       );
-      // Restore manifest entries we just deleted so the next pass can retry incrementally
-      return createIndexStats(workspaceFiles.length, manifestStatus);
-    } else {
-      // No existing data — safe to proceed with in-place indexing (no clear needed)
-      options.keywordIndex?.clear();
-      logger.debug("No existing data; indexing from scratch.");
+      const failedStats = createIndexStats(workspaceFiles.length, manifestStatus);
+      failedStats.embeddingUnavailable = true;
+      return failedStats;
     }
   }
 
   const stats = createIndexStats(workspaceFiles.length, manifestStatus);
-  stats.rebuildPerformed = rebuildPerformed;
+  stats.rebuildPerformed = rebuildPerformed || dimensionMismatch;
 
   for (const file of workspaceFiles) {
     if (file.extractionStatus === "failed" && file.extractionError) {
@@ -544,6 +614,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           `  ${prep.fileLabel}: ${validChunks.length}/${prep.chunks?.length} chunks embedded — marking for retry on next pass`,
         );
       }
+      if (validChunks.length > 0) tempStoreWroteChunks = true;
       storePayloads.push({ prep, validChunks, allEmbedded });
     }
 
@@ -900,6 +971,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           prep.metaHeader ?? "",
           prep.docPrefix ?? "",
           prep.isImageFile ?? false,
+          options.config.indexing.embedDescriptions !== false,
         );
       }
       const totalDescribedChunks = deferredPreps.reduce((s, p) => s + (p.chunks?.length ?? 0), 0);
@@ -978,6 +1050,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       logger.info(`Embedding complete: ${allTexts.length} texts in ${((Date.now() - embedPhaseStart) / 1000).toFixed(1)}s`);
     } catch (err) {
       logger.warn(`  Global embedding failed: ${(err as Error).message}`);
+      stats.embeddingFailures += allTexts.length;
+      stats.embeddingUnavailable = true;
       for (const { fileIdx } of embedQueue) {
         options.progress?.failFile(prepared[fileIdx]!.fileLabel);
         earlyWorkerResults.set(fileIdx, {
@@ -990,6 +1064,25 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         });
       }
       embedQueue.length = 0; // prevent double-processing in store phase
+    }
+
+    // `embedBatch` returns empty vectors for batches whose retries were
+    // exhausted — count those so the summary and exit code report a failed
+    // pass instead of a successful "0 chunks stored".
+    const failedVectors = allEmbeddings.filter((v) => !Array.isArray(v) || v.length === 0).length;
+    if (failedVectors > 0) {
+      stats.embeddingFailures += failedVectors;
+      if (failedVectors >= allTexts.length) {
+        stats.embeddingUnavailable = true;
+        logger.warn(
+          `All ${allTexts.length} embedding requests failed — no vectors were produced, so nothing was stored. ` +
+          "Check that the embedding provider is running and the model is available, then run the index again.",
+        );
+      } else {
+        logger.warn(
+          `  ${failedVectors}/${allTexts.length} embedding requests failed — those chunks are kept for retry on the next pass.`,
+        );
+      }
     }
   }
 
@@ -1062,22 +1155,33 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   }
 
   // ── Atomically promote temp store if a full rebuild was performed ──
+  let tempStorePromoted = false;
   if (tempStorePath) {
     if (!aborted()) {
-      try {
-        await effectiveStore.close();
-        await options.store.close();
-        // Swap the newly-built temp directory into the real path
-        await swapStoreDirectories(tempStorePath, options.storePath);
-        // Re-open the original store handle so callers can search the new data
-        await options.store.reopen?.(options.storePath);
-        logger.debug(`Promoted temporary store ${tempStorePath} → ${options.storePath}`);
-      } catch (err) {
-        logger.warn(
-          `Could not promote temporary store: ${(err as Error).message}. ` +
-          `Original data preserved at ${options.storePath}`,
-        );
+      if (!tempStoreWroteChunks) {
+        // Nothing was written (e.g. every embedding request failed). Keep the
+        // existing store and manifest untouched rather than promoting an
+        // empty store over good data.
+        logger.warn("Rebuild produced no chunks — keeping the existing index and manifest unchanged.");
+        try { await effectiveStore.close(); } catch {}
         try { await fs.rm(tempStorePath, { recursive: true, force: true }); } catch {}
+      } else {
+        try {
+          await effectiveStore.close();
+          await options.store.close();
+          // Swap the newly-built temp directory into the real path
+          await swapStoreDirectories(tempStorePath, options.storePath);
+          // Re-open the original store handle so callers can search the new data
+          await options.store.reopen?.(options.storePath);
+          tempStorePromoted = true;
+          logger.debug(`Promoted temporary store ${tempStorePath} → ${options.storePath}`);
+        } catch (err) {
+          logger.warn(
+            `Could not promote temporary store: ${(err as Error).message}. ` +
+            `Original data preserved at ${options.storePath}`,
+          );
+          try { await fs.rm(tempStorePath, { recursive: true, force: true }); } catch {}
+        }
       }
     } else {
       // Aborted — discard temp, keep original data intact.
@@ -1094,17 +1198,27 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     }
   }
 
-  // Save manifest and keyword index (always to the real store path — after
-  // a successful swap this points to the new data; after an abort it's the old).
-  await saveManifest(options.storePath, manifest);
-  await options.keywordIndex?.save(options.storePath);
+  // The in-memory manifest was cleared at rebuild start and only repopulated
+  // for the new store. When the rebuild did not promote (empty temp store or
+  // failed swap), keep the previous manifest/keyword index on disk — saving
+  // the cleared state would orphan the existing store's data.
+  const keepPreviousIndexState = tempStorePath !== undefined && !tempStorePromoted;
+  if (keepPreviousIndexState) {
+    logger.warn("Rebuild did not complete — keeping the previous manifest and keyword index.");
+  } else {
+    // Save manifest and keyword index (always to the real store path — after
+    // a successful swap this points to the new data).
+    await saveManifest(options.storePath, manifest);
+    await options.keywordIndex?.save(options.storePath);
+  }
 
   // Compact fragments and prune old version manifests so countRows() can't
   // hang on accumulated versions from many add/delete cycles. After a temp
   // store rebuild, optimize the reopened real store handle (the temp handle
   // was closed and its directory moved); use aggressive pruning since the
-  // swapped-in store is private to this process.
-  if (!aborted()) {
+  // swapped-in store is private to this process. Skipped when the rebuild did
+  // not promote (the old store is untouched and its handle may be closed).
+  if (!aborted() && !keepPreviousIndexState) {
     logger.info("Optimizing vector store (compacting fragments, pruning old versions)...");
     const optimizeStart = Date.now();
     try {

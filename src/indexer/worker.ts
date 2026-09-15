@@ -79,13 +79,18 @@ export interface PreparedFile {
 /**
  * Build the list of text strings that will be sent to the embedding provider.
  * Each chunk is prefixed with the document prefix, relative path, metadata
- * header, and (if available) a description.
+ * header, and (if available and enabled) a description.
+ *
+ * Code-specialized embedding models do not need the description crutch: with
+ * `indexing.embedDescriptions: false` the prose description is omitted from
+ * the embedded text (it is still stored on the chunk for display).
  *
  * @param chunks     - Chunks to build embedding texts from.
  * @param relPath    - Relative file path used as context prefix.
  * @param metaHeader - Assembled metadata header (file type, directory, etc.).
  * @param docPrefix  - Optional document-level prefix from configuration.
  * @param isImage    - Whether the source is an image (uses description only).
+ * @param includeDescription - Whether to include non-image descriptions (default true).
  * @returns An array of formatted text strings, one per chunk.
  */
 export function buildTextsToEmbed(
@@ -94,13 +99,14 @@ export function buildTextsToEmbed(
   metaHeader: string,
   docPrefix: string,
   isImage: boolean,
+  includeDescription: boolean = true,
 ): string[] {
   const textToEmbed: string[] = [];
   for (const chunk of chunks) {
     if (isImage) {
       textToEmbed.push(docPrefix + relPath + "\n\n" + chunk.description);
     } else {
-      const desc = chunk.description ?? "";
+      const desc = includeDescription ? chunk.description ?? "" : "";
       if (desc.trim().length > 0) {
         textToEmbed.push(docPrefix + relPath + "\n\n" + metaHeader + "\n\n" + desc + "\n\n" + chunk.content);
       } else {
@@ -153,7 +159,7 @@ export async function prepareFile(
     embedding: { documentPrefix?: string };
     chunking?: { nodeTypes?: Record<string, string[]> };
     description?: { maxContentChars?: number };
-    indexing?: { maxSvgSizeBytes?: number };
+    indexing?: { maxSvgSizeBytes?: number; embedDescriptions?: boolean };
   },
   keywordIndex: KeywordIndex | undefined,
   descriptionProvider: DescriptionProvider | undefined,
@@ -320,7 +326,14 @@ export async function prepareFile(
     }
   }
 
-  const textToEmbed = buildTextsToEmbed(chunks, relPath, metaHeader, docPrefix, isImage);
+  const textToEmbed = buildTextsToEmbed(
+    chunks,
+    relPath,
+    metaHeader,
+    docPrefix,
+    isImage,
+    config.indexing?.embedDescriptions !== false,
+  );
   logger.debug(`  ${fileLabel}: textToEmbed ${textToEmbed.length} entries (descProvider: ${descriptionProvider ? "yes" : "no"})`);
 
   return {

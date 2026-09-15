@@ -158,9 +158,129 @@ export function isTransientConflictError(err: unknown): boolean {
 }
 
 /**
+ * Thrown when a write supplies embeddings whose length differs from the
+ * store's vector column dimension. LanceDB itself does NOT validate this —
+ * it silently zero-pads or truncates vectors into the fixed-size column,
+ * producing rows that can never be found by a query. Failing loudly here
+ * keeps that silent corruption out of the store.
+ */
+export class DimensionMismatchError extends Error {
+  /** Dimension of the store's vector column. */
+  public readonly storeDimension: number;
+  /** Dimension of the embedding that was supplied. */
+  public readonly embeddingDimension: number;
+
+  constructor(storeDimension: number, embeddingDimension: number, action = "rebuild it with 'opencode-rag index --force'") {
+    super(
+      `Embedding dimension mismatch: the store holds ${storeDimension}-dimensional vectors ` +
+      `but the embedding model produced ${embeddingDimension}. The index was built with a ` +
+      `different embedding model — ${action}.`,
+    );
+    this.name = "DimensionMismatchError";
+    this.storeDimension = storeDimension;
+    this.embeddingDimension = embeddingDimension;
+  }
+}
+
+/** Type guard for {@link DimensionMismatchError}. */
+export function isDimensionMismatchError(err: unknown): err is DimensionMismatchError {
+  return err instanceof DimensionMismatchError || (err instanceof Error && err.name === "DimensionMismatchError");
+}
+
+/**
+ * Extract the fixed-size vector dimension of the `embedding` column from a
+ * LanceDB/Arrow schema. Returns `undefined` when the column is missing or is
+ * not a fixed-size list (e.g. before the table is created).
+ */
+export function extractEmbeddingDimension(fields: ReadonlyArray<{ name: string; type: unknown }>): number | undefined {
+  const field = fields.find((f) => f.name === "embedding");
+  const type = field?.type as { listSize?: unknown } | undefined;
+  if (type && typeof type.listSize === "number" && type.listSize > 0) {
+    return type.listSize;
+  }
+  return undefined;
+}
+
+/**
+ * Read the embedding dimension of an existing store without creating a table
+ * or holding a long-lived connection. Returns `undefined` when the store or
+ * table does not exist (or cannot be read).
+ *
+ * Used by the CLI bootstrap to avoid creating a brand-new store with a
+ * speculative dimension when the embedding provider cannot be probed.
+ */
+export async function readStoreDimension(storePath: string): Promise<number | undefined> {
+  if (storePath.startsWith("memory:")) return undefined;
+  try {
+    // Do not create a store directory just to read a schema.
+    await fs.access(storePath);
+  } catch {
+    return undefined;
+  }
+  try {
+    const db = await lancedb.connect(storePath);
+    const tableNames = await db.tableNames();
+    if (!tableNames.includes(TABLE_NAME)) return undefined;
+    const table = await db.openTable(TABLE_NAME);
+    const schema = await table.schema();
+    return extractEmbeddingDimension(schema.fields);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Non-Lance artifacts that live in the store directory next to the LanceDB
+ * data and must survive a rebuild swap. `chunks.lance`/`manifest.json` are
+ * rebuilt by the pipeline; the files below are not derivable from the new
+ * index and would otherwise be destroyed with the old directory.
+ */
+const PRESERVED_STORE_ENTRIES = [
+  "quirks.jsonl",
+  "runtime-overrides.json",
+  "watcher-status.json",
+  ".desc-cache.json",
+  "keyword-index.json",
+  "eval-sessions",
+] as const;
+
+/**
+ * Carry non-Lance store artifacts (quirk memory, caches, overrides) from the
+ * pre-swap directory into the freshly promoted one. Best-effort: a failure to
+ * preserve one entry must not abort the swap.
+ */
+async function preserveStoreArtifacts(oldPath: string, realPath: string): Promise<void> {
+  for (const entry of PRESERVED_STORE_ENTRIES) {
+    const src = path.join(oldPath, entry);
+    const dest = path.join(realPath, entry);
+    try {
+      await fs.access(src);
+    } catch {
+      continue; // artifact not present in the old store
+    }
+    try {
+      try {
+        await fs.access(dest);
+        continue; // destination already has this artifact (e.g. re-saved desc cache)
+      } catch {
+        // destination missing — move or copy it over
+      }
+      await fs.rename(src, dest);
+    } catch {
+      try {
+        await fs.cp(src, dest, { recursive: true, force: true });
+      } catch {
+        // best-effort — keep the swap result even if an artifact cannot be carried over
+      }
+    }
+  }
+}
+
+/**
  * Atomically replace one LanceDB store directory with another.
  * Swaps the real directory with a temporary one that was built during a rebuild.
- * The old directory is moved to `${realPath}_old` and deleted asynchronously.
+ * The old directory is moved to `${realPath}_old` and deleted asynchronously
+ * after non-Lance artifacts (quirk memory, caches) have been carried over.
  *
  * @param tempPath - Path to the newly built store (source).
  * @param realPath - Path to the current store (destination, will be replaced).
@@ -180,7 +300,9 @@ export async function swapStoreDirectories(tempPath: string, realPath: string): 
     try { await fs.rename(oldPath, realPath); } catch {}
     throw err;
   }
-  // Best-effort async cleanup of old directory
+  // Preserve quirks.jsonl & friends (the temp store contains only Lance data),
+  // then clean up the old directory best-effort.
+  await preserveStoreArtifacts(oldPath, realPath);
   fs.rm(oldPath, { recursive: true, force: true }).catch(() => {});
 }
 
@@ -232,6 +354,13 @@ export class LanceDbStore implements VectorStore {
   private indexRepairPromise: Promise<void> | null = null;
   /** Consecutive failed repair attempts — bounded so a broken store cannot retrain forever. */
   private indexRepairFailures = 0;
+  /**
+   * Actual dimension of the `embedding` column in the opened table. Read from
+   * the schema on first table access and used to validate writes/searches —
+   * the constructor's `vectorDimension` describes what the caller *expects*,
+   * which can drift from the store when the embedding model changes.
+   */
+  private knownDimension: number | null = null;
 
   /**
    * Execute an async function under an exclusive write lock.
@@ -304,6 +433,7 @@ export class LanceDbStore implements VectorStore {
 
     if (tableNames.includes(TABLE_NAME)) {
       this.table = await db.openTable(TABLE_NAME);
+      await this.cacheTableDimension(this.table);
       if (await this.tableHasDescriptionColumn()) {
         await this.migrateNewColumns();
         return this.table;
@@ -360,6 +490,7 @@ export class LanceDbStore implements VectorStore {
       data: [seedRow] as unknown as Record<string, unknown>[],
       mode: "overwrite",
     });
+    this.knownDimension = this.vectorDimension;
 
     const deleted = await this.table.delete('id = "__seed__"');
     if (deleted === undefined) {
@@ -379,6 +510,55 @@ export class LanceDbStore implements VectorStore {
       return schema.fields.some((f: { name: string }) => f.name === "description");
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Read and cache the actual fixed-size dimension of the `embedding` column.
+   * Called whenever the table is (re)opened so write/search validation uses
+   * the store's real schema instead of the constructor's expectation.
+   */
+  private async cacheTableDimension(table: Table): Promise<number | undefined> {
+    if (this.knownDimension !== null) return this.knownDimension;
+    try {
+      const schema = await table.schema();
+      const dim = extractEmbeddingDimension(schema.fields);
+      if (dim !== undefined) this.knownDimension = dim;
+      return dim;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Return the actual embedding dimension of the store's vector column, or
+   * `undefined` when no table exists yet. Never creates the table.
+   */
+  async getVectorDimension(): Promise<number | undefined> {
+    if (this.knownDimension !== null) return this.knownDimension;
+    try {
+      const db = await this.getDb();
+      const tableNames = await db.tableNames();
+      if (!tableNames.includes(TABLE_NAME)) return undefined;
+      const table = await this.getTable();
+      return await this.cacheTableDimension(table);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Fail loudly when rows carry embeddings whose length differs from the
+   * store's vector column. LanceDB would silently pad/truncate them instead,
+   * leaving rows that no query can match.
+   */
+  private assertEmbeddingDimensions(rows: ChunkRow[]): void {
+    const storeDim = this.knownDimension;
+    if (storeDim === null) return;
+    for (const row of rows) {
+      if (row.embedding.length !== storeDim) {
+        throw new DimensionMismatchError(storeDim, row.embedding.length);
+      }
     }
   }
 
@@ -531,6 +711,8 @@ export class LanceDbStore implements VectorStore {
 
     if (rows.length === 0) return;
 
+    this.assertEmbeddingDimensions(rows);
+
     // INSERT FIRST: data is safely stored before any delete
     await table.add(rows as unknown as Record<string, unknown>[]);
 
@@ -576,6 +758,8 @@ export class LanceDbStore implements VectorStore {
 
     if (allRows.length === 0) return;
 
+    this.assertEmbeddingDimensions(allRows);
+
     // INSERT FIRST (single add for the whole batch), then per-file dedup
     await table.add(allRows as unknown as Record<string, unknown>[]);
 
@@ -602,11 +786,24 @@ export class LanceDbStore implements VectorStore {
   async searchWithFilter(embedding: number[], topK: number, filter?: MetadataFilter): Promise<SearchResult[]> {
     try {
       // Guard against dimension mismatch BEFORE the native call — LanceDB
-      // throws a cryptic error that used to be swallowed into "no results".
-      if (embedding.length !== this.vectorDimension) {
-        console.warn(
-          `[lancedb] searchWithFilter: query embedding dimension ${embedding.length} != store dimension ${this.vectorDimension} — returning empty`,
-        );
+      // throws a cryptic "No vector column found to match with the query
+      // vector dimension" error. Compare against the table's *actual* column
+      // dimension, not the constructor's expectation: a store built by a
+      // different embedding model has a mismatching schema even when the
+      // handle was constructed with the current model's dimension.
+      const storeDimension = (await this.getVectorDimension()) ?? this.vectorDimension;
+      if (embedding.length !== storeDimension) {
+        if (storeDimension !== this.vectorDimension) {
+          console.warn(
+            `[lancedb] Store vector column is ${storeDimension}-dimensional but this handle expects ` +
+            `${this.vectorDimension} — the index was built with a different embedding model. ` +
+            "Rebuild it with 'opencode-rag index --force' (a plain 'opencode-rag index' also rebuilds automatically).",
+          );
+        } else {
+          console.warn(
+            `[lancedb] searchWithFilter: query embedding dimension ${embedding.length} != store dimension ${storeDimension} — returning empty`,
+          );
+        }
         return [];
       }
       return await this.searchInternal(embedding, topK, filter);
@@ -1159,6 +1356,7 @@ export class LanceDbStore implements VectorStore {
   async reopen(newPath?: string): Promise<void> {
     await this.close();
     if (newPath) this.dbPath = newPath;
+    this.knownDimension = null;
   }
 
   /**
@@ -1220,6 +1418,7 @@ export class LanceDbStore implements VectorStore {
     if (backup) console.warn(`[lancedb] Backed up chunks.lance to ${backup}`);
     await this.table?.close();
     this.table = null;
+    this.knownDimension = null;
     try {
       const db = await this.getDb();
       const tableNames = await db.tableNames();

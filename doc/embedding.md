@@ -79,6 +79,42 @@ Based on CodeSearchNet benchmarks:
 
 > Avoid old/small BERT-based models. CodeBERT achieves only 12% MRR and GraphCodeBERT 51% MRR — far worse than any general-purpose alternative.
 
+### Code-Specialized Models (Local)
+
+Models trained specifically for natural-language→code retrieval outperform
+general-purpose embedders at the same size:
+
+| Model | Dims | License | Notes |
+|---|---|---|---|
+| `jina-code-embeddings-0.5b` | 896 | CC-BY-NC-4.0 | Best quality per parameter; 78.4% avg on 25 code-retrieval benchmarks (~5 pts above `Qwen3-Embedding-0.6B`). GGUF for llama.cpp/Ollama |
+| `jina-code-embeddings-1.5b` | 1536 | CC-BY-NC-4.0 | Matches `voyage-code-3` on code retrieval; heavier |
+| `Qwen3-Embedding-4B` | 2560 | Apache-2.0 | General-purpose, strong; supports Matryoshka truncation |
+
+These models are **instruction-prefixed** and expect a code snippet (not prose)
+as the document input. Recommended config for
+`jina-code-embeddings-0.5b` served by llama.cpp (`pooling = last` required):
+
+```json
+{
+  "embedding": {
+    "provider": "openai",
+    "baseUrl": "http://127.0.0.1:8080/v1",
+    "model": "jina-code-embeddings-0.5b",
+    "apiKey": "llama.cpp",
+    "vectorDimension": 896,
+    "queryPrefix": "Find the most relevant code snippet given the following query:\n",
+    "documentPrefix": "Candidate code snippet:\n"
+  },
+  "indexing": {
+    "embedDescriptions": false
+  }
+}
+```
+
+`embedDescriptions: false` keeps LLM descriptions for display (search results,
+Web UI) but excludes them from the embedded text — the code model does not need
+the description crutch that general-purpose embedders rely on.
+
 ## Query vs. Document Differentiation
 
 OpenCodeRAG uses two complementary approaches:
@@ -96,6 +132,12 @@ Configure `documentPrefix` and `queryPrefix` in `opencode-rag.json`:
 ```
 
 Indexing prepends the document prefix to each chunk's text before embedding. Queries prepend the query prefix.
+
+Instruction-prefixed models (e.g. `jina-code-embeddings`,
+`nomic-embed-code`) use full sentences as prefixes instead of short tags — see
+[Code-Specialized Models](#code-specialized-models-local) for a working
+example. For these models also set `indexing.embedDescriptions: false` so the
+prose description is not embedded alongside the code.
 
 ### `input_type` Parameter (OpenAI Only)
 OpenAI's `text-embedding-3` models accept `input_type: "query"` or `"document"` in the API request body. OpenCodeRAG uses both approaches together when on OpenAI.
@@ -137,7 +179,20 @@ If both env vars and config `proxy.url` are set, env vars take precedence.
 
 ## Dimension Probing
 
-At startup, the plugin probes the embedding dimension by sending a single `"dimension-probe"` request. If the probe fails, it falls back to **384 dimensions**. This auto-detection ensures the LanceDB schema matches the model without manual configuration.
+The embedding dimension is resolved with this precedence:
+
+1. `embedding.vectorDimension` in the config (persisted after the first successful probe)
+2. a live probe (`"dimension-probe"` request) of the configured provider
+3. the existing store's schema dimension (when the provider cannot be probed)
+4. `384` as a last-resort fallback
+
+This guarantees the LanceDB schema matches the model without manual
+configuration, and it never downgrades an existing store to 384 just because
+the provider was briefly unreachable. When the stored dimension and the
+current embedder disagree, `opencode-rag status` reports a
+`Dimension mismatch` and the next `opencode-rag index` rebuilds the index
+atomically at the new dimension (see
+[troubleshooting](troubleshooting.md#embedding-dimension-mismatch)).
 
 ## Parallel Embedding
 
