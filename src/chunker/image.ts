@@ -396,6 +396,34 @@ class GeminiImageVisionProvider implements ImageVisionProvider {
 }
 
 /**
+ * Resolve the effective image-description configuration for on-demand
+ * `describe_image` calls (OpenCode plugin tool, MCP server, CLI
+ * `describe-image`).
+ *
+ * Applies the optional `imageDescription.onDemand` overrides on top of the
+ * indexing settings. The indexing pipeline always uses the base config and
+ * ignores `onDemand`. `null`/`undefined` override values are ignored so a
+ * partially written config cannot blank out required fields.
+ *
+ * @param config - The base image description configuration.
+ * @returns A copy with on-demand overrides applied and `onDemand` stripped.
+ */
+export function resolveOnDemandImageConfig(
+  config: ImageDescriptionConfig
+): ImageDescriptionConfig {
+  const override = config.onDemand;
+  const resolved: ImageDescriptionConfig = { ...config };
+  delete resolved.onDemand;
+  if (!override) return resolved;
+
+  for (const [key, value] of Object.entries(override)) {
+    if (value === undefined || value === null) continue;
+    (resolved as unknown as Record<string, unknown>)[key] = value;
+  }
+  return resolved;
+}
+
+/**
  * Factory function that creates the appropriate {@link ImageVisionProvider}
  * implementation based on the `provider` field in the config.
  * @param config - The image description configuration.

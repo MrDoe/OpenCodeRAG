@@ -18,7 +18,7 @@ import { tool } from "@opencode-ai/plugin/tool";
 import type { ToolDefinition } from "@opencode-ai/plugin";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
-import { SUPPORTED_IMAGE_EXTENSIONS, createImageVisionProvider, getMimeType, type ImageVisionProvider } from "../chunker/image.js";
+import { SUPPORTED_IMAGE_EXTENSIONS, createImageVisionProvider, resolveOnDemandImageConfig, getMimeType, type ImageVisionProvider } from "../chunker/image.js";
 import { resizeImage } from "../content/image.js";
 import { retrieve } from "../retriever/retriever.js";
 import { Parser } from "web-tree-sitter";
@@ -328,6 +328,9 @@ export interface DescribeImageToolOptions {
  * for natural-language description. Supports Ollama, OpenAI, Anthropic, and
  * Google Gemini providers with automatic resizing.
  *
+ * On-demand calls honor the optional `imageDescription.onDemand` overrides
+ * (a different provider/model than the indexing pipeline).
+ *
  * @param options - Tool configuration including workspace root and vision provider.
  * @returns A tool definition suitable for OpenCode plugin registration.
  */
@@ -384,29 +387,31 @@ export function createDescribeImageTool(
           };
         }
 
+        const effectiveImageConfig = resolveOnDemandImageConfig(imageDescriptionConfig);
+
         const buffer = readFileSync(resolvedPath);
         const mimeType = getMimeType(ext);
-        const maxDimension = imageDescriptionConfig.resizeMaxDimension ?? 1024;
+        const maxDimension = effectiveImageConfig.resizeMaxDimension ?? 1024;
         const sized = maxDimension > 0 ? await resizeImage(buffer, resolvedPath, maxDimension) : buffer;
         const b64 = sized.toString("base64");
 
-        const provider = visionProvider ?? createImageVisionProvider(imageDescriptionConfig);
+        const provider = visionProvider ?? createImageVisionProvider(effectiveImageConfig);
         const description = await provider.describeImage(
           b64,
           mimeType,
-          imageDescriptionConfig.prompt,
+          effectiveImageConfig.prompt,
           args.systemPrompt
         );
 
         return {
           title: `Image description — ${args.filePath}`,
-          output: `**${args.filePath}**\n\n${description}\n\n_Generated with ${imageDescriptionConfig.provider}/${imageDescriptionConfig.model}_`,
+          output: `**${args.filePath}**\n\n${description}\n\n_Generated with ${effectiveImageConfig.provider}/${effectiveImageConfig.model}_`,
           metadata: {
             tool: "describe_image",
             filePath: args.filePath,
             description,
-            provider: imageDescriptionConfig.provider,
-            model: imageDescriptionConfig.model,
+            provider: effectiveImageConfig.provider,
+            model: effectiveImageConfig.model,
           },
         };
       } catch (err) {

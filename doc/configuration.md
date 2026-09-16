@@ -234,6 +234,28 @@ Controls image-to-text description generation via vision-capable LLMs. Disabled 
 | `prompt` | `"Describe this image..."` | System prompt sent to the vision model |
 | `concurrency` | `2` | Number of parallel description requests during indexing |
 | `maxImageBytes` | `10485760` | Skip images larger than this (bytes) |
+| `onDemand` | — | Optional overrides for on-demand `describe_image` calls (see below) |
+
+**On-demand overrides (`imageDescription.onDemand`):** the `describe_image` tool (OpenCode plugin, MCP server) and the `opencode-rag describe-image` CLI command can use a different vision backend than the indexing pipeline — e.g. a stronger cloud model for interactive questions while indexing keeps using a local model.
+
+```json
+{
+  "imageDescription": {
+    "enabled": true,
+    "provider": "ollama",
+    "model": "minicpm-v4.6:latest",
+    "baseUrl": "http://127.0.0.1:11434/api",
+    "prompt": "Describe this image in detail for a codebase search index.",
+    "onDemand": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "timeoutMs": 90000
+    }
+  }
+}
+```
+
+Every field of the base section except `enabled` can be overridden (`provider`, `model`, `baseUrl`, `apiKey`, `timeoutMs`, `prompt`, `think`, `numCtx`, `keepAlive`, `proxy`, `resizeMaxDimension`); omitted fields fall back to the indexing values. `imageDescription.enabled` stays the master switch — on-demand descriptions require it to be `true`. `apiKey` is auto-resolved for the on-demand provider the same way as for the indexing section. `onDemand` does **not** affect the index, so no re-index is needed when changing it. `opencode-rag init` health checks report the alternate model as `image description (on-demand)`.
 
 **Notes:**
 

@@ -73,6 +73,15 @@ describe("loadConfig", () => {
       assert: (c) => assert.equal(c.vectorStore.path, "/custom/path"),
     },
     {
+      name: "imageDescription onDemand",
+      json: { imageDescription: { onDemand: { provider: "openai", model: "gpt-4o-mini" } } },
+      assert: (c) => {
+        assert.equal(c.imageDescription?.onDemand?.provider, "openai");
+        assert.equal(c.imageDescription?.onDemand?.model, "gpt-4o-mini");
+        assert.equal(c.imageDescription?.model, DEFAULT_CONFIG.imageDescription?.model);
+      },
+    },
+    {
       name: "logging level",
       json: { logging: { level: "debug" } },
       assert: (c) => {

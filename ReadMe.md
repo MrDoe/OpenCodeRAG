@@ -189,7 +189,7 @@ opencode-rag mcp
 | `search_semantic` | Vector + keyword hybrid search across the indexed codebase |
 | `get_file_skeleton` | AST-based file outline (functions, classes, methods) |
 | `find_usages` | Find all references to a symbol by name |
-| `describe_image` | Return the pre-generated description for an indexed image file |
+| `describe_image` | Describe an image file with the configured vision model (`imageDescription.onDemand` overrides apply) |
 
 Clients can configure the MCP server manually, or `opencode-rag init` auto-registers it.
 
@@ -211,7 +211,7 @@ OpenCodeRAG registers tools that agents can invoke directly. Agents discover the
 | `search_semantic` | General-purpose code retrieval | Before any code task when you haven't read the relevant code |
 | `get_file_skeleton` | Quick file overview via AST | Before reading a large file to decide which sections matter |
 | `find_usages` | Symbol reference search | **Before editing** any function, variable, or class |
-| `describe_image` | Retrieve pre-generated image description | When a user asks about a screenshot, diagram, or visual asset |
+| `describe_image` | Live image description via the configured vision model | When a user asks about a screenshot, diagram, or visual asset |
 | `read` (optional) | RAG-enhanced file read | Full file contents with supplementary context chunks |
 
 ## OpenCode Integration
