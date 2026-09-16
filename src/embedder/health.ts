@@ -4,6 +4,7 @@
 import type { RagConfig, ImageDescriptionConfig } from "../core/config.js";
 import type { ProxyConfig } from "../core/config.js";
 import { resolveOnDemandImageConfig } from "../chunker/image.js";
+import { isZenProvider, resolveZenBaseUrl } from "../core/zen.js";
 import { fetchWithProxy, postJson } from "./http.js";
 
 /** Result of a single provider health check. */
@@ -124,8 +125,10 @@ async function checkVisionModel(
     return checkGoogleChat(baseUrl, model, apiKey, imgTimeout, img.proxy, type);
   }
 
-  // OpenAI-compatible chat endpoint
-  return checkOpenAiChat(baseUrl, model, apiKey, imgTimeout, img.proxy, type);
+  // OpenAI-compatible chat endpoint (OpenCode Zen providers default to their
+  // own base URL when the config still carries the indexing section's URL)
+  const openAiBaseUrl = isZenProvider(provider) ? resolveZenBaseUrl(baseUrl, provider) : baseUrl;
+  return checkOpenAiChat(openAiBaseUrl, model, apiKey, imgTimeout, img.proxy, type);
 }
 
 /** Check whether a provider name matches a known OpenAI-compatible provider. */

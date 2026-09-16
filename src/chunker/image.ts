@@ -1,10 +1,12 @@
 /**
- * @fileoverview Image file chunking via vision provider integration (Ollama, OpenAI, Anthropic, Gemini).
+ * @fileoverview Image file chunking via vision provider integration (Ollama, OpenAI, Anthropic, Gemini, OpenCode Zen).
  */
 import type { Chunker, Chunk } from "../core/interfaces.js";
 import type { ImageDescriptionConfig, ProxyConfig } from "../core/config.js";
 import { normalizeKeepAlive } from "../core/ollama.js";
 import { postJson } from "../embedder/http.js";
+import { getCurrentVersion } from "../core/version-check.js";
+import { isZenProvider, resolveZenBaseUrl } from "../core/zen.js";
 import { uuid } from "./uuid.js";
 
 const MAX_CHUNK_CHARS = 4000;
@@ -13,6 +15,17 @@ const PARAGRAPH_SPLIT = /\n\s*\n/;
 const VISION_RETRY_MAX = 2;
 const VISION_RETRY_BASE_DELAY_MS = 1000;
 const VISION_RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
+/** Stable per-process session id so Zen can route and cache prompts per client. */
+const ZEN_SESSION_ID = uuid();
+
+/** Headers sent with every OpenCode Zen vision request. */
+function zenRequestHeaders(): Record<string, string> {
+  return {
+    "x-opencode-session": ZEN_SESSION_ID,
+    "User-Agent": `opencode-rag/${getCurrentVersion()}`,
+  };
+}
 
 function visionSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -150,13 +163,15 @@ class OpenAIImageVisionProvider implements ImageVisionProvider {
   private readonly model: string;
   private readonly apiKey: string;
   private readonly timeoutMs: number;
+  private readonly extraHeaders: Record<string, string>;
   private proxy?: ProxyConfig;
 
-  constructor(config: ImageDescriptionConfig) {
+  constructor(config: ImageDescriptionConfig, extraHeaders?: Record<string, string>) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.model = config.model;
     this.apiKey = config.apiKey ?? "";
     this.timeoutMs = config.timeoutMs;
+    this.extraHeaders = extraHeaders ?? {};
     this.proxy = config.proxy;
   }
 
@@ -185,6 +200,7 @@ class OpenAIImageVisionProvider implements ImageVisionProvider {
     };
 
     const headers: Record<string, string> = {
+      ...this.extraHeaders,
       "Content-Type": "application/json",
     };
     if (this.apiKey) {
@@ -326,7 +342,7 @@ class GeminiImageVisionProvider implements ImageVisionProvider {
   constructor(config: ImageDescriptionConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.model = config.model;
-    this.apiKey = config.apiKey;
+    this.apiKey = config.apiKey ?? "";
     this.timeoutMs = config.timeoutMs;
     this.proxy = config.proxy;
   }
@@ -445,6 +461,15 @@ export function createImageVisionProvider(config: ImageDescriptionConfig): Image
       throw new Error("OpenAI image provider requires an apiKey");
     }
     return new OpenAIImageVisionProvider(config);
+  }
+  if (isZenProvider(config.provider)) {
+    if (!config.apiKey) {
+      throw new Error(
+        `${config.provider} image provider requires an apiKey — log in with OpenCode (auth.json) or set it in the config`
+      );
+    }
+    const baseUrl = resolveZenBaseUrl(config.baseUrl, config.provider);
+    return new OpenAIImageVisionProvider({ ...config, baseUrl }, zenRequestHeaders());
   }
   return new OllamaImageVisionProvider(config);
 }

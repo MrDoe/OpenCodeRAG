@@ -325,8 +325,8 @@ export interface DescribeImageToolOptions {
  * Create the `describe_image` tool.
  *
  * Reads an image file from disk and sends it to the configured vision provider
- * for natural-language description. Supports Ollama, OpenAI, Anthropic, and
- * Google Gemini providers with automatic resizing.
+ * for natural-language description. Supports Ollama, OpenAI, Anthropic,
+ * Google Gemini, and OpenCode Zen providers with automatic resizing.
  *
  * On-demand calls honor the optional `imageDescription.onDemand` overrides
  * (a different provider/model than the indexing pipeline).
@@ -342,7 +342,7 @@ export function createDescribeImageTool(
   return tool({
     description:
       "Describe an image file using a vision model. " +
-      "Reads the file from disk, sends it to the configured vision provider (Ollama, OpenAI, Anthropic, or Google Gemini), " +
+      "Reads the file from disk, sends it to the configured vision provider (Ollama, OpenAI, Anthropic, Google Gemini, or OpenCode Zen), " +
       "and returns a natural language description of what the image shows. " +
       "Optionally accepts a `systemPrompt` to steer the description toward specific features or details you care about " +
       "(e.g. colors, layout, accessibility, text content, specific UI elements). " +

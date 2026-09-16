@@ -40,12 +40,13 @@ function resolveForSection(
   if (section.apiKey && !isPlaceholder(section.apiKey)) return;
 
   const defaults = getProviderDefault(provider);
-  if (!defaults || !defaults.apiKeyEnvVar) return;
-
-  const envKey = process.env[defaults.apiKeyEnvVar];
-  if (envKey) {
-    section.apiKey = envKey;
-    return;
+  const envVar = defaults?.apiKeyEnvVar;
+  if (envVar) {
+    const envKey = process.env[envVar];
+    if (envKey) {
+      section.apiKey = envKey;
+      return;
+    }
   }
 
   if (worktree) {
@@ -56,8 +57,36 @@ function resolveForSection(
     }
   }
 
+  const authKey = readOpenCodeAuthKey(provider);
+  if (authKey) {
+    section.apiKey = authKey;
+    return;
+  }
+
   // If we had a placeholder but couldn't resolve a real key, keep the placeholder
   // so createEmbedder can throw a clear error about the missing key
+}
+
+/**
+ * Read an API key from OpenCode's auth store (`$XDG_DATA_HOME/opencode/auth.json`
+ * or `~/.local/share/opencode/auth.json`). This is where `/connect` stores keys
+ * for providers such as OpenCode Zen (`opencode`, `opencode-go`).
+ */
+function readOpenCodeAuthKey(providerId: string): string | undefined {
+  const homeDir = process.env.USERPROFILE || process.env.HOME;
+  const dataHome = process.env.XDG_DATA_HOME?.trim() || (homeDir ? path.join(homeDir, ".local", "share") : undefined);
+  if (!dataHome) return undefined;
+
+  const authPath = path.join(dataHome, "opencode", "auth.json");
+  try {
+    if (!existsSync(authPath)) return undefined;
+    const auth = JSON.parse(readFileSync(authPath, "utf-8")) as Record<string, unknown>;
+    const entry = auth[providerId] as { type?: string; key?: string } | undefined;
+    if (entry && entry.type === "api" && entry.key) return entry.key;
+  } catch {
+    // skip unreadable or unparseable auth stores
+  }
+  return undefined;
 }
 
 function stripJsoncComments(text: string): string {

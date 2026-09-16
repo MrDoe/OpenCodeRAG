@@ -121,6 +121,47 @@ describe("createImageVisionProvider", () => {
     assert.equal(typeof provider.describeImage, "function");
   });
 
+  it("creates an OpenCode Zen provider for opencode-go", () => {
+    const provider = createFn({
+      enabled: true,
+      provider: "opencode-go",
+      model: "mimo-v2.5",
+      baseUrl: "http://127.0.0.1:8080/v1",
+      apiKey: "go-key",
+      timeoutMs: 30000,
+      prompt: "Describe this image",
+    });
+    assert.ok(provider);
+    assert.equal(typeof provider.describeImage, "function");
+  });
+
+  it("creates an OpenCode Zen provider for opencode", () => {
+    const provider = createFn({
+      enabled: true,
+      provider: "opencode",
+      model: "mimo-v2.5-free",
+      baseUrl: "https://opencode.ai/zen/v1",
+      apiKey: "zen-key",
+      timeoutMs: 30000,
+      prompt: "Describe this image",
+    });
+    assert.ok(provider);
+    assert.equal(typeof provider.describeImage, "function");
+  });
+
+  it("throws for opencode-go without apiKey", () => {
+    assert.throws(() => {
+      createFn({
+        enabled: true,
+        provider: "opencode-go",
+        model: "mimo-v2.5",
+        baseUrl: "",
+        timeoutMs: 30000,
+        prompt: "Describe this image",
+      });
+    }, /apiKey/);
+  });
+
   it("creates Anthropic provider", () => {
     const provider = createFn({
       enabled: true,
@@ -173,6 +214,31 @@ describe("createImageVisionProvider", () => {
         prompt: "Describe this image",
       });
     }, /apiKey/);
+  });
+});
+
+describe("resolveZenBaseUrl", () => {
+  let resolveFn: any;
+
+  before(async () => {
+    const mod = await import("../../core/zen.js");
+    resolveFn = mod.resolveZenBaseUrl;
+  });
+
+  it("uses the Go endpoint by default", () => {
+    assert.equal(resolveFn("", "opencode-go"), "https://opencode.ai/zen/go/v1");
+  });
+
+  it("replaces a non-Zen base URL inherited from indexing", () => {
+    assert.equal(resolveFn("http://127.0.0.1:8080/v1", "opencode-go"), "https://opencode.ai/zen/go/v1");
+  });
+
+  it("keeps explicit opencode.ai base URLs", () => {
+    assert.equal(resolveFn("https://opencode.ai/zen/go/v1", "opencode-go"), "https://opencode.ai/zen/go/v1");
+  });
+
+  it("uses the standard Zen endpoint for provider opencode", () => {
+    assert.equal(resolveFn("", "opencode"), "https://opencode.ai/zen/v1");
   });
 });
 

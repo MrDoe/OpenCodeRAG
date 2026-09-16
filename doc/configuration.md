@@ -225,9 +225,9 @@ Controls image-to-text description generation via vision-capable LLMs. Disabled 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `enabled` | `false` | Enable image description indexing |
-| `provider` | `"ollama"` | Vision provider: `"ollama"`, `"openai"`, `"anthropic"`, `"gemini"` |
+| `provider` | `"ollama"` | Vision provider: `"ollama"`, `"openai"`, `"anthropic"`, `"gemini"`, `"opencode"`, `"opencode-go"` |
 | `baseUrl` | `http://127.0.0.1:11434/api` | Provider API endpoint |
-| `apiKey` | `null` | API key; auto-resolved from OpenCode provider config for OpenAI/Anthropic/Gemini |
+| `apiKey` | `null` | API key; auto-resolved from env vars, OpenCode provider config, or the OpenCode auth store (`~/.local/share/opencode/auth.json`) |
 | `model` | `"minicpm-v4.6"` | Vision model name |
 | `timeoutMs` | `60000` | Request timeout (vision calls can be slower) |
 | `proxy` | — | Proxy settings (same shape as `embedding.proxy`) |
@@ -256,6 +256,16 @@ Controls image-to-text description generation via vision-capable LLMs. Disabled 
 ```
 
 Every field of the base section except `enabled` can be overridden (`provider`, `model`, `baseUrl`, `apiKey`, `timeoutMs`, `prompt`, `think`, `numCtx`, `keepAlive`, `proxy`, `resizeMaxDimension`); omitted fields fall back to the indexing values. `imageDescription.enabled` stays the master switch — on-demand descriptions require it to be `true`. `apiKey` is auto-resolved for the on-demand provider the same way as for the indexing section. `onDemand` does **not** affect the index, so no re-index is needed when changing it. `opencode-rag init` health checks report the alternate model as `image description (on-demand)`.
+
+**OpenCode Zen providers (`opencode`, `opencode-go`):** target the Zen chat-completions endpoints (`https://opencode.ai/zen/v1` and `https://opencode.ai/zen/go/v1`) and reuse the API key OpenCode stored via `/connect` (`$XDG_DATA_HOME/opencode/auth.json`, default `~/.local/share/opencode/auth.json`). Both send a stable per-process `x-opencode-session` header and an `opencode-rag/<version>` user agent, as required for Go routing (https://opencode.ai/docs/go/). A `baseUrl` inherited from the indexing section is replaced by the Zen default unless it already points at an `opencode.ai` host. Example on-demand override using the Go subscription:
+
+```json
+"onDemand": {
+  "provider": "opencode-go",
+  "model": "mimo-v2.5",
+  "timeoutMs": 180000
+}
+```
 
 **Notes:**
 

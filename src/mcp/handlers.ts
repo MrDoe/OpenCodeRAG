@@ -340,7 +340,7 @@ export interface DescribeImageResult {
   formatted: string;
 }
 
-/** Describe an image file using the configured vision provider (Ollama, OpenAI, Anthropic, or Gemini). Honors `imageDescription.onDemand` overrides. */
+/** Describe an image file using the configured vision provider (Ollama, OpenAI, Anthropic, Gemini, or OpenCode Zen). Honors `imageDescription.onDemand` overrides. */
 export async function handleDescribeImage(
   params: DescribeImageParams,
   cfg: RagConfig,
