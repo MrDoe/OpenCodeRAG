@@ -73,6 +73,7 @@ Raster images are not parsed as text. Instead, OpenCodeRAG sends each image to a
 - **Notes:**
   - Disabled by default; enable via `imageDescription.enabled` in `opencode-rag.json`.
   - SVG files are indexed as XML via the AST chunker, not the vision pipeline.
+  - Indexing always uses the base `imageDescription.*` settings. On-demand calls (`describe_image` tool, MCP server, CLI) may use `imageDescription.onDemand` overrides instead — see [Configuration](configuration.md#imagedescription).
 
 ## How Chunkers Work
 

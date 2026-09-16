@@ -17,7 +17,7 @@ OpenCodeRAG supports three embedding providers, dispatched via the `EmbeddingPro
   "embedding": {
     "provider": "ollama",
     "baseUrl": "http://localhost:11434/api",
-    "model": "mxbai-embed-large",
+    "model": "qwen3-embedding:0.6b",
     "timeoutMs": 30000
   }
 }

@@ -340,7 +340,7 @@ export interface DescribeImageResult {
   formatted: string;
 }
 
-/** Describe an image file using the configured vision provider (Ollama, OpenAI, Anthropic, or Gemini). */
+/** Describe an image file using the configured vision provider (Ollama, OpenAI, Anthropic, or Gemini). Honors `imageDescription.onDemand` overrides. */
 export async function handleDescribeImage(
   params: DescribeImageParams,
   cfg: RagConfig,
@@ -367,24 +367,26 @@ export async function handleDescribeImage(
     throw new Error("Image description is not enabled in config (imageDescription.enabled)");
   }
 
-  const { getMimeType } = await import("../chunker/image.js");
+  const { getMimeType, createImageVisionProvider, resolveOnDemandImageConfig } = await import("../chunker/image.js");
   const { resizeImage } = await import("../content/image.js");
+
+  const effectiveImageConfig = resolveOnDemandImageConfig(imageDescriptionConfig);
 
   const buffer = readFileSync(resolvedPath);
   const mimeType = getMimeType(ext);
-  const maxDimension = imageDescriptionConfig.resizeMaxDimension ?? 1024;
+  const maxDimension = effectiveImageConfig.resizeMaxDimension ?? 1024;
   const sized = maxDimension > 0 ? await resizeImage(buffer, resolvedPath, maxDimension) : buffer;
   const b64 = sized.toString("base64");
 
-  const provider = visionProvider ?? (await import("../chunker/image.js")).createImageVisionProvider(imageDescriptionConfig);
-  const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt, params.systemPrompt);
+  const provider = visionProvider ?? createImageVisionProvider(effectiveImageConfig);
+  const description = await provider.describeImage(b64, mimeType, effectiveImageConfig.prompt, params.systemPrompt);
 
   const formatted = [
     `**Image description** — ${params.filePath}`,
     "",
     description,
     "",
-    `_Generated with ${imageDescriptionConfig.provider}/${imageDescriptionConfig.model}_`,
+    `_Generated with ${effectiveImageConfig.provider}/${effectiveImageConfig.model}_`,
   ].join("\n");
 
   return { description, formatted };

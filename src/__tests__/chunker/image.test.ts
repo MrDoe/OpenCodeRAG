@@ -175,3 +175,69 @@ describe("createImageVisionProvider", () => {
     }, /apiKey/);
   });
 });
+
+describe("resolveOnDemandImageConfig", () => {
+  let resolveFn: any;
+
+  before(async () => {
+    const mod = await import("../../chunker/image.js");
+    resolveFn = mod.resolveOnDemandImageConfig;
+  });
+
+  const makeBase = (onDemand?: Record<string, unknown>) => ({
+    enabled: true,
+    provider: "ollama",
+    model: "index-model",
+    baseUrl: "http://localhost:11434/api",
+    timeoutMs: 30000,
+    prompt: "index prompt",
+    resizeMaxDimension: 1024,
+    ...(onDemand ? { onDemand } : {}),
+  });
+
+  it("returns the base config unchanged when onDemand is absent", () => {
+    const base = makeBase();
+    const resolved = resolveFn(base);
+    assert.deepEqual(resolved, base);
+  });
+
+  it("applies provider, model, and prompt overrides", () => {
+    const resolved = resolveFn(makeBase({
+      provider: "openai",
+      model: "gpt-4o-mini",
+      prompt: "on-demand prompt",
+      resizeMaxDimension: 512,
+    }));
+    assert.equal(resolved.provider, "openai");
+    assert.equal(resolved.model, "gpt-4o-mini");
+    assert.equal(resolved.prompt, "on-demand prompt");
+    assert.equal(resolved.resizeMaxDimension, 512);
+  });
+
+  it("falls back to base values for omitted override fields", () => {
+    const resolved = resolveFn(makeBase({ model: "other-model" }));
+    assert.equal(resolved.provider, "ollama");
+    assert.equal(resolved.baseUrl, "http://localhost:11434/api");
+    assert.equal(resolved.timeoutMs, 30000);
+    assert.equal(resolved.prompt, "index prompt");
+  });
+
+  it("strips the onDemand key from the result", () => {
+    const resolved = resolveFn(makeBase({ model: "other-model" }));
+    assert.equal("onDemand" in resolved, false);
+  });
+
+  it("ignores null and undefined override values", () => {
+    const resolved = resolveFn(makeBase({ model: null, prompt: undefined, provider: "openai" }));
+    assert.equal(resolved.model, "index-model");
+    assert.equal(resolved.prompt, "index prompt");
+    assert.equal(resolved.provider, "openai");
+  });
+
+  it("does not mutate the input config", () => {
+    const base = makeBase({ model: "other-model" });
+    resolveFn(base);
+    assert.equal(base.model, "index-model");
+    assert.deepEqual(base.onDemand, { model: "other-model" });
+  });
+});

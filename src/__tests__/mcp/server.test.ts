@@ -704,6 +704,30 @@ describe("handleDescribeImage", () => {
     assert.match(result.formatted, /red 1x1 pixel/);
   });
 
+  it("applies imageDescription.onDemand model overrides", async () => {
+    const cfg = makeConfigWithImageDesc({
+      imageDescription: { onDemand: { provider: "openai", model: "gpt-4o-mini" } } as any,
+    });
+    const fakeVision = makeFakeVisionProvider();
+
+    const result = await handleDescribeImage({ filePath: "test.png" }, cfg, tmpDir, fakeVision);
+
+    assert.equal(result.description, TEST_DESCRIPTION);
+    assert.match(result.formatted, /openai\/gpt-4o-mini/);
+  });
+
+  it("uses the onDemand prompt override", async () => {
+    const cfg = makeConfigWithImageDesc({
+      imageDescription: { onDemand: { prompt: "on-demand prompt" } } as any,
+    });
+    const { provider, calls } = makeSpyVisionProvider();
+
+    await handleDescribeImage({ filePath: "test.png" }, cfg, tmpDir, provider);
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.prompt, "on-demand prompt");
+  });
+
   it("resolves relative filePath from worktree", async () => {
     const cfg = makeConfigWithImageDesc();
     const fakeVision = makeFakeVisionProvider();

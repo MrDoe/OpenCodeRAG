@@ -43,7 +43,7 @@ export function registerDescribeImageCommand(program: Command): void {
         }
 
         const ext = path.extname(resolvedPath).toLowerCase();
-        const { SUPPORTED_IMAGE_EXTENSIONS, createImageVisionProvider, getMimeType } = await import("../../chunker/image.js");
+        const { SUPPORTED_IMAGE_EXTENSIONS, createImageVisionProvider, resolveOnDemandImageConfig, getMimeType } = await import("../../chunker/image.js");
 
         if (!SUPPORTED_IMAGE_EXTENSIONS.has(ext)) {
           const exts = [...SUPPORTED_IMAGE_EXTENSIONS].join(", ");
@@ -59,18 +59,23 @@ export function registerDescribeImageCommand(program: Command): void {
 
         const { resizeImage } = await import("../../content/image.js");
 
+        const effectiveImageConfig = resolveOnDemandImageConfig(imageDescriptionConfig);
+
         logCliInfo(logFilePath, "describe-image", `\n${c.heading("Describing image:")} ${c.file(filePath)}`);
-        logCliInfo(logFilePath, "describe-image", `  ${c.label("Provider:")} ${c.value(imageDescriptionConfig.provider)}`);
-        logCliInfo(logFilePath, "describe-image", `  ${c.label("Model:")}    ${c.value(imageDescriptionConfig.model)}`);
+        logCliInfo(logFilePath, "describe-image", `  ${c.label("Provider:")} ${c.value(effectiveImageConfig.provider)}`);
+        logCliInfo(logFilePath, "describe-image", `  ${c.label("Model:")}    ${c.value(effectiveImageConfig.model)}`);
+        if (imageDescriptionConfig.onDemand) {
+          logCliInfo(logFilePath, "describe-image", `  ${c.label("Source:")}   imageDescription.onDemand override`);
+        }
 
         const buffer = readFileSync(resolvedPath);
         const mimeType = getMimeType(ext);
-        const maxDimension = imageDescriptionConfig.resizeMaxDimension ?? 1024;
+        const maxDimension = effectiveImageConfig.resizeMaxDimension ?? 1024;
         const sized = maxDimension > 0 ? await resizeImage(buffer, resolvedPath, maxDimension) : buffer;
         const b64 = sized.toString("base64");
 
-        const provider = createImageVisionProvider(imageDescriptionConfig);
-        const description = await provider.describeImage(b64, mimeType, imageDescriptionConfig.prompt, options.systemPrompt);
+        const provider = createImageVisionProvider(effectiveImageConfig);
+        const description = await provider.describeImage(b64, mimeType, effectiveImageConfig.prompt, options.systemPrompt);
 
         logCliInfo(logFilePath, "describe-image", `\n${c.desc(description)}\n`);
         await cleanupContext(ctx);

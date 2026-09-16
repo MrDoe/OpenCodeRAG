@@ -285,7 +285,7 @@ export function registerInitCommand(program: Command): void {
 
         for (const r of results) {
           const icon = r.status === "ok" ? c.success("✓") : r.status === "missing" ? c.warn("○") : c.error("✗");
-          const typeLabel = r.type === "image_description" ? "image description" : r.type;
+          const typeLabel = r.type === "image_description" ? "image description" : r.type === "image_description_on_demand" ? "image description (on-demand)" : r.type;
           const label = `${typeLabel} model`;
           console.log(`  ${icon} ${c.value(r.model)} (${r.provider}) — ${label}: ${r.status}`);
           if (r.error) console.log(`    ${c.dim(r.error)}`);
@@ -303,6 +303,14 @@ export function registerInitCommand(program: Command): void {
             }
             if (r.type === "image_description" && ragConfig.imageDescription) {
               return { model: r.model, baseUrl: ragConfig.imageDescription.baseUrl, proxy: ragConfig.imageDescription.proxy };
+            }
+            if (r.type === "image_description_on_demand" && ragConfig.imageDescription) {
+              const onDemand = ragConfig.imageDescription.onDemand;
+              return {
+                model: r.model,
+                baseUrl: onDemand?.baseUrl ?? ragConfig.imageDescription.baseUrl,
+                proxy: onDemand?.proxy ?? ragConfig.imageDescription.proxy,
+              };
             }
             return { model: r.model, baseUrl: ragConfig.embedding.baseUrl, proxy: ragConfig.embedding.proxy };
           });

@@ -324,6 +324,68 @@ describe("checkProviderHealth", () => {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
     });
+
+    it("checks the on-demand vision model when onDemand overrides it", async () => {
+      const chatModels: string[] = [];
+      const { server, port } = await startMockServer((req, res) => {
+        if (req.url?.includes("/chat")) {
+          const body = JSON.parse(req.body) as { model?: string };
+          chatModels.push(body.model ?? "");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ message: { content: "ok" } }));
+        } else {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ embedding: [1] }));
+        }
+      });
+
+      try {
+        const config = baseConfig({ baseUrl: `http://127.0.0.1:${port}/api` });
+        config.imageDescription = {
+          enabled: true,
+          provider: "ollama",
+          baseUrl: `http://127.0.0.1:${port}/api`,
+          model: "vision-model",
+          timeoutMs: 5000,
+          prompt: "Describe this image",
+          onDemand: { model: "on-demand-vision" },
+        };
+        const results = await checkProviderHealth(config);
+        assert.equal(results.length, 3);
+        assert.equal(results[1]!.type, "image_description");
+        assert.equal(results[1]!.model, "vision-model");
+        assert.equal(results[2]!.type, "image_description_on_demand");
+        assert.equal(results[2]!.model, "on-demand-vision");
+        assert.deepEqual([...chatModels].sort(), ["on-demand-vision", "vision-model"]);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
+    it("skips the on-demand check when onDemand matches the indexing provider/model", async () => {
+      const { server, port } = await startMockServer((_req, res) => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ message: { content: "ok" } }));
+      });
+
+      try {
+        const config = baseConfig({ baseUrl: `http://127.0.0.1:${port}/api` });
+        config.imageDescription = {
+          enabled: true,
+          provider: "ollama",
+          baseUrl: `http://127.0.0.1:${port}/api`,
+          model: "vision-model",
+          timeoutMs: 5000,
+          prompt: "Describe this image",
+          onDemand: { prompt: "on-demand prompt" },
+        };
+        const results = await checkProviderHealth(config);
+        assert.equal(results.length, 2);
+        assert.equal(results[1]!.type, "image_description");
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
   });
 
   describe("OpenAI-compatible provider", () => {

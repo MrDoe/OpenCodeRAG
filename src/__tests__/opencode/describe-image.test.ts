@@ -206,4 +206,48 @@ describe("createDescribeImageTool", () => {
     assert.ok(tool);
     assert.equal(typeof tool.execute, "function");
   });
+
+  it("applies imageDescription.onDemand model and prompt overrides", async () => {
+    const cfg = makeConfigWithImageDesc({
+      imageDescription: {
+        onDemand: { provider: "openai", model: "gpt-4o-mini", prompt: "on-demand prompt" },
+      } as any,
+    });
+    const { provider, calls } = makeSpyVisionProvider();
+    const tool = createDescribeImageTool({
+      worktree: tmpDir,
+      config: cfg,
+      visionProvider: provider,
+    });
+
+    const exec = (tool as { execute: Function }).execute;
+    const r = asObject(await exec({ filePath: "test.png" }));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.prompt, "on-demand prompt");
+    assert.equal(r.metadata?.provider, "openai");
+    assert.equal(r.metadata?.model, "gpt-4o-mini");
+    assert.match(r.output, /openai\/gpt-4o-mini/);
+  });
+
+  it("falls back to indexing settings when onDemand omits fields", async () => {
+    const cfg = makeConfigWithImageDesc({
+      imageDescription: {
+        onDemand: { model: "gpt-4o-mini" },
+      } as any,
+    });
+    const { provider, calls } = makeSpyVisionProvider();
+    const tool = createDescribeImageTool({
+      worktree: tmpDir,
+      config: cfg,
+      visionProvider: provider,
+    });
+
+    const exec = (tool as { execute: Function }).execute;
+    const r = asObject(await exec({ filePath: "test.png" }));
+
+    assert.equal(calls[0]?.prompt, "Describe this image");
+    assert.equal(r.metadata?.provider, "ollama");
+    assert.equal(r.metadata?.model, "gpt-4o-mini");
+  });
 });

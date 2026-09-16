@@ -30,7 +30,7 @@ For autonomous agent workflows, the plugin also registers smaller, focused tools
 |------|---------|------|
 | `get_file_skeleton` | Structural file overview via tree-sitter AST | `filePath` (req) |
 | `find_usages` | Find all references to a symbol | `symbolName` (req), `pathHint?`, `topK?` |
-| `describe_image` | Retrieve stored description of an indexed image | `filePath` (req), `systemPrompt?` |
+| `describe_image` | Describe an image file with a vision model (live call) | `filePath` (req), `systemPrompt?` |
 
 #### `search_semantic`
 Conceptual code search — answers questions like *"How does authentication work?"* or *"Where is the chunking logic?"*. Uses vector + hybrid keyword search and returns the most relevant code snippets with file paths, line numbers, and relevance scores.
@@ -82,7 +82,7 @@ Usages of "createRagHooks" — 5 references across 2 files
 
 #### `describe_image`
 
-Returns the pre-generated natural-language description for an indexed image file. Does not re-run the vision model — it retrieves the stored description created at index time. An optional `systemPrompt` steers the vision model toward specific features when generating the description.
+Reads an image file from disk, resizes it, and sends it to the configured vision provider — the description is generated live, not retrieved from the index. The call uses the indexing settings (`imageDescription.*`) unless `imageDescription.onDemand` is configured, in which case those overrides (provider, model, prompt, …) apply — see [Configuration](configuration.md#imagedescription). An optional `systemPrompt` steers the description toward specific features.
 
 **Parameters:**
 | Param | Required | Description |
@@ -90,7 +90,7 @@ Returns the pre-generated natural-language description for an indexed image file
 | `filePath` | Yes | Path to the image file (relative or absolute) |
 | `systemPrompt` | No | Optional system prompt steering the description (e.g. "focus on colors and layout") |
 
-**Returns:** Markdown block with file path and the stored description text.
+**Returns:** Markdown block with file path, the generated description, and the provider/model that produced it.
 
 ### 2. `chat.message` Hook — Hotkey-Activated Injection
 

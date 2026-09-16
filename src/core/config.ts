@@ -96,6 +96,37 @@ export interface DescriptionConfig {
 }
 
 /** Configuration for vision-model-based image description generation. */
+/**
+ * Optional overrides for on-demand `describe_image` calls (OpenCode plugin
+ * tool, MCP server, CLI `describe-image`). Fields omitted here fall back to
+ * the indexing settings in {@link ImageDescriptionConfig}; the indexing
+ * pipeline itself always uses the base settings.
+ */
+export interface ImageDescriptionOnDemandConfig {
+  /** Vision provider name ("ollama", "openai", "anthropic", "google"). */
+  provider?: string;
+  /** Vision model name. */
+  model?: string;
+  /** Base URL of the vision API. */
+  baseUrl?: string;
+  /** API key for providers that require authentication. */
+  apiKey?: string;
+  /** Request timeout in milliseconds. */
+  timeoutMs?: number;
+  /** Prompt template sent to the vision model. */
+  prompt?: string;
+  /** Whether to include chain-of-thought tokens. */
+  think?: boolean;
+  /** Context window size. */
+  numCtx?: number;
+  /** Ollama keep_alive value (e.g. "-1" for keep-in-memory) sent with /api/chat requests. */
+  keepAlive?: string;
+  /** Proxy configuration. */
+  proxy?: ProxyConfig;
+  /** Maximum image dimension (pixels) — larger images are resized before sending. */
+  resizeMaxDimension?: number;
+}
+
 export interface ImageDescriptionConfig {
   /** Whether image description is enabled. */
   enabled: boolean;
@@ -121,9 +152,14 @@ export interface ImageDescriptionConfig {
   proxy?: ProxyConfig;
   /** Maximum image dimension (pixels) — larger images are resized before sending. */
   resizeMaxDimension?: number;
+  /**
+   * Optional overrides for on-demand `describe_image` calls (OpenCode plugin
+   * tool, MCP server, CLI `describe-image`). Omitted fields fall back to the
+   * indexing settings above. The indexing pipeline ignores this section.
+   */
+  onDemand?: ImageDescriptionOnDemandConfig;
 }
 
-/** Configuration for the built-in web dashboard UI. */
 export interface UiConfig {
   /** HTTP port for the UI server. */
   port: number;
@@ -893,6 +929,10 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
       if (config.imageDescription.timeoutMs <= 0) {
         warnings.push("imageDescription.timeoutMs must be > 0");
       }
+    }
+    const onDemand = config.imageDescription.onDemand;
+    if (onDemand?.timeoutMs !== undefined && onDemand.timeoutMs <= 0) {
+      warnings.push("imageDescription.onDemand.timeoutMs must be > 0");
     }
   }
 

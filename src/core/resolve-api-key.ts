@@ -20,6 +20,11 @@ export function resolveApiKey(
   if (cfg.imageDescription?.enabled && cfg.imageDescription.provider !== "ollama") {
     resolveForSection(cfg.imageDescription.provider, cfg.imageDescription, worktree);
   }
+  const imageOnDemand = cfg.imageDescription?.onDemand;
+  if (imageOnDemand) {
+    const provider = imageOnDemand.provider ?? cfg.imageDescription?.provider ?? "ollama";
+    resolveForSection(provider, imageOnDemand, worktree);
+  }
 }
 
 function isPlaceholder(value: string): boolean {

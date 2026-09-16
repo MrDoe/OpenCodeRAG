@@ -1,8 +1,9 @@
 /**
  * @fileoverview Provider health checks (embedding, description, image description) and Ollama model pull utility.
  */
-import type { RagConfig } from "../core/config.js";
+import type { RagConfig, ImageDescriptionConfig } from "../core/config.js";
 import type { ProxyConfig } from "../core/config.js";
+import { resolveOnDemandImageConfig } from "../chunker/image.js";
 import { fetchWithProxy, postJson } from "./http.js";
 
 /** Result of a single provider health check. */
@@ -12,7 +13,7 @@ export interface HealthCheckResult {
   /** Model identifier that was tested */
   model: string;
   /** Which capability was checked */
-  type: "embedding" | "description" | "image_description";
+  type: "embedding" | "description" | "image_description" | "image_description_on_demand";
   /** Whether the provider is reachable and the model is available */
   status: "ok" | "missing" | "error";
   /** Human-readable error message when status is not "ok" */
@@ -36,6 +37,10 @@ export async function checkProviderHealth(config: RagConfig): Promise<HealthChec
 
   if (config.imageDescription?.enabled) {
     checks.push(checkImageDescriptionModel(config, timeoutMs));
+    const onDemand = resolveOnDemandImageConfig(config.imageDescription);
+    if (onDemand.provider !== config.imageDescription.provider || onDemand.model !== config.imageDescription.model) {
+      checks.push(checkOnDemandImageDescriptionModel(onDemand));
+    }
   }
 
   return Promise.all(checks);
@@ -91,23 +96,36 @@ async function checkImageDescriptionModel(config: RagConfig, _timeoutMs: number)
   if (!img) {
     return { provider: "unknown", model: "unknown", type: "image_description", status: "error", error: "Image description config is undefined" };
   }
+  return checkVisionModel(img, "image_description");
+}
+
+/** Check the optional `imageDescription.onDemand` vision model used by the describe_image tool, MCP server, and CLI. */
+async function checkOnDemandImageDescriptionModel(img: ImageDescriptionConfig): Promise<HealthCheckResult> {
+  return checkVisionModel(img, "image_description_on_demand");
+}
+
+/** Dispatch a vision-model check (indexing or on-demand) to the correct provider-specific handler. */
+async function checkVisionModel(
+  img: ImageDescriptionConfig,
+  type: "image_description" | "image_description_on_demand"
+): Promise<HealthCheckResult> {
   const { provider, baseUrl, model, apiKey } = img;
   const imgTimeout = img.timeoutMs ?? 60000;
 
   if (provider === "ollama") {
-    return checkOllamaChat(baseUrl, model, imgTimeout, img.proxy, "image_description");
+    return checkOllamaChat(baseUrl, model, imgTimeout, img.proxy, type);
   }
 
   if (provider === "anthropic") {
-    return checkAnthropicChat(baseUrl, model, apiKey, imgTimeout, img.proxy, "image_description");
+    return checkAnthropicChat(baseUrl, model, apiKey, imgTimeout, img.proxy, type);
   }
 
   if (provider === "google") {
-    return checkGoogleChat(baseUrl, model, apiKey, imgTimeout, img.proxy, "image_description");
+    return checkGoogleChat(baseUrl, model, apiKey, imgTimeout, img.proxy, type);
   }
 
   // OpenAI-compatible chat endpoint
-  return checkOpenAiChat(baseUrl, model, apiKey, imgTimeout, img.proxy, "image_description");
+  return checkOpenAiChat(baseUrl, model, apiKey, imgTimeout, img.proxy, type);
 }
 
 /** Check whether a provider name matches a known OpenAI-compatible provider. */
@@ -160,7 +178,7 @@ async function checkOllamaChat(
   model: string,
   timeoutMs: number,
   proxy?: { url?: string; username?: string; password?: string; noProxy?: string },
-  type: "description" | "image_description" = "description"
+  type: HealthCheckResult["type"] = "description"
 ): Promise<HealthCheckResult> {
   const url = `${baseUrl.replace(/\/+$/, "")}/chat`;
   try {
@@ -238,7 +256,7 @@ async function checkOpenAiChat(
   apiKey?: string,
   timeoutMs?: number,
   proxy?: { url?: string; username?: string; password?: string; noProxy?: string },
-  type: "description" | "image_description" = "description"
+  type: HealthCheckResult["type"] = "description"
 ): Promise<HealthCheckResult> {
   if (!apiKey) {
     return { provider: "openai", model, type, status: "error", error: "No API key configured" };
@@ -312,7 +330,7 @@ async function checkAnthropicChat(
   apiKey?: string,
   timeoutMs?: number,
   proxy?: { url?: string; username?: string; password?: string; noProxy?: string },
-  type: "description" | "image_description" = "description"
+  type: HealthCheckResult["type"] = "description"
 ): Promise<HealthCheckResult> {
   if (!apiKey) {
     return { provider: "anthropic", model, type, status: "error", error: "No API key configured" };
@@ -360,7 +378,7 @@ async function checkGoogleChat(
   apiKey?: string,
   timeoutMs?: number,
   proxy?: { url?: string; username?: string; password?: string; noProxy?: string },
-  type: "description" | "image_description" = "description"
+  type: HealthCheckResult["type"] = "description"
 ): Promise<HealthCheckResult> {
   if (!apiKey) {
     return { provider: "google", model, type, status: "error", error: "No API key configured" };
