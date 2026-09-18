@@ -129,6 +129,36 @@ To manually force a rebuild:
 opencode-rag index --force
 ```
 
+## "KMeans: more than 10% of clusters are empty" Warnings
+
+**Symptom:** During the final `Optimizing vector store (compacting fragments,
+pruning old versions)...` step of an index run, LanceDB's native logger prints
+several copies of:
+```
+WARN  lance_index::vector::kmeans] KMeans: more than 10% of clusters are empty: 2 of 16.
+    Help: this could mean your dataset is too small to have a meaningful index (2507 < 4096) or has many duplicate vectors.
+```
+
+**Cause:** This is informational and **benign**. It is emitted by LanceDB's own
+Rust logger (not OpenCodeRAG's, so it can't be routed to the plugin log) once
+per KMeans training pass during the single IVF index build at the end of a
+first-time index. Lance itself considers a store under 4096 rows too small for
+a meaningful IVF index — a few of the 16 base partitions end up empty, tripping
+its >10%-empty threshold.
+
+**Fix:** none needed — the store is healthy. Verify with `opencode-rag status`
+(dimension match, manifest ok, pending files) and a `opencode-rag query`.
+Since this was diagnosed, the index repair path skips IVF creation entirely
+below `MIN_ROWS_FOR_IVF_INDEX` (4096 rows) and leaves the store on brute-force
+flat search, which is optimal at that size — so a fresh index of a small
+workspace no longer builds the index and no longer warns. An existing store
+that already built an index keeps it (a healthy cosine index is never rebuilt).
+
+Do **not** confuse this with the harmful variant below: constant repetition
+plus a growing pile of `rag_db/chunks.lance/_indices/<uuid>` directories and an
+explicit `index build did not register` message means the store cannot
+converge and must be deleted and re-indexed.
+
 ## "partition N is empty, skipping" Warnings
 
 **Symptom:** LanceDB's native logger repeatedly prints

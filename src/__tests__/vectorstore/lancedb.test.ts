@@ -722,7 +722,7 @@ describe("LanceDbStore index-repair hardening", () => {
     const store = new LanceDbStore("memory://", 4);
     (store as unknown as { table: unknown }).table = {
       optimize: async () => {},
-      countRows: async () => 1500,
+      countRows: async () => 5000,
       listIndices: async () => [],
       // createIndex "succeeds" but the index never becomes visible —
       // the failure mode that caused constant retraining.
@@ -746,7 +746,7 @@ describe("LanceDbStore index-repair hardening", () => {
       let created = false;
       (store as unknown as { table: unknown }).table = {
         optimize: async () => {},
-        countRows: async () => 1500,
+        countRows: async () => 5000,
         listIndices: async () => [],
         indexStats: async () => (created ? { distanceType: "cosine" } : undefined),
         createIndex: async () => {
@@ -762,6 +762,34 @@ describe("LanceDbStore index-repair hardening", () => {
 
     await makeStore().optimize({});
     assert.equal(createIndexCalls, 1, "regular optimize must build the missing index");
+  });
+
+  it("skips index creation below the IVF threshold and builds above it", async () => {
+    // Lance's own KMeans trainer warns "dataset is too small to have a
+    // meaningful index" below 4096 rows, and brute-force is optimal there —
+    // so small stores must not get an IVF index at all.
+    const makeStore = (rows: number): { store: LanceDbStore; createIndexCalls: () => number } => {
+      let calls = 0;
+      const store = new LanceDbStore("memory://", 4);
+      (store as unknown as { table: unknown }).table = {
+        optimize: async () => {},
+        countRows: async () => rows,
+        listIndices: async () => [],
+        indexStats: async () => undefined,
+        createIndex: async () => {
+          calls++;
+        },
+      };
+      return { store, createIndexCalls: () => calls };
+    };
+
+    const small = makeStore(2507); // elderlingo-sized store
+    await small.store.optimize({});
+    assert.equal(small.createIndexCalls(), 0, "stores under MIN_ROWS_FOR_IVF_INDEX must stay brute-force");
+
+    const large = makeStore(5000);
+    await large.store.optimize({});
+    assert.equal(large.createIndexCalls(), 1, "stores at/above the threshold must build the index");
   });
 });
 

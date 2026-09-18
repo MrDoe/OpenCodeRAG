@@ -31,6 +31,16 @@ const MAX_INDEX_REPAIR_ATTEMPTS = 3;
  */
 const MAX_STALE_INDEX_VERSIONS = 40;
 
+/**
+ * Minimum row count for an IVF index to be worth building. Below this,
+ * brute-force flat scan is optimal and Lance's own KMeans trainer warns
+ * "dataset is too small to have a meaningful index" (it names this 4096
+ * floor) when too many of its 16 base partitions end up empty. Skipping
+ * index creation here keeps small stores warning-free and avoids a
+ * meaningless 9 MB index file.
+ */
+const MIN_ROWS_FOR_IVF_INDEX = 4096;
+
 /** Minimal warning sink for store diagnostics (defaults to console.warn). */
 export type StoreWarn = (message: string) => void;
 
@@ -1178,7 +1188,9 @@ export class LanceDbStore implements VectorStore {
 
   /**
    * Perform a single index-metric repair pass. Skips stores that have no
-   * index and fewer than 1000 rows (brute-force is optimal there). Uses a
+   * index and fewer than `MIN_ROWS_FOR_IVF_INDEX` rows (brute-force is
+   * optimal there, and an IVF index would only trip Lance's "dataset is too
+   * small" KMeans warning). Uses a
    * single `createIndex` with `replace: true` — a dropIndex + createIndex
    * sequence races in LanceDB ("Retryable commit conflict") and leaves the
    * stale index in place. On failure the memo is cleared so the next
@@ -1214,7 +1226,7 @@ export class LanceDbStore implements VectorStore {
       const idxName = vecIndex?.name ?? "embedding_idx";
       const stats = await table.indexStats(idxName);
       if (stats && stats.distanceType === "cosine") return; // already healthy
-      if (!stats && count < 1000) return; // tiny store, no index — leave brute-force
+      if (!stats && count < MIN_ROWS_FOR_IVF_INDEX) return; // small store — brute-force is optimal, and IVF would only trip Lance's "too small for a meaningful index" KMeans warning
 
       const numPartitions = Math.max(16, Math.min(256, Math.floor(count / 256)));
       for (let attempt = 1; attempt <= 3; attempt++) {
