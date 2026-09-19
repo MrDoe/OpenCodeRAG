@@ -17,6 +17,9 @@ export interface Chunk {
     contentType?: string;
     /** Synthetic chunk kind — e.g. "quirk" for experiential memory entries. */
     kind?: string;
+    /** Provenance of the file, derived from its path: source / test / doc. Used by
+     *  hybrid fusion to demote doc/test chunks that match query terms literally. */
+    role?: "source" | "test" | "doc";
     /** Quirk sub-type when kind === "quirk": gotcha, preference, decision, environment-constraint. */
     quirkType?: string;
     /** Arbitrary tags for filtering/queries. */
@@ -83,6 +86,12 @@ export interface SearchExplanation {
     /** Rank (0-indexed) in the keyword index results. */
     keywordRank?: number;
   };
+  /** Calibrated relevance in [0,1] derived from the raw vector-score spread of the
+   *  candidate set — unlike the fused `score` (RRF-normalized so rank 0 is always
+   *  ~1.0), this reflects how confident the match actually is. */
+  confidence?: number;
+  /** Shape of the query that produced this result ("symbol" vs "natural-language"). */
+  queryShape?: "symbol" | "natural-language";
   /** Query terms that matched in the keyword index, if hybrid search was used. */
   matchedTerms?: string[];
 }
@@ -158,6 +167,7 @@ export interface ChunkSummary {
   content: string;
   description: string;
   kind: string;
+  role: string;
   quirkType: string;
   tags: string;
 }

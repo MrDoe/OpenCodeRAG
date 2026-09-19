@@ -159,7 +159,7 @@ export async function prepareFile(
     embedding: { documentPrefix?: string };
     chunking?: { nodeTypes?: Record<string, string[]> };
     description?: { maxContentChars?: number };
-    indexing?: { maxSvgSizeBytes?: number; embedDescriptions?: boolean };
+    indexing?: { maxSvgSizeBytes?: number; embedDescriptions?: boolean; maxChunkSize?: number; chunkOverlap?: number };
   },
   keywordIndex: KeywordIndex | undefined,
   descriptionProvider: DescriptionProvider | undefined,
@@ -225,6 +225,8 @@ export async function prepareFile(
   } else {
     chunks = await chunkFile(file.filePath, file.content, config.chunking?.nodeTypes, {
       maxSvgSizeBytes: config.indexing?.maxSvgSizeBytes,
+      maxChunkSize: config.indexing?.maxChunkSize,
+      chunkOverlap: config.indexing?.chunkOverlap,
     }).catch((err) => {
       logger.warn(`  ${fileLabel} (chunking failed: ${(err as Error).message})`);
       return null;

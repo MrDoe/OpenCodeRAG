@@ -94,6 +94,10 @@ function mergeAdjacentChunks(
   const merged: OptimizedSearchResult[] = [];
 
   let pending: OptimizedSearchResult = toOptimized(sorted[0]!);
+  // The explanation (score breakdown, ranks) of the best-scoring constituent —
+  // carried onto the merged result so `--explain` stays accurate after merges.
+  let pendingExplanation = sorted[0]!.explanation;
+  let pendingBestScore = sorted[0]!.score;
 
   for (let i = 1; i < sorted.length; i++) {
     const current = sorted[i]!;
@@ -118,14 +122,23 @@ function mergeAdjacentChunks(
         },
       };
 
+      const bestScore = Math.max(pending.score, current.score);
+      if (current.score > pendingBestScore) {
+        pendingBestScore = current.score;
+        pendingExplanation = current.explanation;
+      }
+
       pending = {
         chunk: mergedChunk,
-        score: Math.max(pending.score, current.score),
+        score: bestScore,
+        explanation: pendingExplanation,
         optimized: { mergedFrom: sourceIds },
       };
     } else {
       merged.push(pending);
       pending = toOptimized(current);
+      pendingExplanation = current.explanation;
+      pendingBestScore = current.score;
     }
   }
   if (pending) merged.push(pending);

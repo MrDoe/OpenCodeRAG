@@ -574,9 +574,6 @@ export function generateDefaultConfigJson(tuning?: Partial<IndexingTuning>): str
         level: DEFAULT_CONFIG.logging.level,
         logFilePath: DEFAULT_CONFIG.logging.logFilePath,
       },
-      chunking: {
-        nodeTypes: {},
-      },
     },
     null,
     2,

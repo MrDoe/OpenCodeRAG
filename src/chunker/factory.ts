@@ -138,12 +138,40 @@ export function getRegisteredExtensions(): string[] {
 const MAX_CHUNK_LINES = 100;
 const MAX_CHUNK_CHARS = 8000;
 
-function splitOversized(chunks: Chunk[], filePath: string): Chunk[] {
+/** Prepend the tail of the previous chunk as context to the next one, so a
+ *  construct split across a chunk boundary is still retrievable whole. */
+function applyChunkOverlap(chunks: Chunk[], overlap: number): Chunk[] {
+  if (overlap <= 0 || chunks.length <= 1) return chunks;
+  const result: Chunk[] = [];
+  let prevTail: string[] | null = null;
+  for (const chunk of chunks) {
+    const lines = chunk.content.split("\n");
+    if (prevTail && prevTail.length > 0) {
+      result.push({
+        ...chunk,
+        id: uuid(),
+        content: [...prevTail, ...lines].join("\n"),
+      });
+    } else {
+      result.push(chunk);
+    }
+    prevTail = lines.slice(Math.max(0, lines.length - overlap));
+  }
+  return result;
+}
+
+function splitOversized(
+  chunks: Chunk[],
+  filePath: string,
+  maxLines: number = MAX_CHUNK_LINES,
+  maxChars: number = MAX_CHUNK_CHARS,
+  overlap: number = 0,
+): Chunk[] {
   const result: Chunk[] = [];
 
   for (const chunk of chunks) {
     const lines = chunk.content.split("\n");
-    if (lines.length <= MAX_CHUNK_LINES && chunk.content.length <= MAX_CHUNK_CHARS) {
+    if (lines.length <= maxLines && chunk.content.length <= maxChars) {
       result.push(chunk);
       continue;
     }
@@ -159,7 +187,7 @@ function splitOversized(chunks: Chunk[], filePath: string): Chunk[] {
 
       if (
         currentLines.length > 0 &&
-        (currentLines.length >= MAX_CHUNK_LINES || currentCharCount + lineLen > MAX_CHUNK_CHARS)
+        (currentLines.length >= maxLines || currentCharCount + lineLen > maxChars)
       ) {
         subChunks.push({
           id: uuid(),
@@ -171,9 +199,12 @@ function splitOversized(chunks: Chunk[], filePath: string): Chunk[] {
             language: chunk.metadata.language,
           },
         });
-        currentLines = [];
-        currentCharCount = 0;
-        lineOffset = i;
+        // Seed the next window with the last `overlap` lines so split chunks
+        // still share their boundary context.
+        const tail = overlap > 0 ? currentLines.slice(Math.max(0, currentLines.length - overlap)) : [];
+        currentLines = [...tail];
+        currentCharCount = tail.reduce((sum, l) => sum + l.length + 1, 0);
+        lineOffset = i - tail.length;
       }
 
       currentLines.push(line);
@@ -244,7 +275,13 @@ export async function chunkFile(
   filePath: string,
   content: string,
   nodeTypesOverrides?: Record<string, string[]>,
-  options?: { maxSvgSizeBytes?: number },
+  options?: {
+    maxSvgSizeBytes?: number;
+    /** Maximum lines per chunk; oversized chunks are split into windows. */
+    maxChunkSize?: number;
+    /** Overlapping lines shared between adjacent/split chunks. */
+    chunkOverlap?: number;
+  },
 ): Promise<Chunk[]> {
   let chunker = getChunker(filePath);
 
@@ -269,7 +306,10 @@ export async function chunkFile(
     return fallbackChunker.chunk(filePath, content);
   }
 
-  return splitOversized(chunks, filePath);
+  const overlap = Math.max(0, options?.chunkOverlap ?? 0);
+  const maxLines = options?.maxChunkSize && options.maxChunkSize > 0 ? options.maxChunkSize : MAX_CHUNK_LINES;
+  const split = splitOversized(chunks, filePath, maxLines, MAX_CHUNK_CHARS, overlap);
+  return applyChunkOverlap(split, overlap);
 }
 
 export { typescriptChunker, pythonChunker, javaChunker, goChunker, markdownChunker, cChunker, cppChunker, csharpChunker, javascriptChunker, razorChunker, jsonChunker, htmlChunker, cssChunker, xmlChunker, slnChunker, rustChunker, rubyChunker, kotlinChunker, swiftChunker, bashChunker, phpChunker, powershellChunker, iniChunker, yamlChunker, tomlChunker, dockerfileChunker, sqlChunker, texChunker, pdfChunker, fallbackChunker };

@@ -22,6 +22,7 @@ import { createVectorStore } from "../vectorstore/factory.js";
 import { swapStoreDirectories } from "../vectorstore/lancedb.js";
 import { createIndexStats, type IndexRunStats, type IndexStatusSummary } from "./stats.js";
 import { prepareFile, buildTextsToEmbed, type WorkerResult, type PreparedFile } from "./worker.js";
+import { tagChunksRole } from "../core/chunk-role.js";
 import { buildFallbackDescription } from "./description-stage.js";
 import { getCurrentCommit, getChangedFilesSince, getUntrackedFiles, getRepoRoot } from "./git-diff.js";
 
@@ -524,6 +525,12 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
             deferDescriptions,
             descHash,
           );
+
+          // Stamp every chunk with its file provenance (source/test/doc) so
+          // hybrid fusion can demote docs/tests that match query terms literally.
+          if (prep.chunks && prep.chunks.length > 0) {
+            tagChunksRole(prep.chunks);
+          }
 
           if (isActive) {
             chunkedDone++;
