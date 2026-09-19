@@ -653,15 +653,15 @@ function buildSettingCategories(
         },
         {
           path: ["memory", "recallMinScore"],
-          label: "User prompt min score",
+          label: "Manual recall min score",
           type: "number",
           currentValue: (memoryRo.recallMinScore as number) ?? (memoryCfg.recallMinScore as number) ?? 0.72,
         },
         {
           path: ["memory", "autoInjectMinScore"],
-          label: "System prompt min score",
+          label: "Auto-inject min score",
           type: "number",
-          currentValue: (memoryRo.autoInjectMinScore as number) ?? (memoryCfg.autoInjectMinScore as number) ?? 0.6,
+          currentValue: (memoryRo.autoInjectMinScore as number) ?? (memoryCfg.autoInjectMinScore as number) ?? 0.75,
         },
         {
           path: ["memory", "autoInjectLatencyBudgetMs"],

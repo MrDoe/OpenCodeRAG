@@ -191,6 +191,19 @@ describe("DEFAULT_CONFIG", () => {
   it("has default logFilePath", () => {
     assert.equal(DEFAULT_CONFIG.logging.logFilePath, "./.opencode/opencode-rag.log");
   });
+
+  it("defaults quirk auto-injection to a high relevance bar", () => {
+    // Injected quirks occupy context on every turn, so the default bar must
+    // be strict: only strongly relevant quirks qualify, at most one per turn,
+    // and only when they lexically overlap the user's current message. Manual
+    // recall_quirks uses the lower recallMinScore.
+    const mem = DEFAULT_CONFIG.memory;
+    assert.ok(mem, "memory config must exist");
+    assert.equal(mem.autoInjectMinScore, 0.75, "auto-injection must require a high relevance score");
+    assert.ok(mem.autoInjectMinScore >= mem.recallMinScore, "auto-inject bar must not be lower than manual recall");
+    assert.equal(mem.autoInjectTopK, 1, "at most one quirk per turn by default");
+    assert.equal(mem.autoInjectMinTokenOverlap, 2, "lexical gate must require >=2 shared tokens");
+  });
 });
 
 describe("resolveLogConfig", () => {

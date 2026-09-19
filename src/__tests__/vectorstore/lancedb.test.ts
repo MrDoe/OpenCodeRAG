@@ -562,6 +562,51 @@ describe("LanceDbStore (disk corruption recovery)", () => {
   });
 });
 
+describe("LanceDbStore schema migration", () => {
+  it("auto-adds the role column to a table that predates it", async () => {
+    // Tables written before `role` was part of the row shape lack the column,
+    // and chunkToRow always emits it — so any write would fail with
+    // "Found field not in schema: role". migrateNewColumns must add it.
+    const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-test-"));
+    try {
+      const store = new LanceDbStore(tmpDir, 8);
+      // Create a table with the OLD schema (no role column).
+      await store.addChunks([
+        {
+          id: "old-schema-chunk",
+          content: "function foo() {}",
+          embedding: new Array(8).fill(0.1),
+          metadata: { filePath: "src/a.ts", startLine: 1, endLine: 2, language: "typescript" },
+        },
+      ]);
+      await store.close();
+
+      // Simulate the pre-role schema by dropping the column directly.
+      const { connect } = await import("@lancedb/lancedb");
+      const db = await connect(tmpDir);
+      const tbl = await db.openTable("chunks");
+      await tbl.dropColumns(["role"]);
+      const cols = (await tbl.schema()).fields.map((f: { name: string }) => f.name);
+      assert.ok(!cols.includes("role"), "test precondition: role column removed");
+
+      // Reopening must migrate and allow the write again.
+      const reopened = new LanceDbStore(tmpDir, 8);
+      await reopened.addChunks([
+        {
+          id: "post-migration-chunk",
+          content: "function bar() {}",
+          embedding: new Array(8).fill(0.2),
+          metadata: { filePath: "src/b.ts", startLine: 1, endLine: 2, language: "typescript", role: "source" },
+        },
+      ]);
+      assert.equal(await reopened.count(), 2, "write must succeed after role migration");
+      await reopened.close();
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("countIndexVersionDirs", () => {
   it("counts only directories under _indices", () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-idx-"));

@@ -12,7 +12,7 @@ import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.j
 
 const TABLE_NAME = "chunks";
 
-const QUERY_COLUMNS = ["id", "content", "description", "filePath", "startLine", "endLine", "language", "kind", "quirkType", "tags"];
+const QUERY_COLUMNS = ["id", "content", "description", "filePath", "startLine", "endLine", "language", "kind", "role", "quirkType", "tags"];
 
 /**
  * Upper bound for the number of failed index-creation attempts per process.
@@ -327,6 +327,7 @@ interface ChunkRow {
   endLine: number;
   language: string;
   kind: string;
+  role: string;
   quirkType: string;
   tags: string;
 }
@@ -491,6 +492,7 @@ export class LanceDbStore implements VectorStore {
       endLine: 0,
       language: "",
       kind: "",
+      role: "",
       quirkType: "",
       tags: "",
     };
@@ -581,10 +583,10 @@ export class LanceDbStore implements VectorStore {
     }
   }
 
-  /** Add kind/quirkType/tags columns if missing from an existing table. */
+  /** Add kind/role/quirkType/tags columns if missing from an existing table. */
   private async migrateNewColumns(): Promise<void> {
     const missing: { name: string; valueSql: string }[] = [];
-    for (const col of ["kind", "quirkType", "tags"]) {
+    for (const col of ["kind", "role", "quirkType", "tags"]) {
       if (!(await this.hasColumn(col))) {
         missing.push({ name: col, valueSql: "''" });
       }
@@ -601,7 +603,7 @@ export class LanceDbStore implements VectorStore {
         return;
       }
     }
-    await this.ensureColumnsNullable(["kind", "quirkType", "tags"]);
+    await this.ensureColumnsNullable(["kind", "role", "quirkType", "tags"]);
   }
 
   /**
@@ -694,6 +696,7 @@ export class LanceDbStore implements VectorStore {
       endLine: c.metadata.endLine,
       language: c.metadata.language,
       kind: c.metadata.kind ?? "",
+      role: c.metadata.role ?? "",
       quirkType: c.metadata.quirkType ?? "",
       tags: c.metadata.tags ? JSON.stringify(c.metadata.tags) : "",
     };
@@ -853,6 +856,7 @@ export class LanceDbStore implements VectorStore {
           endLine: row.endLine as number,
           language: row.language as string,
           kind: (row.kind as string) || undefined,
+          role: row.role === "source" || row.role === "test" || row.role === "doc" ? (row.role as Chunk["metadata"]["role"]) : undefined,
           quirkType: (row.quirkType as string) || undefined,
           tags,
         },
@@ -921,6 +925,7 @@ export class LanceDbStore implements VectorStore {
               endLine: row.endLine as number,
               language: row.language as string,
               kind: (row.kind as string) || undefined,
+              role: row.role === "source" || row.role === "test" || row.role === "doc" ? (row.role as Chunk["metadata"]["role"]) : undefined,
               quirkType: (row.quirkType as string) || undefined,
               tags,
             },
@@ -954,6 +959,7 @@ export class LanceDbStore implements VectorStore {
         content: row.content as string,
         description: (row.description as string) ?? "",
         kind: (row.kind as string) ?? "",
+        role: (row.role as string) ?? "",
         quirkType: (row.quirkType as string) ?? "",
         tags: (row.tags as string) ?? "",
       }));
@@ -1003,6 +1009,7 @@ export class LanceDbStore implements VectorStore {
           content: row.content as string,
           description: (row.description as string) ?? "",
           kind: (row.kind as string) ?? "",
+        role: (row.role as string) ?? "",
           quirkType: (row.quirkType as string) ?? "",
           tags: (row.tags as string) ?? "",
         })),
@@ -1031,6 +1038,7 @@ export class LanceDbStore implements VectorStore {
         content: row.content as string,
         description: (row.description as string) ?? "",
         kind: (row.kind as string) ?? "",
+        role: (row.role as string) ?? "",
         quirkType: (row.quirkType as string) ?? "",
         tags: (row.tags as string) ?? "",
       };
@@ -1057,6 +1065,7 @@ export class LanceDbStore implements VectorStore {
         content: row.content as string,
         description: (row.description as string) ?? "",
         kind: (row.kind as string) ?? "",
+        role: (row.role as string) ?? "",
         quirkType: (row.quirkType as string) ?? "",
         tags: (row.tags as string) ?? "",
       }));

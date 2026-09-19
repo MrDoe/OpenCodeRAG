@@ -1,7 +1,7 @@
 /**
  * @fileoverview Performs hybrid vector-keyword retrieval with configurable scoring and explanation.
  */
-import type { EmbeddingProvider, KeywordIndex, VectorStore, SearchResult, MetadataFilter } from "../core/interfaces.js";
+import type { Chunk, EmbeddingProvider, KeywordIndex, VectorStore, SearchResult, MetadataFilter } from "../core/interfaces.js";
 
 /** Multiplier applied to topK when fetching raw results from vector/keyword stores.
  *  We request extra results up-front, then after hybrid fusion + minScore filtering,
@@ -17,11 +17,53 @@ export interface RetrieveOptions {
   minScore?: number;
   keywordIndex?: KeywordIndex;
   keywordWeight?: number;
+  /** Keyword weight for symbol-style queries (a bare identifier like `cosineSimilarity`).
+   *  Keyword search nails exact symbol matches, so these queries get a higher weight. */
+  symbolKeywordWeight?: number;
+  /** Multiplier applied to the keyword contribution of documentation chunks (0-1). */
+  docKeywordDemotion?: number;
+  /** Multiplier applied to the keyword contribution of test chunks (0-1). */
+  testKeywordDemotion?: number;
   /** Whether hybrid search is enabled. When false, keyword index is ignored. */
   hybridEnabled?: boolean;
   queryPrefix?: string;
   explain?: boolean;
   filter?: MetadataFilter;
+}
+
+/** Classify a query as a bare symbol lookup vs. natural-language prose.
+ *  Symbol queries have no whitespace and look like one (possibly dotted) identifier. */
+function detectQueryShape(query: string): "symbol" | "natural-language" {
+  const trimmed = query.trim();
+  if (trimmed.length === 0 || trimmed.length > 60) return "natural-language";
+  if (/\s/.test(trimmed)) return "natural-language";
+  return /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*$/.test(trimmed)
+    ? "symbol"
+    : "natural-language";
+}
+
+/** Demotion applied to a chunk's keyword contribution based on its file's provenance.
+ *  Docs and tests name concepts literally, so their keyword matches are discounted. */
+function keywordDemotion(chunk: Chunk, docDemotion: number, testDemotion: number): number {
+  switch (chunk.metadata.role) {
+    case "doc": return docDemotion;
+    case "test": return testDemotion;
+    default: return 1;
+  }
+}
+
+/** Calibrate a per-result confidence from the raw vector-score spread of the
+ *  candidate set. Unlike the fused RRF score (rank 0 is always ~1.0), this
+ *  reflects how separable the top match actually was. */
+function attachConfidence(results: SearchResult[]): void {
+  const raws = results.map((r) => r.explanation?.scoreBreakdown?.rawVectorScore ?? 0);
+  const max = Math.max(...raws);
+  const min = Math.min(...raws);
+  for (const r of results) {
+    if (!r.explanation) continue;
+    const raw = r.explanation.scoreBreakdown?.rawVectorScore ?? 0;
+    r.explanation.confidence = max > min ? (raw - min) / (max - min) : 1;
+  }
 }
 
 /**
@@ -46,6 +88,16 @@ export async function retrieve(
   try {
     const topK = options.topK ?? 10;
     const minScore = options.minScore ?? 0;
+    const queryShape = detectQueryShape(query);
+
+    const baseKw = options.keywordWeight ?? 0.4;
+    // Symbol queries are exact-identifier lookups — keyword search is the strong
+    // signal there, so use the (typically higher) symbol weight.
+    const kw = queryShape === "symbol"
+      ? options.symbolKeywordWeight ?? baseKw
+      : baseKw;
+    const docDemotion = options.docKeywordDemotion ?? 0.5;
+    const testDemotion = options.testKeywordDemotion ?? 0.6;
 
     const prefixedQuery = (options.queryPrefix ?? "") + query;
     const embeddings = await embedder.embed([prefixedQuery], "query");
@@ -68,7 +120,6 @@ export async function retrieve(
     if (keywordResults.length === 0) {
       const filtered = vectorResults.filter((r) => r.score >= minScore).slice(0, topK);
       if (options.explain) {
-        const kw = options.keywordWeight ?? 0.4;
         for (const r of filtered) {
           r.explanation = {
             scoreBreakdown: {
@@ -78,8 +129,10 @@ export async function retrieve(
               rawKeywordScore: 0,
               keywordWeight: kw,
             },
+            queryShape,
           };
         }
+        attachConfidence(filtered);
       }
       return filtered;
     }
@@ -90,15 +143,17 @@ export async function retrieve(
     for (const r of vectorResults) chunkById.set(r.chunk.id, r);
     for (const r of keywordResults) if (!chunkById.has(r.chunk.id)) chunkById.set(r.chunk.id, r);
 
-    const kw = options.keywordWeight ?? 0.4;
     const allIds = new Set<string>([...vRank.keys(), ...kRank.keys()]);
-    const combinedResults: SearchResult[] = [...allIds].map((id) => {
+    const combinedResults: SearchResult[] = [...allIds].map((id): SearchResult | null => {
       const vR = vRank.get(id);
       const kR = kRank.get(id);
+      const chunk = chunkById.get(id)?.chunk;
+      if (!chunk) return null;
+      const kMultiplier = kR !== undefined ? keywordDemotion(chunk, docDemotion, testDemotion) : 1;
       const vContrib = vR !== undefined ? ((1 - kw) * RRF_NORMALIZE) / (RRF_K + vR + 1) : 0;
-      const kContrib = kR !== undefined ? (kw * RRF_NORMALIZE) / (RRF_K + kR + 1) : 0;
+      const kContrib = kR !== undefined ? (kw * RRF_NORMALIZE) / (RRF_K + kR + 1) * kMultiplier : 0;
       const score = vContrib + kContrib;
-      const result: SearchResult = { chunk: chunkById.get(id)!.chunk, score };
+      const result: SearchResult = { chunk, score };
       if (options.explain) {
         result.explanation = {
           scoreBreakdown: {
@@ -110,6 +165,7 @@ export async function retrieve(
             vectorRank: vR,
             keywordRank: kR,
           },
+          queryShape,
         };
         if (options.keywordIndex && kR !== undefined) {
           const terms = options.keywordIndex.getMatchedTerms(query, id);
@@ -118,10 +174,12 @@ export async function retrieve(
       }
       return result;
     })
+      .filter((r): r is SearchResult => r !== null)
       .filter((r) => r.score >= minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
 
+    if (options.explain) attachConfidence(combinedResults);
     return combinedResults;
   } catch (err) {
     // Never silently mask retrieval failures as "no results" — an embedder

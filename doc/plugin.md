@@ -253,7 +253,7 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
 
 1. **Add a quirk** — `add_quirk(content)` embeds the text, stores it as a `quirk`-kind chunk in the vector store + keyword index, and appends an audit entry to `quirks.jsonl`. Before writing, an immutable trust monitor (`src/quirks/monitor.ts`) rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`, `disable lint`). Quirk types: `gotcha`, `preference`, `decision`, `environment-constraint`.
 
-2. **Recall a quirk** — `recall_quirks(query)` runs a hybrid (vector + keyword) search filtered to `quirk` chunks, then re-weights results by confidence and returns the top matches. Results respect `memory.minConfidence` and `memory.recallMinScore`. When `memory.autoInject` is `true`, relevant quirks are automatically injected into the prompt on every user message (via both the `chat.message` hook and the system prompt transform). The recall query combines the agent's previous response with the current user message for maximum relevance. A latency budget (`memory.autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections across both hooks. Each result shows its quirk ID — the ID is the argument for `update_quirk` and `delete_quirk`.
+2. **Recall a quirk** — `recall_quirks(query)` runs a hybrid (vector + keyword) search filtered to `quirk` chunks, then re-weights results by confidence and returns the top matches. Results respect `memory.minConfidence` and `memory.recallMinScore` (default `0.72`). When `memory.autoInject` is `true`, relevant quirks are automatically injected into the prompt on every user message (via both the `chat.message` hook and the system prompt transform), both gated by the stricter `memory.autoInjectMinScore` (default `0.75`) — injected quirks occupy context every turn, so only strongly relevant ones qualify. The recall query combines the agent's previous response with the current user message for maximum relevance. A latency budget (`memory.autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections across both hooks, and at most `memory.autoInjectTopK` (default `1`) quirks are injected per turn. Each result shows its quirk ID — the ID is the argument for `update_quirk` and `delete_quirk`.
 
 3. **Update a quirk** — `update_quirk(id, patch)` replaces the stored content/type/tags/confidence/source ref. When `content` changes, the new text must pass the trust monitor, the quirk is re-embedded, and the vector-store chunk + keyword index entry are replaced under the same ID; the `quirks.jsonl` audit entry is rewritten in place. Metadata-only patches (type/tags/confidence/source ref) skip re-embedding.
 
@@ -267,7 +267,7 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
    - **Session-end extraction** (`memory.sessionEndExtraction`): On non-message lifecycle events (session close), runs a full-transcript extraction pass. Both passive capture and session-end extraction require `description.enabled: true` and reuse the same LLM model with a quirk-specific system prompt.
    - **Dedup**: Candidate quirks are deduped against existing ones via lexical similarity (`memory.autoCaptureDedupThreshold`, default 0.85). All auto-captured quirks pass the immutable trust monitor before storage.
 
-7. **Relevance gate for auto-injection** — After vector recall, each candidate quirk must share at least `memory.autoInjectMinTokenOverlap` (default `1`) word tokens (≥3 chars) with the user's *current* message alone — not merely the combined assistant+user recall query. This stops meta-quirks (quirks about quirks themselves, e.g. "Quirk content length is guided by…") from being injected into unrelated tasks where they only matched the prior assistant text in the recall query. Set `autoInjectMinTokenOverlap` to `0` to disable the gate (restores the old behavior of pure semantic matching).
+7. **Relevance gate for auto-injection** — After vector recall, each candidate quirk must share at least `memory.autoInjectMinTokenOverlap` (default `2`) word tokens (≥3 chars) with the user's *current* message alone — not merely the combined assistant+user recall query. This stops meta-quirks (quirks about quirks themselves, e.g. "Quirk content length is guided by…") from being injected into unrelated tasks where they only matched the prior assistant text in the recall query. Set `autoInjectMinTokenOverlap` to `0` to disable the gate (restores the old behavior of pure semantic matching).
 
 **Config example:**
 ```json
@@ -276,10 +276,10 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
     "enabled": true,
     "autoInject": true,
     "minConfidence": 0.5,
-    "recallMinScore": 0.8,
-    "autoInjectMinScore": 0.6,
-    "autoInjectTopK": 2,
-    "autoInjectMinTokenOverlap": 1,
+    "recallMinScore": 0.72,
+    "autoInjectMinScore": 0.75,
+    "autoInjectTopK": 1,
+    "autoInjectMinTokenOverlap": 2,
     "decay": { "enabled": true, "halfLifeDays": 30 }
   }
 }

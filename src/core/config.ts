@@ -197,16 +197,20 @@ export interface MemoryConfig {
   minConfidence: number;
   /** Minimum query-relevance score (0-1) for a quirk to be recalled. */
   recallMinScore: number;
-  /** Minimum relevance score for auto-injected quirks (lower than recallMinScore for manual calls). */
+  /** Minimum relevance score for quirks to be AUTO-injected into the prompt
+   *  (both the system-prompt transform and the user message). Deliberately a
+   *  high bar: injected quirks occupy context on every turn, so only strongly
+   *  relevant ones should reach the prompt. Manual `recall_quirks` calls use
+   *  the lower `recallMinScore`. */
   autoInjectMinScore: number;
   /** Maximum latency budget (ms) for auto-inject quirk recall. If exceeded, injection is skipped. */
   autoInjectLatencyBudgetMs: number;
-  /** Max quirks to auto-inject per turn (default 2). */
+  /** Max quirks to auto-inject per turn (default 1). */
   autoInjectTopK: number;
   /**
    * Minimum number of shared word tokens (≥3 chars) between a candidate quirk's
    * content and the user's *current* message for the quirk to be auto-injected
-   * (default 1). Acts as a relevance gate against meta-quirks that match only
+   * (default 2). Acts as a relevance gate against meta-quirks that match only
    * the prior assistant text in the combined recall query. Set to `0` to disable.
    */
   autoInjectMinTokenOverlap: number;
@@ -340,6 +344,9 @@ export interface RagConfig {
     includeDirs?: string[];
     /** Number of overlapping lines between adjacent chunks. */
     chunkOverlap: number;
+    /** Maximum lines per chunk — oversized chunks are split into windows with
+     *  `chunkOverlap` lines of context between them. 0 = no limit (whole AST node). */
+    maxChunkSize?: number;
     /** Minimum file size in bytes to index (0 = no minimum). */
     minFileSizeBytes?: number;
     /** Maximum concurrent file processing tasks. */
@@ -399,6 +406,15 @@ export interface RagConfig {
       enabled: boolean;
       /** Weight for keyword scores in fusion (0 = vector only, 1 = keyword only). */
       keywordWeight: number;
+      /** Keyword weight for symbol-style queries (a bare identifier like
+       *  `cosineSimilarity`). Keyword search nails exact symbol matches, so these
+       *  get a higher weight than natural-language queries. Defaults to keywordWeight. */
+      symbolKeywordWeight?: number;
+      /** Multiplier (0-1) on the keyword contribution of documentation chunks.
+       *  Docs name concepts literally and otherwise outrank the implementation. */
+      docKeywordDemotion?: number;
+      /** Multiplier (0-1) on the keyword contribution of test chunks. */
+      testKeywordDemotion?: number;
     };
     /** Context window optimization settings for post-retrieval quality filtering. */
     contextOptimization?: ContextOptimizationConfig;
@@ -568,6 +584,7 @@ export const DEFAULT_CONFIG: RagConfig = {
       "package-lock.json",
     ],
     chunkOverlap: 0,
+    maxChunkSize: 0,
     minFileSizeBytes: 0,
     concurrency: 8,
     embedBatchSize: 100,
@@ -588,6 +605,9 @@ export const DEFAULT_CONFIG: RagConfig = {
     hybridSearch: {
       enabled: true,
       keywordWeight: 0.4,
+      symbolKeywordWeight: 0.6,
+      docKeywordDemotion: 0.5,
+      testKeywordDemotion: 0.6,
     },
     contextOptimization: {
       enabled: true,
@@ -733,11 +753,11 @@ export const DEFAULT_CONFIG: RagConfig = {
     enabled: true,
     autoInject: true,
     minConfidence: 0.5,
-    recallMinScore: 0.6,
-    autoInjectMinScore: 0.5,
+    recallMinScore: 0.72,
+    autoInjectMinScore: 0.75,
     autoInjectLatencyBudgetMs: 2000,
-    autoInjectTopK: 2,
-    autoInjectMinTokenOverlap: 1,
+    autoInjectTopK: 1,
+    autoInjectMinTokenOverlap: 2,
     passiveCapture: true,
     promptEnforcement: true,
     sessionEndExtraction: true,
@@ -848,6 +868,23 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     if (kw < 0 || kw > 1) {
       warnings.push("retrieval.hybridSearch.keywordWeight must be between 0 and 1");
     }
+    const hs = config.retrieval.hybridSearch;
+    if (hs.symbolKeywordWeight != null && (hs.symbolKeywordWeight < 0 || hs.symbolKeywordWeight > 1)) {
+      warnings.push("retrieval.hybridSearch.symbolKeywordWeight must be between 0 and 1");
+    }
+    if (hs.docKeywordDemotion != null && (hs.docKeywordDemotion < 0 || hs.docKeywordDemotion > 1)) {
+      warnings.push("retrieval.hybridSearch.docKeywordDemotion must be between 0 and 1");
+    }
+    if (hs.testKeywordDemotion != null && (hs.testKeywordDemotion < 0 || hs.testKeywordDemotion > 1)) {
+      warnings.push("retrieval.hybridSearch.testKeywordDemotion must be between 0 and 1");
+    }
+  }
+
+  if (config.indexing.maxChunkSize != null && config.indexing.maxChunkSize < 0) {
+    warnings.push("indexing.maxChunkSize must be >= 0");
+  }
+  if (config.indexing.maxChunkSize && config.indexing.maxChunkSize <= config.indexing.chunkOverlap) {
+    warnings.push("indexing.maxChunkSize must be greater than chunkOverlap (otherwise windows make no progress)");
   }
 
   if (config.memory?.recallMinScore != null) {

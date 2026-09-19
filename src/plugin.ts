@@ -1020,7 +1020,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               const budgetMs = memCfg.autoInjectLatencyBudgetMs ?? 2000;
               let timer: ReturnType<typeof setTimeout> | undefined;
               let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 2, minScore: memCfg.autoInjectMinScore })
+                recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 1, minScore: memCfg.autoInjectMinScore })
                   .then((r) => {
                     if (timer) clearTimeout(timer);
                     return r;
@@ -1035,8 +1035,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               // Lexical gate: drop quirks that match only the prior assistant text (no token
               // overlap with the user's actual request) — prevents meta-quirks (quirks about
               // quirks) from being injected into unrelated tasks. Disabled when autoInjectMinTokenOverlap=0.
-              const minTokenOverlap = memCfg.autoInjectMinTokenOverlap ?? 1;
-              if (minTokenOverlap > 0 && userReq.length > 0) {
+                const minTokenOverlap = memCfg.autoInjectMinTokenOverlap ?? 2;
+                if (minTokenOverlap > 0 && userReq.length > 0) {
                 quirkResults = quirkResults.filter((qr: any) => sharedWords(qr.chunk.content, userReq) >= minTokenOverlap);
               }
               if (quirkResults.length > 0) {
@@ -1379,12 +1379,14 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             if (quirkQuery.length > 0) {
               const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
               const budgetMs = quirkMemoryCfg.autoInjectLatencyBudgetMs ?? 2000;
-              // Use the stricter recallMinScore for user-prompt injection
-              // (system prompt injection uses the lower autoInjectMinScore)
-              const minScore = quirkMemoryCfg.recallMinScore ?? 0.72;
+              // Both auto-inject paths (system prompt transform and this user-message
+              // injection) use the same high autoInjectMinScore bar — injected quirks
+              // occupy context every turn, so only strongly relevant ones qualify.
+              // Manual recall_quirks calls use the lower recallMinScore.
+              const minScore = quirkMemoryCfg.autoInjectMinScore ?? 0.75;
               let timer: ReturnType<typeof setTimeout> | undefined;
               let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, quirkQuery, { topK: quirkMemoryCfg.autoInjectTopK ?? 2, minScore })
+                recallQuirks(quirkDeps, quirkQuery, { topK: quirkMemoryCfg.autoInjectTopK ?? 1, minScore })
                   .then((r) => {
                     if (timer) clearTimeout(timer);
                     return r;
@@ -1399,7 +1401,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               // Lexical gate: drop quirks that match only the prior assistant text (no token
               // overlap with the user's current message) — prevents meta-quirks (quirks about
               // quirks) from being injected into unrelated tasks. Disabled when autoInjectMinTokenOverlap=0.
-              const minTokenOverlap = quirkMemoryCfg.autoInjectMinTokenOverlap ?? 1;
+              const minTokenOverlap = quirkMemoryCfg.autoInjectMinTokenOverlap ?? 2;
               if (minTokenOverlap > 0 && text.length > 0) {
                 quirkResults = quirkResults.filter((qr: any) => sharedWords(qr.chunk.content, text) >= minTokenOverlap);
               }

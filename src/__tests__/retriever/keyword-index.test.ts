@@ -167,6 +167,21 @@ describe("KeywordIndex", () => {
       assert.equal(staleHits.length, 0, "stale revision must not be searchable");
       assert.equal(index.search("newversion", 10).length, 1);
     });
+
+    it("removes every indexed token even when the chunk's description mutated after indexing", () => {
+      const index = new KeywordIndex();
+      const chunk = makeChunk("c1", "function renderTerrain", "/p/a.ts");
+      index.addChunks([chunk]);
+      // The description stage mutates chunk.description AFTER addChunks ran,
+      // so re-tokenizing at removal time would see different text than was
+      // indexed. Removal must still delete exactly the indexed tokens.
+      chunk.description = "Renders the voxel terrain mesh with LOD";
+      index.removeByFilePath("/p/a.ts");
+      assert.equal(index.count(), 0);
+      // Neither the content tokens nor the description-only tokens may linger.
+      assert.equal(index.search("renderTerrain", 10).length, 0);
+      assert.equal(index.search("voxel", 10).length, 0);
+    });
   });
 
   describe("search", () => {
@@ -227,6 +242,52 @@ describe("KeywordIndex", () => {
       ]);
       const results = index.search("find all images", 10);
       assert.ok(results.length >= 2, "should find image chunks via stemming");
+    });
+
+    it("does not crash on inverted-index ids missing from chunkMap (dangling refs)", () => {
+      // Reproduces the voxelforge crash: "undefined is not an object
+      // (evaluating 'chunk.metadata')". A persisted index can contain
+      // token→chunkId entries whose chunk is gone; a filtered search must
+      // skip and prune them instead of throwing.
+      const tmpDir = mkdtempSync(path.join(tmpdir(), "keyword-index-test-"));
+      const storePath = path.join(tmpDir, "rag_db");
+      mkdirSync(storePath, { recursive: true });
+      // chunkMap must be non-empty — search() bails early on an empty index
+      // and never reaches the crash site. "ghost-id" is referenced by the
+      // inverted index but absent from chunkMap.
+      writeFileSync(
+        path.join(storePath, "keyword-index.json"),
+        JSON.stringify({
+          version: 3,
+          tokens: [
+            ["lod", [["real-id", 1], ["ghost-id", 1]]],
+            ["surfel", [["ghost-id", 1]]],
+          ],
+          chunkMap: {
+            "real-id": {
+              id: "real-id",
+              content: "int compute_lod(float dist)",
+              description: "",
+              filePath: "/src/terrain.cpp",
+              startLine: 1,
+              endLine: 10,
+              language: "cpp",
+            },
+          },
+        }),
+        "utf-8",
+      );
+
+      return KeywordIndex.load(storePath).then((index) => {
+        // A filter is required to reach the crash site (matchesFilter reads
+        // chunk.metadata only when a filter is present).
+        const results = index.search("lod", 10, { languages: ["cpp"] });
+        assert.equal(results.length, 1, "live chunk must still match");
+        assert.equal(results[0]!.chunk.id, "real-id");
+        // Self-healing: the phantom entries are pruned, so later unfiltered
+        // searches stay clean too.
+        assert.equal(index.search("surfel", 10).length, 0, "ghost-id must be pruned");
+      });
     });
   });
 
