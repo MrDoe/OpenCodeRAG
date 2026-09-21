@@ -15,10 +15,31 @@
 **Verify:**
 ```bash
 node --input-type=module -e \
-  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default, typeof m.server)"
+  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default?.setup, typeof m.default?.server)"
 ```
 
-Both should be `"function"`.
+Both should be `function`.
+
+### "Plugin must export a default definition with an id and an effect or setup function"
+
+**Symptom:** OpenCode logs `failed to load plugin … ref=err_… cause=PluginModule.LoadError:
+Plugin must export a default definition with an id and an effect or setup function
+(SchemaError: Missing key at ["default"]["effect"], Missing key at ["default"]["setup"])`
+in `~/.local/share/opencode/log/opencode.log`, and the OpenCode UI shows a server plugin error.
+
+**Cause:** OpenCode V2 validates each plugin's `default` export against `{ id, effect }` or
+`{ id, setup }`. A V1-only shape (`{ id, server }` or `{ id, tui }`) fails validation. The
+schema check runs *after* module import, so an earlier import-time error (e.g. the
+`@opentui/core` env-registry conflict below) hides it until the first error is fixed —
+the logged `cause=` is authoritative; do not infer the cause from the `ref=` alone.
+
+**Fix:**
+1. Rebuild: `npm run build` (`dist/` is gitignored — a `git pull` updates `src/` but never the loaded `dist/`)
+2. Verify the export shape (see *Debugging Plugin Loading* below): the default must expose
+   `id` and `setup` (server plugin) or `id`, `setup`, and `tui` (TUI plugin)
+3. If the TUI plugin still fails with `Environment variable "OPENTUI_FORCE_WCWIDTH" is
+   already registered with different configuration`, keep the env-registry normalization
+   shim in `.opencode/plugins/rag-tui.js` (it must run after the `dist/tui.js` import)
 
 ### No Context Returned by OpenCode
 
@@ -258,14 +279,26 @@ If the LLM description provider is unavailable or times out, affected files are 
 ## Debugging Plugin Loading
 
 ```bash
-# Test dynamic import
+# Test dynamic import (V2 shape: default must expose id + setup)
 node --input-type=module -e \
-  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default, typeof m.server)"
+  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default?.setup, typeof m.default?.server)"
 
 # Test require (CommonJS fallback)
 node -e \
-  "const m = require('opencode-rag-plugin'); console.log(typeof m.default, typeof m.server)"
+  "const m = require('opencode-rag-plugin'); console.log(typeof m.default?.setup, typeof m.default?.server)"
+
+# TUI module: must expose id, setup, and tui
+node --input-type=module -e \
+  "const m = await import('./.opencode/plugins/rag-tui.js'); console.log(Object.keys(m.default), typeof m.default.setup)"
 ```
+
+Plugin load failures are logged to `~/.local/share/opencode/log/opencode.log`:
+
+```bash
+grep -a "failed to load plugin" ~/.local/share/opencode/log/opencode.log | tail -5
+```
+
+Read the `cause=` field of the matching `ref=err_…` entry — it is the original error.
 
 ## Proxy Debugging
 

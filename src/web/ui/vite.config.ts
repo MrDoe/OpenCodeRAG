@@ -10,8 +10,8 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ["preact"],
+        manualChunks(id) {
+          if (id.includes("node_modules/preact")) return "vendor";
         },
       },
     },

@@ -15,7 +15,20 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "baseUrl": ".",
+    "paths": {
+      "@opencode-ai/plugin": ["./.opencode/node_modules/@opencode-ai/plugin/dist/index.d.ts"],
+      "@opencode-ai/plugin/*": ["./.opencode/node_modules/@opencode-ai/plugin/dist/*"],
+      "@opencode-ai/sdk": ["node_modules/@opencode-ai/sdk/dist/index.d.ts"],
+      "@opencode-ai/sdk/*": ["node_modules/@opencode-ai/sdk/dist/*"],
+      "@opentui/solid": ["node_modules/@opentui/solid"],
+      "@opentui/solid/*": ["node_modules/@opentui/solid/*"],
+      "@opentui/core": ["node_modules/@opentui/core"],
+      "@opentui/core/*": ["node_modules/@opentui/core/*"],
+      "@opentui/keymap": ["node_modules/@opentui/keymap"],
+      "@opentui/keymap/*": ["node_modules/@opentui/keymap/*"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]

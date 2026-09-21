@@ -5,7 +5,7 @@
  */
 
 import type { Plugin, PluginInput, Hooks, ToolDefinition } from "@opencode-ai/plugin";
-import { tool } from "@opencode-ai/plugin/tool";
+import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type VectorStore, type SearchResult, type MetadataFilter } from "./core/interfaces.js";
 import { normalizeFileExtensions } from "./core/filters.js";
 import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
@@ -626,7 +626,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       topK: tool.schema.number().int().min(1).max(25).optional(),
       explain: tool.schema.boolean().optional(),
     },
-    async execute(args) {
+    async execute(args, _context: ToolContext) {
       try {
         const count = await store.count();
         if (count === 0) {

@@ -3,7 +3,7 @@
  */
 
 import fs from "node:fs/promises";
-import { tool } from "@opencode-ai/plugin/tool";
+import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider, type KeywordIndex, type VectorStore, type SearchResult } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { retrieve } from "../retriever/retriever.js";
@@ -68,7 +68,7 @@ export function createRagReadTool(
       reason: tool.schema.string().optional(),
     },
 
-    async execute(args: Record<string, unknown>, ctx?: { sessionID?: string }) {
+    async execute(args, _context: ToolContext) {
       let resolvedPath: string | undefined;
       let normalized: { filePath: string; startLine?: number; endLine?: number; query?: string } | undefined;
       try {
@@ -86,7 +86,7 @@ export function createRagReadTool(
         let relatedFiles: { filePath: string; score: number }[] = [];
 
         try {
-          const sessionID = ctx?.sessionID;
+          const sessionID = _context?.sessionID;
           const messageText = sessionID ? sessionLastMessage?.get(sessionID) ?? "" : "";
 
           const count = await store.count();

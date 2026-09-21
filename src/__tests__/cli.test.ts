@@ -69,7 +69,13 @@ describe("opencode-rag init", () => {
     const opencodePackage = JSON.parse(readFileSync(opencodePackagePath, "utf-8"));
     assert.equal(opencodePackage.type, "module");
     assert.equal(opencodePackage.private, true);
-    assert.equal(opencodePackage.dependencies["@opencode-ai/plugin"], "1.15.5");
+    // init copies the version from this package's devDependencies (see
+    // buildWorkspacePackageJson) — derive it here so the test never goes stale.
+    const rootPackage = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf-8"));
+    assert.equal(
+      opencodePackage.dependencies["@opencode-ai/plugin"],
+      rootPackage.devDependencies["@opencode-ai/plugin"],
+    );
     // The RAG plugin is extracted directly into node_modules/, not via npm
     assert.equal("opencode-rag-plugin" in opencodePackage.dependencies, false);
 

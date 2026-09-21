@@ -138,17 +138,24 @@ See [Chunking](chunking.md#adding-a-new-language-chunker).
 
 ## Release Process
 
-```bash
-npm run release:patch
-```
+Releases are driven by `scripts/release-patch.js` (`npm run release:patch`) or
+`scripts/release-minor.js`:
 
-This runs `scripts/release-patch.js` which:
-1. Creates a new git branch
-2. Bumps the patch version
-3. Builds the project (`tsc -p tsconfig.build.json`)
-4. Runs tests
-5. Creates a git tag and commit
-6. Publishes to npm (dry-run supported via `--dry` flag)
+1. `git push origin main`
+2. `npm version patch|minor` — bumps the version, creates commit + tag (**requires a clean
+   working tree**)
+3. `git push origin <tag>`
+4. `gh release create <tag> …` — the GitHub Release is the actual publish trigger
+
+**The script never runs `npm publish`.** Publishing happens in
+`.github/workflows/publish.yml`, triggered on `release: created` only (pushing a tag alone
+does nothing). CI runs `npm ci`, build, and tests before `npm publish`.
+
+Requirements: `gh` CLI on PATH and authenticated; run `npm run build && npm test` locally
+first — the script does not build or test. Dry-run via `--dry` / `DRY_RUN=1`.
+
+For a **major** release (no script exists), perform the same steps manually:
+`npm version major`, push the tag, and create the GitHub Release with `gh release create`.
 
 ## Known Gotchas
 

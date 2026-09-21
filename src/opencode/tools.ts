@@ -14,7 +14,7 @@
  * These complement the general-purpose search_semantic tool.
  */
 
-import { tool } from "@opencode-ai/plugin/tool";
+import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
 import type { ToolDefinition } from "@opencode-ai/plugin";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
@@ -244,7 +244,7 @@ export function createFileSkeletonTool(
       filePath: tool.schema.string().min(1, "A file path is required."),
     },
 
-    async execute(args) {
+    async execute(args, _context: ToolContext) {
       try {
         const resolvedPath = resolveFilePath(args.filePath, worktree);
         const content = readFileSync(resolvedPath, "utf-8");
@@ -353,7 +353,7 @@ export function createDescribeImageTool(
       systemPrompt: tool.schema.string().optional(),
     },
 
-    async execute(args) {
+    async execute(args, _context: ToolContext) {
       try {
         const { existsSync, readFileSync } = await import("node:fs");
         const path = await import("node:path");
@@ -521,7 +521,7 @@ export function createFindUsagesTool(
       topK: tool.schema.number().int().min(1).max(50).optional(),
     },
 
-    async execute(args) {
+    async execute(args, _context: ToolContext) {
       const symbolName = args.symbolName.trim();
       const topK = args.topK ?? 30;
 
@@ -694,7 +694,7 @@ export function createRecallQuirksTool(options: RecallQuirksToolOptions): ToolDe
       tags: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
     },
 
-    async execute(args) {
+    async execute(args, _context: ToolContext) {
       try {
         const deps = { embedder, store, keywordIndex, cfg, storePath };
         const results = await recallQuirks(deps, args.query, {
@@ -790,7 +790,7 @@ export function createAddQuirkTool(options: AddQuirkToolOptions): ToolDefinition
       sourceRef: tool.schema.string().optional(),
     },
 
-    async execute(args) {
+    async execute(args, _context: ToolContext) {
       try {
         const deps = { embedder, store, keywordIndex, cfg, storePath };
         const quirk = await addQuirk(deps, {
@@ -864,7 +864,7 @@ export function createUpdateQuirkTool(options: UpdateQuirkToolOptions): ToolDefi
       sourceRef: tool.schema.string().optional(),
     },
 
-    async execute(args) {
+    async execute(args, _context: ToolContext) {
       try {
         const deps = { embedder, store, keywordIndex, cfg, storePath };
         const fields = [
@@ -951,7 +951,7 @@ export function createDeleteQuirkTool(options: DeleteQuirkToolOptions): ToolDefi
       id: tool.schema.string().min(1, "Quirk ID is required."),
     },
 
-    async execute(args) {
+    async execute(args, _context: ToolContext) {
       try {
         const deps = { embedder, store, keywordIndex, cfg, storePath };
         await removeQuirk(deps, args.id);

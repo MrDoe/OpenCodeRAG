@@ -3,7 +3,8 @@
  * settings dialog for editing config values, and model selection picker.
  */
 
-import type { TuiPluginModule, TuiDialogSelectProps, TuiDialogPromptProps, TuiToast, TuiState } from "@opencode-ai/plugin/tui";
+import type { TuiDialogSelectProps, TuiDialogPromptProps, TuiToast, TuiState, TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin/tui";
+import type { PluginOptions } from "@opencode-ai/plugin";
 import type { JSX } from "@opentui/solid";
 import { createElement, insert, setProp } from "@opentui/solid";
 import { readFileSync, existsSync, writeFileSync, unlinkSync } from "node:fs";
@@ -994,6 +995,421 @@ async function openSettingsDialog(api: {
   showCategoryMenu();
 }
 
+// ── OpenCode V2 setup ─────────────────────────────────────────────
+
+/**
+ * Structural subset of the OpenCode V2 TUI plugin context
+ * (`@opencode/plugin/tui`). Declared locally so this module compiles
+ * without depending on V2 type resolution; see `src/v2/v2-adapter.ts`
+ * for the server-side equivalent.
+ */
+type V2TuiContext = {
+  location?: { directory?: string } | undefined;
+  app?: { version?: string } | undefined;
+  theme?: unknown;
+  renderer?: unknown;
+  data?: {
+    provider?: { list?: () => readonly unknown[] | undefined };
+    model?: { list?: () => readonly unknown[] | undefined };
+  } | undefined;
+  ui?: {
+    slot: (claim: {
+      append: string;
+      render: (input: { sessionID?: string }) => JSX.Element;
+    }) => () => void;
+    dialog: {
+      select: <Value>(options: {
+        title: string;
+        placeholder?: string;
+        options: readonly { title: string; value: Value; description?: string }[];
+      }) => Promise<Value | undefined>;
+      prompt: (options: {
+        title: string;
+        placeholder?: string;
+        value?: string;
+      }) => Promise<string | undefined>;
+      clear: () => void;
+    };
+    toast: { show: (options: { title?: string; message: string; variant?: string }) => void };
+  } | undefined;
+  keymap?: {
+    layer: (input: () => {
+      mode?: string;
+      priority?: number;
+      commands: readonly {
+        id: string;
+        title?: string;
+        bind?: string;
+        run: (input?: string) => void;
+      }[];
+      bindings: readonly string[];
+    }) => void;
+    dispatch: (id: string, input?: string) => void;
+  } | undefined;
+};
+
+/** Map a V2 ResolvedTheme onto the legacy `{accent,text,textMuted}` shape `renderSidebar` expects. */
+function v2Theme(theme: unknown): { accent: unknown; text: unknown; textMuted: unknown } {
+  const t = theme as Record<string, any> | undefined;
+  return {
+    accent: t?.accent ?? t?.primary?.base ?? t?.primary ?? t?.border?.accent ?? "#7c9aff",
+    text: t?.text?.base ?? t?.text ?? t?.foreground ?? "#cdd6f4",
+    textMuted: t?.text?.muted ?? t?.text?.dim ?? t?.muted ?? t?.subtle ?? "#6c7086",
+  };
+}
+
+/** Translate a V1 keybinding string (`ctrl+enter`) to V2 key syntax (`ctrl+return`). */
+function v2Bind(key: string): string {
+  return key.replace(/\benter\b/g, "return");
+}
+
+/** Read token usage statistics from eval session logs (shared by the V2 path). */
+function readTokenStats(
+  worktree: string,
+): { inputTokens: number; ragCtxTokens: number; reads: number; ragTools: number; queries: number } | undefined {
+  try {
+    const configPath = getConfigPath(worktree);
+    if (!configPath) return undefined;
+    const cfg = loadConfig(configPath);
+    const vs = cfg.vectorStore as Record<string, unknown> | undefined;
+    const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
+    const storePath = resolve(worktree, storeRelPath);
+    const { listSessions } = require("./eval/storage.js") as typeof import("./eval/storage.js");
+    const sessions = listSessions(storePath);
+    if (sessions.length === 0) return undefined;
+    const latest = sessions[0]!;
+    return {
+      inputTokens: latest.totalTokens.input,
+      ragCtxTokens: latest.ragContextTokens,
+      reads: Object.entries(latest.toolCallCounts).filter(([k]) => k === "read").reduce((s, [, v]) => s + v, 0),
+      ragTools: latest.ragToolCalls,
+      queries: latest.messageCount,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Rebuild legacy sdk `Provider` shapes (model picker / base URL / API key) from V2 data domains. */
+function v2LegacyProviders(context: V2TuiContext): readonly Provider[] {
+  try {
+    const providers = (context.data?.provider?.list?.() ?? []) as {
+      id?: string;
+      name?: string;
+      settings?: { baseURL?: string };
+      options?: { baseURL?: string; apiKey?: string };
+    }[];
+    const models = (context.data?.model?.list?.() ?? []) as {
+      providerID?: string;
+      modelID?: string;
+      id?: string;
+      name?: string;
+    }[];
+    return providers.map((p) => {
+      const id = String(p.id ?? "");
+      const modelMap: Record<string, { name?: string }> = {};
+      for (const m of models) {
+        if ((m.providerID ?? "") !== id) continue;
+        const modelId = String(m.modelID ?? m.id ?? "");
+        if (modelId) modelMap[modelId] = { name: m.name };
+      }
+      return {
+        id,
+        name: p.name ?? id,
+        models: modelMap,
+        options: { baseURL: p.settings?.baseURL ?? p.options?.baseURL, apiKey: p.options?.apiKey },
+      } as unknown as Provider;
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * V2 settings dialog — promise-based port of {@link openSettingsDialog}
+ * (category menu → setting menu → value editors) onto `context.ui.dialog`.
+ */
+async function openSettingsDialogV2(
+  context: V2TuiContext,
+  worktree: string,
+  providers: readonly Provider[],
+  onSettingsChanged?: () => void,
+): Promise<void> {
+  const ui = context.ui;
+  if (!ui) return;
+  const { dialog, toast } = ui;
+  const settingsToast = (variant: string, message: string) => toast.show({ variant, title: "Settings", message });
+
+  const configPath = getConfigPath(worktree);
+  if (!configPath) {
+    settingsToast("error", "No config file found");
+    return;
+  }
+  const cfgRaw = readJsonFile(configPath);
+  if (!cfgRaw) {
+    settingsToast("error", "Cannot read config");
+    return;
+  }
+  const cfg: Record<string, unknown> = cfgRaw;
+  const vs = cfg.vectorStore as Record<string, unknown> | undefined;
+  const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
+  const storePath = resolve(worktree, storeRelPath);
+
+  const refreshCats = (): SettingCategory[] =>
+    buildSettingCategories(cfg, loadRuntimeOverrides(storePath) as unknown as Record<string, unknown>, providers);
+  const warnReindex = (path: string[]): void => {
+    if (path[0] === "indexing" || path[0] === "chunking") settingsToast("warning", "Chunking changed. Re-index required.");
+  };
+
+  categoryLoop: for (;;) {
+    const cats = refreshCats();
+    const catId = await dialog.select<string>({
+      title: "OpenCodeRAG Settings",
+      placeholder: "Select a category",
+      options: [
+        ...cats.map((c) => ({ title: c.label, value: c.id, description: c.description })),
+        { title: "Done", value: "__done__", description: "Close settings" },
+      ],
+    });
+    if (!catId || catId === "__done__") return;
+    const cat = cats.find((c) => c.id === catId);
+    if (!cat) continue;
+
+    settingLoop: for (;;) {
+      // Rebuild so toggled values reflect immediately (matches the V1 dialog).
+      const fresh = refreshCats().find((c) => c.id === cat.id) ?? cat;
+      const picked = await dialog.select<string>({
+        title: fresh.label,
+        placeholder: "Select a setting",
+        options: [
+          ...fresh.entries.map((s) => ({
+            title: `${s.label}: ${s.type === "boolean" ? (s.currentValue ? "Yes" : "No") : s.type === "json" ? JSON.stringify(s.currentValue) : String(s.currentValue)}`,
+            value: s.path.join("."),
+            description: s.options ? "Select to open model picker" : s.type === "boolean" ? "Select to toggle" : "Select to edit",
+          })),
+          { title: "\u2190 Back", value: "__back__", description: "Return to categories" },
+        ],
+      });
+      if (!picked || picked === "__back__") continue categoryLoop;
+      const entry = fresh.entries.find((s) => s.path.join(".") === picked);
+      if (!entry) continue;
+
+      if (entry.options) {
+        const modelPick = await dialog.select<string>({
+          title: `Select ${entry.label}`,
+          placeholder: "Search models\u2026",
+          options: entry.options,
+        });
+        if (!modelPick) continue;
+        let value = modelPick;
+        if (modelPick === "__custom__") {
+          const custom = await dialog.prompt({
+            title: `Custom ${entry.label}`,
+            placeholder: "e.g. ollama/my-model or openai/custom-model",
+            value: typeof entry.currentValue === "string" ? entry.currentValue : "",
+          });
+          if (custom === undefined) continue;
+          value = custom;
+        }
+        const saved = saveModelSelection(storePath, configPath, value, entry.path, providers);
+        if (saved) {
+          entry.currentValue = saved;
+          settingsToast("success", `${entry.label}: ${saved}`);
+          if (entry.path[0] === "embedding") {
+            settingsToast("warning", "Embedding changed. Re-index may be required. Restart OpenCode for changes.");
+          }
+        } else if (value) {
+          saveRuntimeOverride(storePath, entry.path, value);
+          updateConfigValue(configPath, entry.path, value);
+          entry.currentValue = value;
+        }
+        onSettingsChanged?.();
+        continue;
+      }
+
+      if (entry.type === "boolean") {
+        const newVal = !entry.currentValue;
+        saveRuntimeOverride(storePath, entry.path, newVal);
+        updateConfigValue(configPath, entry.path, newVal);
+        settingsToast("success", `${entry.label}: ${newVal ? "Yes" : "No"}`);
+        warnReindex(entry.path);
+        if (entry.path.join(".") === "openCode.autoIndex.enabled") {
+          syncWatcherStatusFile(storePath, newVal);
+          settingsToast("warning", "Watcher changes take effect after an OpenCode restart");
+        }
+        entry.currentValue = newVal;
+        onSettingsChanged?.();
+        continue;
+      }
+
+      const raw = await dialog.prompt({
+        title: `Edit ${entry.label}`,
+        placeholder: entry.type === "json" ? "JSON" : "Enter new value",
+        value: entry.type === "json" ? JSON.stringify(entry.currentValue, null, 2) : String(entry.currentValue),
+      });
+      if (raw === undefined) continue;
+      if (entry.type === "number") {
+        const num = parseFloat(raw);
+        if (isNaN(num)) {
+          settingsToast("error", "Enter a valid number");
+          continue;
+        }
+        saveRuntimeOverride(storePath, entry.path, num);
+        updateConfigValue(configPath, entry.path, num);
+        settingsToast("success", `${entry.label}: ${num}`);
+        warnReindex(entry.path);
+        entry.currentValue = num;
+        onSettingsChanged?.();
+      } else if (entry.type === "json") {
+        try {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            settingsToast("error", "Value must be a JSON object");
+            continue;
+          }
+          saveRuntimeOverride(storePath, entry.path, parsed as Record<string, unknown>);
+          updateConfigValue(configPath, entry.path, parsed);
+          settingsToast("success", `${entry.label}: updated`);
+          warnReindex(entry.path);
+          entry.currentValue = parsed as Record<string, unknown>;
+          onSettingsChanged?.();
+        } catch {
+          settingsToast("error", "Invalid JSON");
+        }
+      } else {
+        saveRuntimeOverride(storePath, entry.path, raw);
+        updateConfigValue(configPath, entry.path, raw);
+        settingsToast("success", `${entry.label}: ${raw}`);
+        entry.currentValue = raw;
+        onSettingsChanged?.();
+      }
+    }
+  }
+}
+
+/**
+ * OpenCode V2 entrypoint — satisfies the V2 default-export schema
+ * (`{id, setup}`), which the server-role loader validates (OpenCode ≥ 2.x
+ * rejects `{id, tui}`-only modules with `err_*` "Plugin must export a default
+ * definition with an id and an effect or setup function").
+ *
+ * The server role calls this with a server context (no `ui`/`keymap`) → no-op.
+ * The TUI role calls it with the V2 TUI context → registers the sidebar slot,
+ * keybindings, and the settings dialog. Returns a cleanup that unclaims the slot.
+ */
+async function setup(context: V2TuiContext): Promise<(() => void) | undefined> {
+  const ui = context.ui;
+  const keymap = context.keymap;
+  if (!ui?.slot || !keymap) return undefined; // server-role load: nothing to register
+
+  const version = context.app?.version ?? getVersion();
+  const worktree = context.location?.directory;
+  let cachedStatus: RagStatus = DEFAULT_STATUS;
+  let lastRefresh = 0;
+  const REFRESH_INTERVAL_MS = Number(process.env.OPENCODE_RAG_TUI_REFRESH_MS) || 30000;
+
+  let tuiConfig: { fileListKeybinding: string; chunksKeybinding: string; settingsKeybinding: string } | undefined;
+  const tuiConfigPath = worktree ? getConfigPath(worktree) : undefined;
+  if (tuiConfigPath) {
+    try {
+      tuiConfig = loadConfig(tuiConfigPath).tui;
+    } catch {
+      // use defaults
+    }
+  }
+
+  /** Refresh the cached RAG status from disk. */
+  function refreshStatus(): void {
+    if (worktree) {
+      cachedStatus = loadRagStatus(worktree);
+      lastRefresh = Date.now();
+    }
+  }
+  refreshStatus();
+
+  // Register sidebar slot (V2 slot tree; the V1 prompt slots are unnecessary
+  // here — not claiming them leaves the host's default prompt intact).
+  const unclaimSidebar = ui.slot({
+    append: "sidebar.content",
+    render: () => {
+      if (Date.now() - lastRefresh > REFRESH_INTERVAL_MS) refreshStatus();
+      const tokenStats = worktree ? readTokenStats(worktree) : undefined;
+      return renderSidebar(v2Theme(context.theme), version, cachedStatus, tuiConfig, tokenStats);
+    },
+  });
+
+  // Compute storePath for flag-based IPC with the server plugin.
+  let flagStorePath: string | undefined;
+  if (worktree) {
+    try {
+      const flagConfigPath = getConfigPath(worktree);
+      if (flagConfigPath) {
+        const flagCfg = loadConfig(flagConfigPath);
+        const vs = flagCfg.vectorStore as Record<string, unknown> | undefined;
+        const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
+        flagStorePath = resolve(worktree, storeRelPath);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const settingsKey = tuiConfig?.settingsKeybinding ?? "ctrl+shift+r";
+  const fileListKey = tuiConfig?.fileListKeybinding ?? "ctrl+enter";
+  const chunksKey = tuiConfig?.chunksKeybinding ?? "ctrl+alt+enter";
+  try {
+    keymap.layer(() => ({
+      mode: "global",
+      priority: 1000,
+      commands: [
+        {
+          id: "opencode-rag:settings",
+          title: "OpenCodeRAG Settings",
+          bind: v2Bind(settingsKey),
+          run: () => {
+            if (worktree) {
+              void openSettingsDialogV2(context, worktree, v2LegacyProviders(context), () => refreshStatus());
+            }
+          },
+        },
+        {
+          id: "opencode-rag:show-file-list",
+          title: "Add File List",
+          bind: v2Bind(fileListKey),
+          run: () => {
+            if (flagStorePath) {
+              setPendingRagInjection(flagStorePath, "files");
+              setTimeout(() => keymap.dispatch("prompt.submit"), 0);
+            }
+          },
+        },
+        {
+          id: "opencode-rag:add-chunks",
+          title: "Add RAG Chunks",
+          bind: v2Bind(chunksKey),
+          run: () => {
+            if (flagStorePath) {
+              setPendingRagInjection(flagStorePath, "chunks");
+              setTimeout(() => keymap.dispatch("prompt.submit"), 0);
+            }
+          },
+        },
+      ],
+      bindings: ["opencode-rag:settings", "opencode-rag:show-file-list", "opencode-rag:add-chunks"],
+    }));
+  } catch {
+    // Keymap registration failure must never break the sidebar slot.
+  }
+
+  return () => {
+    try {
+      unclaimSidebar();
+    } catch {
+      // ignore
+    }
+  };
+}
+
 // ── Plugin export ──────────────────────────────────────────────────
 
 /**
@@ -1001,9 +1417,12 @@ async function openSettingsDialog(api: {
  * Registers sidebar panels, keybindings, and the settings dialog with OpenCode's
  * terminal UI framework.
  */
-const plugin: TuiPluginModule & { id: string } = {
+const plugin = {
   id: `${PLUGIN_NAME}:tui`,
-  tui: async (api, _options, meta) => {
+  /** V2 entrypoint (schema `{id, setup}`); no-op under the server role, TUI registration under the TUI role. */
+  setup,
+  /** V1 TUI entrypoint — retained for OpenCode 1.x compatibility. */
+  tui: async (api: TuiPluginApi, _options: PluginOptions | undefined, meta: TuiPluginMeta) => {
     const version = meta.version ?? getVersion();
     let cachedStatus: RagStatus = DEFAULT_STATUS;
     let lastRefresh = 0;
