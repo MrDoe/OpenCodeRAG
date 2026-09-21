@@ -315,49 +315,45 @@ Plugin must export a default definition with an id and an effect or setup functi
 (SchemaError: Missing key at ["default"]["effect"], Missing key at ["default"]["setup"])
 ```
 
-The plugin therefore default-exports a dual V1/V2 shape — `setup` for V2, `server`/`tui`
-retained for V1:
+The plugin therefore default-exports the V2 shape — `id` + `setup` (OpenCode 1.x
+support was dropped in v2.0.0):
 
 ```typescript
 // src/plugin-entry.ts (server plugin)
 import { Plugin } from "@opencode/plugin";
 
 export const id = "opencode-rag-plugin";
-export const server = ragPlugin; // V1 factory, kept for OpenCode 1.x
 async function setup(ctx: Plugin.Context) {
-  return registerRagPluginV2(ctx); // V2: re-registers V1 hooks via the context adapter
+  return registerRagPluginV2(ctx); // registers V1-factory hooks via the context adapter
 }
-export default Plugin.define({ id, setup, server });
+export default Plugin.define({ id, setup });
 ```
 
 ```typescript
 // src/tui.ts (TUI plugin)
 const plugin = {
   id: "opencode-rag-plugin:tui",
-  setup, // V2: registers sidebar/keybindings when the TUI role loads it; no-op for the server role
-  tui, // V1 TUI entrypoint, kept for OpenCode 1.x
+  setup, // registers sidebar/keybindings when the TUI role loads it; no-op for the server role
 };
 export default plugin;
 ```
 
 Key requirements:
 - The `default` export MUST be an object with `id` **and** `setup` (or `effect`) — V2 rejects
-  bare functions and V1-only `{ id, server }` / `{ id, tui }` shapes
+  bare functions and V1-era `{ id, server }` / `{ id, tui }` shapes
 - `setup` must be safe under the **server role**: the server loads every
   `.opencode/plugins/*.js` file and calls `setup` with a server context that has no `ui`/`keymap`;
   the TUI-only module detects this and returns without registering anything
-- Named exports are kept for backward compatibility but are not read by the V2 loader
 
-> **Migration note:** the previous guidance in this section (`{ id, server }` plus a
-> `server()` stub on the TUI plugin) targeted OpenCode v1.17.0 and is obsolete — it produces
-> the schema error above on V2.
+> **Migration note:** OpenCode 1.x (`{ id, server }` / `{ id, tui }` entrypoints) is no longer
+> supported as of v2.0.0. On V2, an old shape produces the schema error above.
 
 ## Plugin Registration
 
 Do NOT register the plugin via `"plugin": ["opencode-rag-plugin"]` in OpenCode config. Instead, rely on `.opencode/plugins/*.js` auto-discovery:
 
 1. Run `opencode-rag init` to create `.opencode/plugins/rag-plugin.js` and `.opencode/skills/opencode-rag/SKILL.md`
-2. The generated plugin file re-exports the dual-shape default export from `node_modules/`:
+2. The generated plugin file re-exports the default export from `node_modules/`:
 
 ```javascript
 import plugin from "../node_modules/opencode-rag-plugin/dist/plugin-entry.js";
@@ -436,11 +432,11 @@ This occurs when OpenCode's Bun runtime tries to load the plugin via the `"plugi
 
 ```bash
 node --input-type=module -e \
-  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default?.setup, typeof m.default?.server)"
+  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default?.setup)"
 ```
 
-Both should print `function`. For the TUI module substitute
-`.opencode/plugins/rag-tui.js`; its default must expose `id`, `setup`, and `tui`.
+`function`. For the TUI module substitute
+`.opencode/plugins/rag-tui.js`; its default must expose `id` and `setup`.
 
 Plugin load failures (with a `ref=err_…` reference) are logged to
 `~/.local/share/opencode/log/opencode.log` — grep for `failed to load plugin` and read the

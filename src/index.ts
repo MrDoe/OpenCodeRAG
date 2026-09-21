@@ -33,13 +33,4 @@ export { checkForUpdate, getCurrentVersion, installLatestUpdate, compareVersions
 export type { UpdateInfo, InstallUpdateResult } from "./core/version-check.js";
 
 /** Plugin entry — only importable inside OpenCode's runtime. */
-import { ragPlugin } from "./plugin.js";
-
-/** The plugin server configuration object, used to register OpenCodeRAG as an OpenCode plugin. */
-export const server = ragPlugin;
-
-/** Unique identifier for the OpenCodeRAG plugin. */
-export const id = "opencode-rag-plugin";
-
-/** Default export conforming to OpenCode's plugin module signature. */
-export default { id, server: ragPlugin };
+export { id, default } from "./plugin-entry.js";

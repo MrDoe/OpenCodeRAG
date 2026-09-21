@@ -164,8 +164,8 @@ export function removeStaleGlobalPluginRegistrations(homeDir: string, pluginName
  * Generate the content for `.opencode/plugins/rag-plugin.js`.
  *
  * This file re-exports the plugin from the workspace-local node_modules.
- * The plugin entry ships a dual V1/V2 default export, so a bare default
- * re-export is sufficient for both OpenCode generations.
+ * The plugin entry default-exports the OpenCode V2 module shape
+ * (`{ id, setup }`), so a bare default re-export is all that is needed.
  *
  * @param packageName - The npm package name of the RAG plugin.
  * @returns The JavaScript source code for the plugin entry file.

@@ -42,7 +42,7 @@ See [PLANNING.md](../PLANNING.md) for the full detailed roadmap and brainstormin
 - `chat.message` hook with file suggestions and auto-injection
 - RAG-backed read override tool
 - TUI settings panel with model picker dropdowns
-- Dual V1/V2 plugin export: OpenCode V2 `{ id, setup }` schema (server + TUI) with V1 `server`/`tui` keys retained
+- OpenCode V2-only plugin export (`{ id, setup }`; OpenCode 1.x support dropped in v2.0.0)
 - Background auto-indexing with watcher status
 - API key auto-resolution from OpenCode provider config
 - Documentation mode (`/doc` slash command, per-subdirectory progress tracking)

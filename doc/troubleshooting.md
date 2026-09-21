@@ -15,10 +15,10 @@
 **Verify:**
 ```bash
 node --input-type=module -e \
-  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default?.setup, typeof m.default?.server)"
+  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default?.setup)"
 ```
 
-Both should be `function`.
+`function`.
 
 ### "Plugin must export a default definition with an id and an effect or setup function"
 
@@ -36,7 +36,7 @@ the logged `cause=` is authoritative; do not infer the cause from the `ref=` alo
 **Fix:**
 1. Rebuild: `npm run build` (`dist/` is gitignored — a `git pull` updates `src/` but never the loaded `dist/`)
 2. Verify the export shape (see *Debugging Plugin Loading* below): the default must expose
-   `id` and `setup` (server plugin) or `id`, `setup`, and `tui` (TUI plugin)
+   `id` and `setup` (both the server and the TUI plugin)
 3. If the TUI plugin still fails with `Environment variable "OPENTUI_FORCE_WCWIDTH" is
    already registered with different configuration`, keep the env-registry normalization
    shim in `.opencode/plugins/rag-tui.js` (it must run after the `dist/tui.js` import)
@@ -281,13 +281,13 @@ If the LLM description provider is unavailable or times out, affected files are 
 ```bash
 # Test dynamic import (V2 shape: default must expose id + setup)
 node --input-type=module -e \
-  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default?.setup, typeof m.default?.server)"
+  "const m = await import('opencode-rag-plugin'); console.log(typeof m.default?.setup)"
 
 # Test require (CommonJS fallback)
 node -e \
-  "const m = require('opencode-rag-plugin'); console.log(typeof m.default?.setup, typeof m.default?.server)"
+  "const m = require('opencode-rag-plugin'); console.log(typeof m.default?.setup)"
 
-# TUI module: must expose id, setup, and tui
+# TUI module: must expose id + setup
 node --input-type=module -e \
   "const m = await import('./.opencode/plugins/rag-tui.js'); console.log(Object.keys(m.default), typeof m.default.setup)"
 ```

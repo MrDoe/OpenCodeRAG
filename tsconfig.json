@@ -18,8 +18,6 @@
     "noUnusedParameters": true,
     "baseUrl": ".",
     "paths": {
-      "@opencode-ai/plugin": ["./.opencode/node_modules/@opencode-ai/plugin/dist/index.d.ts"],
-      "@opencode-ai/plugin/*": ["./.opencode/node_modules/@opencode-ai/plugin/dist/*"],
       "@opencode-ai/sdk": ["node_modules/@opencode-ai/sdk/dist/index.d.ts"],
       "@opencode-ai/sdk/*": ["node_modules/@opencode-ai/sdk/dist/*"],
       "@opentui/solid": ["node_modules/@opentui/solid"],
