@@ -82,12 +82,14 @@
   },
   "homepage": "https://github.com/MrDoe/OpenCodeRAG#readme",
   "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.0.0"
+    "@opencode-ai/plugin": ">=1.0.0",
+    "@opencode/plugin": ">=2.0.0"
   },
   "dependencies": {
     "@e965/xlsx": "^0.20.3",
     "@lancedb/lancedb": "^0.29.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opencode/plugin": "2.0.12",
     "@preact/signals": "^2.10.0",
     "@thednp/dommatrix": "^3.0.4",
     "@vscode/tree-sitter-wasm": "^0.3.1",
