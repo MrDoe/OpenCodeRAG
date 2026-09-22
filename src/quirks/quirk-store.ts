@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { EmbeddingProvider, VectorStore, KeywordIndex, SearchResult } from "../core/interfaces.js";
@@ -232,23 +232,7 @@ export async function addQuirk(deps: QuirkStoreDeps, input: QuirkInput): Promise
     throw new Error("Embedding returned empty vector for quirk content");
   }
 
-  const chunk = {
-    id,
-    content: input.content,
-    description: "",
-    embedding,
-    metadata: {
-      filePath: QUIRK_FILE_PREFIX + id,
-      startLine: 0,
-      endLine: 0,
-      language: "quirk",
-      kind: "quirk",
-      quirkType: input.quirkType,
-      tags: input.tags ?? [],
-      confidence,
-      lastObserved,
-    },
-  };
+  const chunk = quirkChunk(quirk, embedding);
 
   await deps.store.addChunks([chunk]);
   deps.keywordIndex.addChunks([chunk]);
@@ -260,6 +244,34 @@ export async function addQuirk(deps: QuirkStoreDeps, input: QuirkInput): Promise
   }
 
   return quirk;
+}
+
+/**
+ * Build the store/keyword-index chunk shape for a quirk. Shared by `addQuirk`
+ * and `reconcileQuirks` — a rebuild-restore must produce the exact same row
+ * shape (metadata.filePath in particular drives list/remove/reconcile id maps).
+ *
+ * `embedding` may be `[]` for keyword-index-only adds: `chunkToRow` skips rows
+ * with an empty embedding, and the keyword index only tokenizes content.
+ */
+function quirkChunk(q: Quirk, embedding: number[]) {
+  return {
+    id: q.id,
+    content: q.content,
+    description: "",
+    embedding,
+    metadata: {
+      filePath: QUIRK_FILE_PREFIX + q.id,
+      startLine: 0,
+      endLine: 0,
+      language: "quirk",
+      kind: "quirk",
+      quirkType: q.quirkType,
+      tags: q.tags ?? [],
+      confidence: q.confidence,
+      lastObserved: q.lastObserved,
+    },
+  };
 }
 
 /** Remove a quirk by its ID. Throws if no quirk with the given ID exists. */
@@ -291,9 +303,10 @@ export async function listQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
       all.sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
       return all;
     }
-    // Fallback: scan the store
+    // Fallback: scan the store. Stored filePaths are workspace-absolute
+    // (chunkToRow normalizes), so match quirks on basename, not prefix.
     const filePaths = await deps.store.getFilePaths();
-    const quirkPaths = filePaths.filter((fp) => fp.startsWith(QUIRK_FILE_PREFIX));
+    const quirkPaths = filePaths.filter((fp) => path.basename(fp).startsWith(QUIRK_FILE_PREFIX));
     const result: Quirk[] = [];
     for (const fp of quirkPaths) {
       const chunks = await deps.store.getChunksByFilePath(fp);
@@ -315,6 +328,186 @@ export async function listQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
   const all = [...memQuirksFor(deps.storePath).values()];
   all.sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
   return all;
+}
+
+/** Dependencies for {@link reconcileQuirks} — like {@link QuirkStoreDeps}, but
+ *  the keyword index is optional (index passes may run without one). */
+export interface QuirkReconcileDeps extends Omit<QuirkStoreDeps, "keywordIndex"> {
+  keywordIndex?: KeywordIndex;
+}
+
+/** Outcome of a {@link reconcileQuirks} run. Zeroes mean "already consistent". */
+export interface QuirkReconcileResult {
+  /** Quirks re-embedded and restored into the vector store (were in quirks.jsonl but not the table). */
+  restoredToStore: number;
+  /** Quirks added to the in-memory keyword index (lexical only — no embedding involved). */
+  addedToKeywordIndex: number;
+  /** Store quirk chunks deleted because their quirks.jsonl entry is gone (past the grace window). */
+  removedOrphans: number;
+}
+
+/**
+ * Store-dir artifact recording when each orphaned store quirk (in the table but
+ * absent from quirks.jsonl) was FIRST observed as an orphan. Deletion requires
+ * the orphan to be seen again at least {@link QUIRK_ORPHAN_GRACE_MS} later.
+ *
+ * Two-sighting instead of a row timestamp because the table has no
+ * `lastObserved` column (ChunkRow never stored it), and because `addQuirk`
+ * writes the store BEFORE appending to quirks.jsonl — a quirk that is
+ * momentarily store-only is an in-flight add and must never be race-deleted.
+ * The file makes the grace window work across processes (plugin/CLI/watcher
+ * each run their own reconcile).
+ */
+const QUIRK_ORPHAN_STATE_FILE = "quirk-orphans.json";
+const QUIRK_ORPHAN_GRACE_MS = 60 * 60 * 1000;
+
+/**
+ * Reconcile `quirks.jsonl` (the source of truth for quirk memory) into the
+ * vector store and the keyword index, in both directions.
+ *
+ * Why this exists: full store rebuilds rebuild the table from **workspace
+ * files only** — `swapStoreDirectories` carries `quirks.jsonl` across the swap,
+ * but nothing ever re-embeds those entries, so every quirk added before a
+ * rebuild silently vanishes from recall while `quirk list`/`lint` (which read
+ * the jsonl) still show it. The keyword index has the same gap: it only gains
+ * quirks via in-process `addQuirk`, and any process that saves its in-memory
+ * index clobbers entries added elsewhere.
+ *
+ * Behavior:
+ * - Restores jsonl quirks missing from the store (one batched embed call).
+ * - Adds jsonl quirks missing from the keyword index (no embedding needed).
+ * - Deletes store quirk chunks whose jsonl entry is gone — only when the jsonl
+ *   exists and parses non-empty (a missing/unreadable file means "unknown",
+ *   never "empty") and only after the orphan was observed twice across
+ *   {@link QUIRK_ORPHAN_GRACE_MS} (see QUIRK_ORPHAN_STATE_FILE — the table has
+ *   no row timestamps, and addQuirk writes the store before the jsonl append).
+ * - Persists the keyword index when it changed (best-effort).
+ *
+ * Idempotent and safe under concurrent runs: `store.addChunks` dedups by id and
+ * `KeywordIndex.addChunks` overwrites by id. Never applied to memory stores
+ * (per-process lifetime, nothing on disk to drift). Failures propagate to the
+ * caller, which is expected to treat reconcile as best-effort.
+ *
+ * @param deps - Embedder, store, optional keyword index, config, store path.
+ * @returns Counts of what changed (all zero when already consistent).
+ */
+export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkReconcileResult> {
+  const result: QuirkReconcileResult = { restoredToStore: 0, addedToKeywordIndex: 0, removedOrphans: 0 };
+  if (isMemoryStore(deps.storePath)) return result;
+
+  const jsonlFile = jsonlPath(deps.storePath);
+  const jsonlExists = existsSync(jsonlFile);
+  const quirks = jsonlExists ? readJsonl(jsonlFile) : [];
+  const jsonlIds = new Set(quirks.map((q) => q.id));
+
+  // Exact enumeration of quirk chunks in the table. The store normalizes
+  // filePaths to absolute on write (chunkToRow → normalizeFilePath), so quirk
+  // rows read back as "<root>/quirk:<id>" — match on the basename, which is
+  // always QUIRK_FILE_PREFIX + id, and keep the stored path for lookups/deletes
+  // (deleteByFilePath normalizes its arg; passing the stored absolute path
+  // matches regardless of this process's cwd).
+  const quirkRows: Array<{ filePath: string; id: string }> = [];
+  for (const p of await deps.store.getFilePaths()) {
+    const base = path.basename(p);
+    if (base.startsWith(QUIRK_FILE_PREFIX)) {
+      quirkRows.push({ filePath: p, id: base.slice(QUIRK_FILE_PREFIX.length) });
+    }
+  }
+  const storeIds = new Set(quirkRows.map((r) => r.id));
+
+  // 1. Restore jsonl quirks the table is missing (the rebuild-wipe direction).
+  const missing = quirks.filter((q) => !storeIds.has(q.id));
+  if (missing.length > 0) {
+    const prefix = deps.cfg.embedding.documentPrefix ?? "";
+    const embeddings = await deps.embedder.embed(missing.map((q) => prefix + q.content), "document");
+    if (embeddings.length !== missing.length || embeddings.some((e) => !e || e.length === 0)) {
+      throw new Error("Embedding returned empty vector(s) while reconciling quirks");
+    }
+    // Single batched write = single transaction; addChunks dedups by id, so a
+    // concurrent reconcile adding the same quirks converges instead of duplicating.
+    await deps.store.addChunks(missing.map((q, i) => quirkChunk(q, embeddings[i]!)));
+    result.restoredToStore = missing.length;
+    for (const q of missing) storeIds.add(q.id); // keep orphan pass below consistent
+  }
+
+  // 2. Ensure every jsonl quirk is in the keyword index. Lexical only — the
+  //    keyword index never looks at embeddings, so this needs no provider.
+  let kiDirty = false;
+  if (deps.keywordIndex) {
+    for (const q of quirks) {
+      if (deps.keywordIndex.hasChunk(q.id)) continue;
+      deps.keywordIndex.addChunks([quirkChunk(q, [])]);
+      result.addedToKeywordIndex++;
+      kiDirty = true;
+    }
+  }
+
+  // 3. Orphan direction: store quirks whose jsonl entry is gone. Runs only when
+  //    the jsonl exists AND parses to at least one quirk (a missing or wholly
+  //    unreadable jsonl means "unknown", never "empty" — never mass-delete on
+  //    it). Each orphan must be observed twice, spanning the grace window,
+  //    before deletion — see QUIRK_ORPHAN_STATE_FILE.
+  if (jsonlExists && quirks.length > 0) {
+    const suspectsPath = path.join(deps.storePath, QUIRK_ORPHAN_STATE_FILE);
+    const suspects: Record<string, number> = (() => {
+      try {
+        const parsed = JSON.parse(readFileSync(suspectsPath, "utf-8")) as Record<string, number>;
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+      } catch {
+        return {};
+      }
+    })();
+    let suspectsDirty = false;
+    const now = Date.now();
+
+    for (const { filePath, id } of quirkRows) {
+      if (jsonlIds.has(id)) {
+        if (id in suspects) { delete suspects[id]; suspectsDirty = true; } // regained its jsonl entry
+        continue;
+      }
+      const firstSeen = suspects[id];
+      if (firstSeen === undefined) {
+        suspects[id] = now; // first sighting — keep (may be an in-flight add)
+        suspectsDirty = true;
+        continue;
+      }
+      if (now - firstSeen < QUIRK_ORPHAN_GRACE_MS) continue;
+      await deps.store.deleteByFilePath(filePath);
+      deps.keywordIndex?.removeByFilePath(filePath);
+      delete suspects[id];
+      result.removedOrphans++;
+      kiDirty = true;
+      suspectsDirty = true;
+    }
+    // Prune suspects that no longer exist in the store (jsonl regained them,
+    // a rebuild dropped them, or a previous reconcile deleted them).
+    for (const id of Object.keys(suspects)) {
+      if (!storeIds.has(id)) { delete suspects[id]; suspectsDirty = true; }
+    }
+
+    if (suspectsDirty) {
+      try {
+        if (Object.keys(suspects).length === 0) rmSync(suspectsPath, { force: true });
+        else writeFileSync(suspectsPath, JSON.stringify(suspects, null, 2));
+      } catch {
+        // best-effort — worst case the grace restarts for unmarked orphans
+      }
+    }
+  }
+
+  // 4. Persist the keyword index so the NEXT process to load it inherits the
+  //    reconciled state (this is what stops pass-end saves from clobbering
+  //    quirks added by other processes). Best-effort: a failed save leaves the
+  //    in-memory index correct; the next reconcile re-saves.
+  if (kiDirty && deps.keywordIndex) {
+    try {
+      await deps.keywordIndex.save(deps.storePath);
+    } catch {
+      // best-effort
+    }
+  }
+
+  return result;
 }
 
 /** Recall quirks matching a query, with confidence re-weighting. */

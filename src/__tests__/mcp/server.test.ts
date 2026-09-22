@@ -122,6 +122,7 @@ function makeKeywordIndex(results: SearchResult[]): KeywordIndex {
     search: (_query: string, _topK: number) => results,
     clear: () => {},
     count: () => results.length,
+    hasChunk: () => false,
     save: async () => {},
     close: () => {},
     getMatchedTerms: (_query: string, _chunkId: string) => [],

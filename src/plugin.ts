@@ -38,7 +38,7 @@ import { countTokens } from "./eval/token-counter.js";
 import { checkForUpdate, getCurrentVersion, installLatestUpdate, type UpdateInfo } from "./core/version-check.js";
 import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "./core/auto-update-state.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
-import { listQuirks, lintQuirks, recallQuirks, sharedWords } from "./quirks/quirk-store.js";
+import { listQuirks, lintQuirks, recallQuirks, sharedWords, reconcileQuirks } from "./quirks/quirk-store.js";
 import { autoCaptureQuirks, type CaptureExchange } from "./quirks/auto-capture.js";
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
@@ -1715,6 +1715,27 @@ export const ragPlugin: Plugin = async (
 
   // Load or create keyword index for hybrid search
   const keywordIndex = await loadKeywordIndex(storePath, logFilePath, logLevel);
+
+  // Restore quirks that are in quirks.jsonl but missing from the vector store
+  // or keyword index (full rebuilds drop quirk chunks — see reconcileQuirks).
+  // Fire-and-forget: must never block plugin startup, and the embedder may be
+  // offline. The background watcher re-runs this at every pass end.
+  void reconcileQuirks({ embedder, store, keywordIndex, cfg: effectiveCfg, storePath })
+    .then((r) => {
+      if (r.restoredToStore > 0 || r.addedToKeywordIndex > 0 || r.removedOrphans > 0) {
+        appendDebugLog(logFilePath, {
+          scope: "plugin",
+          message: `Quirk reconcile: restored ${r.restoredToStore} to store, added ${r.addedToKeywordIndex} to keyword index, removed ${r.removedOrphans} orphans`,
+        }, logLevel);
+      }
+    })
+    .catch((err) => {
+      appendDebugLog(logFilePath, {
+        scope: "plugin",
+        message: "Quirk reconcile failed",
+        error: err,
+      }, logLevel);
+    });
 
   // Create description provider (enabled by default)
   const descriptionConfig = effectiveCfg.description ?? { enabled: true, provider: "ollama" as const, baseUrl: "http://127.0.0.1:11434/api", model: "qwen2.5:3b", systemPrompt: "" };

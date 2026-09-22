@@ -12,6 +12,7 @@ import { createDescriptionProvider } from "../describer/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { readStoreDimension } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
+import { reconcileQuirks } from "../quirks/quirk-store.js";
 import type {
   EmbeddingProvider,
   VectorStore,
@@ -167,6 +168,27 @@ export async function resolveRagContext(
   const keywordIndex = opts.skipKeywordIndex
     ? new KeywordIndex(storePath)
     : await loadKeywordIndex(storePath);
+
+  // Reconcile quirks.jsonl into the store + keyword index (best-effort).
+  // Full rebuilds rebuild the table from workspace files only — the preserved
+  // quirks.jsonl was never re-embedded, so recall would silently miss quirks
+  // while `quirk list` still showed them. Skipped for read-only bootstraps
+  // (skipProbe/skipKeywordIndex) — those must never write to the store.
+  if (!(opts.skipProbe || opts.skipKeywordIndex)) {
+    try {
+      const rec = await reconcileQuirks({ embedder, store, keywordIndex, cfg, storePath });
+      if (rec.restoredToStore > 0 || rec.removedOrphans > 0) {
+        // Surface only store-level drift (the split-brain symptom). Keyword-index
+        // healing is routine (addQuirk never persisted the index) and stays silent.
+        console.warn(
+          `[bootstrap] Quirk reconcile: restored ${rec.restoredToStore} to store, ` +
+          `removed ${rec.removedOrphans} orphans (keyword index: +${rec.addedToKeywordIndex})`,
+        );
+      }
+    } catch (err) {
+      console.warn(`[bootstrap] Quirk reconcile failed: ${(err as Error).message}`);
+    }
+  }
 
   const descriptionConfig = cfg.description;
   const descriptionProvider =

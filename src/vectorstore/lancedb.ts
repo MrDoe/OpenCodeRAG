@@ -247,6 +247,7 @@ export async function readStoreDimension(storePath: string): Promise<number | un
  */
 const PRESERVED_STORE_ENTRIES = [
   "quirks.jsonl",
+  "quirk-orphans.json",
   "runtime-overrides.json",
   "watcher-status.json",
   ".desc-cache.json",

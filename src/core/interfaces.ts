@@ -153,6 +153,8 @@ export interface KeywordIndex {
   clear(): void;
   /** Return the total number of indexed chunks. */
   count(): number;
+  /** Whether a chunk with the given id is indexed. Used by quirk reconcile. */
+  hasChunk(id: string): boolean;
   /** Persist the index to disk as JSON. */
   save(filePath?: string): Promise<void>;
 }

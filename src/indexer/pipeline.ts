@@ -20,6 +20,7 @@ import type { ImageVisionProvider } from "../chunker/image.js";
 import { embedBatch, probeEmbeddingDimension } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { swapStoreDirectories } from "../vectorstore/lancedb.js";
+import { reconcileQuirks } from "../quirks/quirk-store.js";
 import { createIndexStats, type IndexRunStats, type IndexStatusSummary } from "./stats.js";
 import { prepareFile, buildTextsToEmbed, type WorkerResult, type PreparedFile } from "./worker.js";
 import { tagChunksRole } from "../core/chunk-role.js";
@@ -1213,6 +1214,32 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   if (keepPreviousIndexState) {
     logger.warn("Rebuild did not complete — keeping the previous manifest and keyword index.");
   } else {
+    // Reconcile quirks.jsonl into the store + keyword index BEFORE the
+    // pass-end save. Two failure modes this heals:
+    //  (a) rebuild swaps rebuild the table from workspace files only — the
+    //      preserved quirks.jsonl was never re-embedded, so recall silently
+    //      missed every quirk added before the rebuild;
+    //  (b) saving our in-memory keyword index without the jsonl quirks
+    //      clobbers entries that other processes (plugin/CLI) added since we
+    //      loaded it.
+    // Best-effort: a reconcile failure must never fail the pass.
+    try {
+      const rec = await reconcileQuirks({
+        embedder: options.embedder,
+        store: options.store,
+        keywordIndex: options.keywordIndex,
+        cfg: options.config,
+        storePath: options.storePath,
+      });
+      if (rec.restoredToStore > 0 || rec.addedToKeywordIndex > 0 || rec.removedOrphans > 0) {
+        logger.info(
+          `Quirk reconcile: restored ${rec.restoredToStore} to store, ` +
+          `added ${rec.addedToKeywordIndex} to keyword index, removed ${rec.removedOrphans} orphans`,
+        );
+      }
+    } catch (err) {
+      logger.warn(`Quirk reconcile failed: ${(err as Error).message}`);
+    }
     // Save manifest and keyword index (always to the real store path — after
     // a successful swap this points to the new data).
     await saveManifest(options.storePath, manifest);

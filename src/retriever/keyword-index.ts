@@ -317,6 +317,10 @@ export class KeywordIndex {
     return this.chunkMap.size;
   }
 
+  hasChunk(id: string): boolean {
+    return this.chunkMap.has(id);
+  }
+
   async save(storePath?: string): Promise<void> {
     const effectiveStorePath = storePath ?? this.storePath;
     if (!effectiveStorePath) return;
