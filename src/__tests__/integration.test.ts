@@ -17,7 +17,8 @@ describe("opencode run integration", () => {
   }, () => {
     const result = spawnSync(
       "opencode",
-      ["run", "list relevant files", "--log-level", "ERROR", "--print-logs"],
+      // --log-level is a lowercased enum in current OpenCode builds ("ERROR" is rejected).
+      ["run", "list relevant files", "--log-level", "error", "--print-logs"],
       {
         encoding: "utf-8",
         timeout: 30_000,
