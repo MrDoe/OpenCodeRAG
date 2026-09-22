@@ -504,7 +504,7 @@ When `autoInstall` is `true`, the install runs silently in the background on sta
 
 ### `chunking`
 
-Overrides which AST node types are chunked per language. By default, chunkers use function-level node types. Use this to broaden or narrow chunking granularity.
+Overrides which parser handles each file extension (`parsers`) and which AST node types are chunked per language (`nodeTypes`). By default, chunkers use function-level node types and a fixed extension → parser mapping.
 
 ```json
 {
@@ -512,6 +512,10 @@ Overrides which AST node types are chunked per language. By default, chunkers us
     "nodeTypes": {
       "typescript": ["function_declaration", "method_definition", "class_declaration", "arrow_function"],
       "python": ["function_definition", "decorated_definition", "class_definition"]
+    },
+    "parsers": {
+      ".c": "cpp",
+      ".cu": "cpp"
     }
   }
 }
@@ -520,10 +524,15 @@ Overrides which AST node types are chunked per language. By default, chunkers us
 | Field | Type | Description |
 |---|---|---|
 | `nodeTypes` | `Record<string, string[]>` | Map of language name to AST node types to chunk on |
+| `parsers` | `Record<string, string>` | Map of file extension to parser language, overriding the built-in mapping (e.g. `.c` → `cpp`, or a new `.cu` → `cpp`) |
+
+`parsers` keys are normalized (lowercased, leading dot added); values must be a registered parser language (`typescript`, `cpp`, `python`, … or `text`) — invalid entries are reported as config warnings. Mapped extensions are implicitly indexed (no need to repeat them in `indexing.includeExtensions`), and the override applies to chunking, `get_file_skeleton` (tool + MCP), and read-tool language labels. See [chunking.md](chunking.md#parser-overrides-per-extension-chunkingparsers) for details.
+
+`nodeTypes` applies to indexing only (it does not change `get_file_skeleton` output — that uses its own per-extension recipe).
 
 See [chunking.md](chunking.md) for the full strategy and per-language node type details.
 
-These settings are also editable via the **OpenCodeRAG TUI** (`Ctrl+Shift+R` → Chunking). The `nodeTypes` field uses a JSON editor — changes require re-indexing.
+These settings are also editable via the **OpenCodeRAG TUI** (`Ctrl+Shift+R` → Chunking). The `nodeTypes` and `parsers` fields use a JSON editor — changes require re-indexing (`opencode-rag index --force`).
 
 ### Custom Chunkers
 

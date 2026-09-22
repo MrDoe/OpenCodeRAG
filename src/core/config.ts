@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { env } from "node:process";
 import type { EmbeddingProvider, Chunker, VectorStore } from "./interfaces.js";
+import { normalizeParserOverrides } from "./parser-overrides.js";
 
 /** Registration of a custom chunker module for a set of file extensions. */
 export interface ChunkerConfig {
@@ -444,6 +445,26 @@ export interface RagConfig {
   chunking?: {
     /** Map of language to allowed/blocked AST node type patterns. */
     nodeTypes?: Record<string, string[]>;
+    /**
+     * Map of file extension to parser (chunker) language, overriding the
+     * built-in mapping. Both new extensions and existing entries can be
+     * remapped:
+     *
+     * ```json
+     * { "chunking": { "parsers": { ".c": "cpp", ".cu": "cpp" } } }
+     * ```
+     *
+     * Keys are normalized (lowercased, leading dot added); values must be a
+     * registered parser language (`typescript`, `cpp`, `python`, … or `text`
+     * for the fallback parser). Applied consistently to indexing/chunking,
+     * `get_file_skeleton` (tool + MCP), and read-tool language labels.
+     * Mapped extensions are implicitly added to the scanned set — no need to
+     * repeat them in `indexing.includeExtensions`.
+     *
+     * Changing a mapping changes chunk boundaries: re-run
+     * `opencode-rag index --force` afterwards.
+     */
+    parsers?: Record<string, string>;
   };
   /** LLM-based chunk description generation config. */
   description?: DescriptionConfig;
@@ -1071,6 +1092,9 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
         ...((DEFAULT_CONFIG.chunking as Record<string, unknown>)?.nodeTypes as Record<string, string[]> | undefined ?? {}),
         ...((parsed.chunking as Record<string, unknown>)?.nodeTypes as Record<string, string[]> | undefined ?? {}),
       },
+      parsers: normalizeParserOverrides(
+        safeObj<{ parsers?: Record<string, string> }>(parsed.chunking as unknown)?.parsers
+      ),
     },
     description: {
       ...DEFAULT_CONFIG.description,

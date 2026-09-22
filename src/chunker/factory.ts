@@ -2,6 +2,11 @@
  * @fileoverview Chunker registry, extension-to-chunker mapping, and file chunking orchestration.
  */
 import type { Chunker, Chunk } from "../core/interfaces.js";
+import {
+  normalizeExtensionKey,
+  normalizeParserOverrides,
+  type ParserOverrides,
+} from "../core/parser-overrides.js";
 import { TreeSitterChunker } from "./base.js";
 import { typescriptChunker } from "./typescript.js";
 import { pythonChunker } from "./python.js";
@@ -87,6 +92,21 @@ for (const chunker of chunkers) {
 }
 
 /**
+ * Parser (chunker) registry keyed by `language` name — the target space of the
+ * `chunking.parsers` config (`{ ".c": "cpp" }`). Kept in sync with
+ * {@link extensionMap} by {@link registerChunker}.
+ */
+const languageMap = new Map<string, Chunker>();
+
+for (const chunker of chunkers) {
+  if (chunker.language) languageMap.set(chunker.language, chunker);
+}
+languageMap.set(fallbackChunker.language, fallbackChunker);
+
+/** Override targets already reported as unknown, so a bad config warns once per process. */
+const warnedUnknownParsers = new Set<string>();
+
+/**
  * Register a pluggable chunker for one or more file extensions.
  * If an extension already has a chunker, the new one is silently skipped.
  *
@@ -98,6 +118,8 @@ export function registerChunker(
   chunker: Chunker,
   extensions?: string[]
 ): void {
+  if (chunker.language) languageMap.set(chunker.language, chunker);
+
   const exts = extensions ?? ("fileExtensions" in chunker
     ? (chunker as typeof chunker & { fileExtensions: string[] }).fileExtensions
     : []);
@@ -119,16 +141,92 @@ export function registerChunker(
  * Falls back to the fallback chunker when no extension match is found.
  *
  * @param filePath - Path to the file to chunk.
+ * @param languageByExtension - Optional `chunking.parsers` override map
+ *   (extension → parser language). Overrides win over the built-in mapping and
+ *   are resolved per call, so they never mutate the process-wide registry
+ *   (which is shared across workspaces).
  * @returns A chunker instance for the file's extension.
  */
-export function getChunker(filePath: string): Chunker {
+export function getChunker(filePath: string, languageByExtension?: ParserOverrides): Chunker {
   const dotIdx = filePath.lastIndexOf(".");
   const ext = dotIdx >= 0 ? filePath.slice(dotIdx).toLowerCase() : "";
+
+  const overrides = languageByExtension && Object.keys(languageByExtension).length > 0
+    ? normalizeParserOverrides(languageByExtension)
+    : undefined;
+  const target = ext && overrides ? overrides[ext] : undefined;
+  if (target) {
+    const overridden = languageMap.get(target);
+    if (overridden) return overridden;
+    if (!warnedUnknownParsers.has(target)) {
+      warnedUnknownParsers.add(target);
+      console.warn(
+        `[opencode-rag] chunking.parsers maps "${ext}" to unknown parser "${target}" ` +
+        `— known parsers: ${getRegisteredLanguages().join(", ")}. Using the default mapping.`
+      );
+    }
+    // Unknown target: fall through to the default mapping for this extension.
+  }
+
   if (ext && extensionMap.has(ext)) {
     return extensionMap.get(ext)!;
   }
   const basename = filePath.toLowerCase();
   return extensionMap.get(basename) ?? fallbackChunker;
+}
+
+/** Every parser (chunker language) name accepted as a `chunking.parsers` target. */
+export function getRegisteredLanguages(): string[] {
+  return [...new Set([...languageMap.values()].map((chunker) => chunker.language))].sort();
+}
+
+/**
+ * All file extensions currently mapped to a given parser language, in
+ * registration order. Used by skeleton extraction to pick a representative
+ * extension recipe when an override retargets an extension.
+ */
+export function getExtensionsForLanguage(language: string): string[] {
+  const out: string[] = [];
+  for (const [ext, chunker] of extensionMap) {
+    if (chunker.language === language) out.push(ext);
+  }
+  return out;
+}
+
+/**
+ * Validate a raw `chunking.parsers` map against the registered parsers.
+ *
+ * @param parsers - Raw (unnormalized) override map from the config.
+ * @returns Human-readable warnings; empty when the map is valid or absent.
+ */
+export function validateParserOverrides(parsers?: ParserOverrides): string[] {
+  const warnings: string[] = [];
+  if (parsers === undefined || parsers === null) return warnings;
+  if (typeof parsers !== "object" || Array.isArray(parsers)) {
+    warnings.push('chunking.parsers must be an object mapping file extensions to parser names (e.g. { ".c": "cpp" })');
+    return warnings;
+  }
+
+  const known = new Set(getRegisteredLanguages());
+  for (const [rawKey, rawValue] of Object.entries(parsers)) {
+    const ext = normalizeExtensionKey(rawKey);
+    if (!ext) {
+      warnings.push(`chunking.parsers key "${rawKey}" is not a valid file extension`);
+      continue;
+    }
+    if (typeof rawValue !== "string" || rawValue.trim().length === 0) {
+      warnings.push(`chunking.parsers["${rawKey}"] must be a non-empty parser name`);
+      continue;
+    }
+    const language = rawValue.trim().toLowerCase();
+    if (!known.has(language)) {
+      warnings.push(
+        `chunking.parsers["${rawKey}"] → "${language}" is not a registered parser — ` +
+        `known parsers: ${[...known].sort().join(", ")}`
+      );
+    }
+  }
+  return warnings;
 }
 
 export function getRegisteredExtensions(): string[] {
@@ -268,7 +366,7 @@ function withByteLimit(
  * @param content - The full text content of the file.
  * @param nodeTypesOverrides - Optional language-specific node type overrides
  *   for tree-sitter based chunkers.
- * @param options - Optional chunking options (maxSvgSizeBytes, etc.).
+ * @param options - Optional chunking options (maxSvgSizeBytes, parser overrides, etc.).
  * @returns An array of chunks for the file.
  */
 export async function chunkFile(
@@ -281,9 +379,11 @@ export async function chunkFile(
     maxChunkSize?: number;
     /** Overlapping lines shared between adjacent/split chunks. */
     chunkOverlap?: number;
+    /** Extension → parser overrides from `chunking.parsers`. */
+    languageByExtension?: ParserOverrides;
   },
 ): Promise<Chunk[]> {
-  let chunker = getChunker(filePath);
+  let chunker = getChunker(filePath, options?.languageByExtension);
 
   if (nodeTypesOverrides && chunker instanceof TreeSitterChunker) {
     const overrideTypes = nodeTypesOverrides[chunker.language];

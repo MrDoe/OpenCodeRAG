@@ -3,6 +3,7 @@
  */
 
 import type { SearchResult } from "../core/interfaces.js";
+import { normalizeParserOverrides, type ParserOverrides } from "../core/parser-overrides.js";
 
 /**
  * Options for formatting read tool output.
@@ -79,6 +80,8 @@ export interface FormatHybridReadOutputOptions {
   relatedFiles: RelatedFileEntry[];
   /** Maximum output character count. */
   maxChars: number;
+  /** Extension → parser overrides from `chunking.parsers` (for the code-fence language). */
+  languageByExtension?: ParserOverrides;
 }
 
 /**
@@ -91,9 +94,9 @@ export interface FormatHybridReadOutputOptions {
  *   - Enforces maxChars limit (truncates RAG section first).
  */
 export function formatHybridReadOutput(options: FormatHybridReadOutputOptions): string {
-  const { filePath, fileContent, startLine, endLine, ragChunks, relatedFiles, maxChars } = options;
+  const { filePath, fileContent, startLine, endLine, ragChunks, relatedFiles, maxChars, languageByExtension } = options;
 
-  const lang = guessLanguage(filePath);
+  const lang = guessLanguage(filePath, languageByExtension);
 
   // Build the full file code block
   const lines = fileContent.split("\n");
@@ -220,6 +223,8 @@ export interface FormatFileFallbackOptions {
   reason: string;
   /** Maximum output character count. */
   maxChars?: number;
+  /** Extension → parser overrides from `chunking.parsers` (for the code-fence language). */
+  languageByExtension?: ParserOverrides;
 }
 
 /**
@@ -228,14 +233,14 @@ export interface FormatFileFallbackOptions {
  * Applies optional line-range slicing and enforces maxChars limit.
  */
 export function formatFileFallback(options: FormatFileFallbackOptions): string {
-  const { filePath, content, startLine, endLine, maxChars } = options;
+  const { filePath, content, startLine, endLine, maxChars, languageByExtension } = options;
 
   const lines = content.split("\n");
   const sliceStart = startLine !== undefined ? startLine - 1 : 0;
   const sliceEnd = endLine !== undefined ? endLine : lines.length;
   const sliced = lines.slice(sliceStart, sliceEnd);
 
-  const lang = guessLanguage(filePath);
+  const lang = guessLanguage(filePath, languageByExtension);
   const codeBlock = "```" + lang + "\n" + sliced.join("\n") + "\n```";
   let output = codeBlock;
 
@@ -246,8 +251,14 @@ export function formatFileFallback(options: FormatFileFallbackOptions): string {
   return output;
 }
 
-function guessLanguage(filePath: string): string {
+function guessLanguage(filePath: string, languageByExtension?: ParserOverrides): string {
   const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
+  const overrides = normalizeParserOverrides(languageByExtension);
+  const target = ext ? overrides[`.${ext}`] : undefined;
+  // A `chunking.parsers` override wins: it says which parser reads this file,
+  // so it is also the right label for the code fence.
+  if (target) return target;
+
   const map: Record<string, string> = {
     ts: "typescript", tsx: "typescript", js: "javascript", jsx: "javascript",
     py: "python", rb: "ruby", go: "go", rs: "rust", java: "java",

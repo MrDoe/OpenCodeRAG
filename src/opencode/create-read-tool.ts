@@ -154,6 +154,7 @@ export function createRagReadTool(
           ragChunks,
           relatedFiles,
           maxChars: maxReadOutputChars,
+          languageByExtension: config.chunking?.parsers,
         });
 
         // 6. Return

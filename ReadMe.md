@@ -35,6 +35,7 @@ opencode-rag query "authentication middleware"
 |---|---|
 | **MCP server** | `opencode-rag mcp` - stdio-based MCP server exposing `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools for any MCP-compatible client |
 | **AST chunking** | 26 languages via tree-sitter (TS, JS, Python, Java, Go, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, PHP, PowerShell, SQL, JSON, HTML, CSS, XML (including SVG), YAML, TOML, INI, Dockerfile, Markdown, LaTeX, Razor) |
+| **Configurable parsers** | Remap file extensions to any parser via `chunking.parsers` (e.g. `.c` → `cpp`, or index a new `.cu` as C++) — applied to chunking, `get_file_skeleton`, and read labels ([docs](doc/chunking.md#parser-overrides-per-extension-chunkingparsers)) |
 | **Document support** | Markdown, LaTeX, PDF, DOCX, DOC, Excel |
 | **Image indexing** | Describe images via vision LLM and store descriptions as searchable vector chunks |
 | **Hybrid search** | Vector similarity + TF×IDF keyword fusion |

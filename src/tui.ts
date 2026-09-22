@@ -568,6 +568,12 @@ function buildSettingCategories(
           type: "json",
           currentValue: (chunkingRo.nodeTypes as Record<string, unknown>) ?? (chunkingCfg.nodeTypes as Record<string, unknown>) ?? {},
         },
+        {
+          path: ["chunking", "parsers"],
+          label: "Parser overrides — extension → language (JSON)",
+          type: "json",
+          currentValue: (chunkingRo.parsers as Record<string, unknown>) ?? (chunkingCfg.parsers as Record<string, unknown>) ?? {},
+        },
       ],
     },
     {

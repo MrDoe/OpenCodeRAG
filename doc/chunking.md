@@ -4,6 +4,8 @@ OpenCodeRAG uses **tree-sitter** (AST-based) parsing for programming languages, 
 
 ## Supported Languages & Formats
 
+The extension → parser mapping below is the built-in default; remap it per workspace with [`chunking.parsers`](#parser-overrides-per-extension-chunkingparsers) (no source changes needed).
+
 ### AST-Based (tree-sitter) — 26 Languages
 
 | Language | Chunker | Extensions |
@@ -192,3 +194,35 @@ You can override which AST node types are chunked per language in `opencode-rag.
 ```
 
 This is useful when you want broader or narrower chunking granularity for specific languages. The overrides apply during indexing — re-index after changing them.
+
+**Scope:** `nodeTypes` affects **indexing/chunking only**. `get_file_skeleton` (plugin tool and MCP) uses its own per-extension recipe (`SKELETON_CONFIGS` in `src/chunker/skeleton.ts`) and is *not* influenced by this setting — to change which parser a skeleton uses, use [`chunking.parsers`](#parser-overrides-per-extension-chunkingparsers).
+
+### Parser overrides per extension (`chunking.parsers`)
+
+The parser used for a file extension is normally fixed by the chunker registry (see the tables above). `chunking.parsers` remaps extensions at config level — both **new** extensions and **existing** entries:
+
+```json
+{
+  "chunking": {
+    "parsers": {
+      ".c": "cpp",
+      ".cu": "cpp"
+    }
+  }
+}
+```
+
+- **Keys** are file extensions; they are normalized (lowercased, leading dot added), so `"CXX"` and `".cxx"` are the same entry.
+- **Values** are registered parser languages: any `language` from the chunker table (`typescript`, `cpp`, `python`, …) plus `text` for the fallback parser. Unknown names produce a config warning listing the valid ones.
+- The mapping applies consistently to **all four** extension-sensitive surfaces:
+  1. **Indexing/chunking** — `getChunker()` picks the target parser, and `chunking.nodeTypes` is looked up under the *target* language (so `nodeTypes.cpp` applies to remapped `.c` files).
+  2. **`get_file_skeleton` tool** — resolves to the target parser's grammar recipe (shared module: `src/chunker/skeleton.ts`).
+  3. **MCP `get_file_skeleton`** — same shared module, same result.
+  4. **Read-tool code fences** — the language label comes from the override.
+- Extensions named in `chunking.parsers` are **implicitly added to the scan set** — you do not need to repeat them in `indexing.includeExtensions`.
+- If the target parser has no skeleton recipe (e.g. `text`), the skeleton tool falls back to a line count rather than using the extension's previous (now wrong) grammar.
+- Overrides are resolved per call and never mutate the process-wide registry, so they are workspace-scoped and coexist safely with pluggable `chunkers[]`.
+
+**Re-index required**: changing a mapping changes chunk boundaries for already-indexed files without touching their content hashes. Run `opencode-rag index --force` after editing (the TUI warns about this when you edit under the Chunking category).
+
+Known limits: the web dashboard config editor only accepts `indexing.*` keys (use the file or the TUI), and `imageDescription` handling bypasses the chunker, so remapping an image extension has no effect.

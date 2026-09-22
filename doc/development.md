@@ -91,7 +91,7 @@ class TypeScriptChunker extends TreeSitterChunker { ... }
 ### Factory Pattern
 Dispatch is handled through factories:
 
-- `getChunker(filePath)` / `chunkFile(filePath, content)`
+- `getChunker(filePath, languageByExtension?)` / `chunkFile(filePath, content, nodeTypes?, options?)` — the optional `languageByExtension` map is the `chunking.parsers` override, resolved per call (never mutates the shared registry)
 - `createEmbedder(config)` / `embedBatch(embedder, texts)`
 - `createDescriptionProvider(config)`
 

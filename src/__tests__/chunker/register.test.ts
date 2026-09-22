@@ -68,6 +68,45 @@ describe("loadChunkersFromConfig", () => {
     // no crash = pass
   });
 
+  it("warns when a chunking.parsers target is not a registered parser", async () => {
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (msg: string) => { warnings.push(msg); };
+
+    try {
+      await loadChunkersFromConfig(
+        { chunking: { parsers: { ".cu": "cuda-not-real", ".c": "cpp" } } } as unknown as import("../../core/config.js").RagConfig,
+        "/tmp"
+      );
+      assert.ok(
+        warnings.some((w) => w.includes('".cu"') && w.includes("cuda-not-real")),
+        `expected unknown-parser warning, got: ${JSON.stringify(warnings)}`
+      );
+      assert.ok(
+        !warnings.some((w) => w.includes('".c"')),
+        "a valid override must not warn"
+      );
+    } finally {
+      console.warn = origWarn;
+    }
+  });
+
+  it("warns when a chunking.parsers key is not a usable extension", async () => {
+    const warnings: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (msg: string) => { warnings.push(msg); };
+
+    try {
+      await loadChunkersFromConfig(
+        { chunking: { parsers: { "src/nested": "cpp" } } } as unknown as import("../../core/config.js").RagConfig,
+        "/tmp"
+      );
+      assert.ok(warnings.some((w) => w.includes("not a valid file extension")));
+    } finally {
+      console.warn = origWarn;
+    }
+  });
+
   it("warns when module path does not exist", async () => {
     const warnings: string[] = [];
     const origWarn = console.warn;

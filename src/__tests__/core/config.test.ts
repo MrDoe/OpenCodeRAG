@@ -24,7 +24,7 @@ describe("loadConfig", () => {
   it("returns default config for empty file", () => {
     writeFileSync(tmpFile, "{}", "utf-8");
     const config = loadConfig(tmpFile);
-    assert.deepStrictEqual(config, { ...DEFAULT_CONFIG, chunkers: undefined, chunking: { nodeTypes: {} } });
+    assert.deepStrictEqual(config, { ...DEFAULT_CONFIG, chunkers: undefined, chunking: { nodeTypes: {}, parsers: {} } });
   });
 
   const partialOverrideCases: {
@@ -87,6 +87,29 @@ describe("loadConfig", () => {
       assert: (c) => {
         assert.equal(c.logging.level, "debug");
         assert.equal(c.logging.logFilePath, DEFAULT_CONFIG.logging.logFilePath);
+      },
+    },
+    {
+      name: "chunking parsers",
+      json: { chunking: { parsers: { CXX: "CPP", ".cu": "cpp" } } },
+      assert: (c) => {
+        assert.deepStrictEqual(c.chunking?.parsers, { ".cxx": "cpp", ".cu": "cpp" });
+        assert.deepStrictEqual(c.chunking?.nodeTypes, {});
+      },
+    },
+    {
+      name: "chunking nodeTypes alongside parsers",
+      json: { chunking: { nodeTypes: { cpp: ["function_definition"] } } },
+      assert: (c) => {
+        assert.deepStrictEqual(c.chunking?.nodeTypes, { cpp: ["function_definition"] });
+        assert.deepStrictEqual(c.chunking?.parsers, {});
+      },
+    },
+    {
+      name: "chunking parsers drops invalid entries",
+      json: { chunking: { parsers: { "src/invalid": "cpp", ".ok": "", ".fine": "cpp" } } },
+      assert: (c) => {
+        assert.deepStrictEqual(c.chunking?.parsers, { ".fine": "cpp" });
       },
     },
   ];

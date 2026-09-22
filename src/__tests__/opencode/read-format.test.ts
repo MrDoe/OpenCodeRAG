@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { formatReadOutput } from "../../opencode/read-format.js";
+import { formatReadOutput, formatFileFallback, formatHybridReadOutput } from "../../opencode/read-format.js";
 import type { SearchResult } from "../../core/interfaces.js";
 
 function makeResult(
@@ -199,5 +199,49 @@ describe("formatReadOutput", () => {
     });
     assert.match(output, /Returned chunks/);
     assert.match(output, /2 of max 5/);
+  });
+});
+
+describe("guessLanguage via chunking.parsers", () => {
+  it("labels a remapped extension with the overridden parser", () => {
+    const output = formatFileFallback({
+      filePath: "/project/kernel.cu",
+      content: "int add(int a, int b) { return a + b; }\n",
+      reason: "test",
+      languageByExtension: { ".cu": "cpp" },
+    });
+    assert.match(output, /^```cpp/m);
+  });
+
+  it("labels an overridden built-in mapping (.c → cpp)", () => {
+    const output = formatFileFallback({
+      filePath: "/project/main.c",
+      content: "int main(void) { return 0; }\n",
+      reason: "test",
+      languageByExtension: { ".c": "cpp" },
+    });
+    assert.match(output, /^```cpp/m);
+  });
+
+  it("keeps the default label when no override applies", () => {
+    const output = formatFileFallback({
+      filePath: "/project/main.c",
+      content: "int main(void) { return 0; }\n",
+      reason: "test",
+      languageByExtension: { ".cu": "cpp" },
+    });
+    assert.match(output, /^```c$/m);
+  });
+
+  it("applies overrides in hybrid read output too", () => {
+    const output = formatHybridReadOutput({
+      filePath: "/project/kernel.cu",
+      fileContent: "int add(int a, int b) { return a + b; }\n",
+      ragChunks: [],
+      relatedFiles: [],
+      maxChars: 20000,
+      languageByExtension: { ".cu": "cpp" },
+    });
+    assert.match(output, /^```cpp/m);
   });
 });

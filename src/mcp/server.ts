@@ -83,7 +83,7 @@ export async function createMcpServer(options?: McpServerOptions): Promise<RagMc
     },
     async (args: FileSkeletonParams) => {
       try {
-        const result = await handleFileSkeleton(args, cwd);
+        const result = await handleFileSkeleton(args, cwd, ctx.config.chunking?.parsers);
         return {
           content: [{ type: "text" as const, text: result.formatted }],
         };

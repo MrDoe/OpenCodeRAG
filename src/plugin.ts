@@ -744,6 +744,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   try {
     const fileSkeletonTool = createFileSkeletonTool({
       worktree: options.worktree,
+      languageByExtension: effectiveCfg.chunking?.parsers,
     });
     tools["get_file_skeleton"] = fileSkeletonTool;
   } catch (err) {

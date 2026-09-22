@@ -8,6 +8,7 @@ import pLimit from "p-limit";
 import type { RagConfig } from "../core/config.js";
 import { computeFileHash, computeDescriptionConfigHash, normalizeFilePath, type FileManifest } from "../core/manifest.js";
 import { createExcludeMatcher, createIncludeMatcher, type ExcludeMatcher, type IncludedMatcher } from "../core/exclude.js";
+import { normalizeExtensionKey } from "../core/parser-overrides.js";
 import { DescriptionCache } from "../core/desc-cache.js";
 import {
   createImageVisionProvider,
@@ -147,6 +148,12 @@ export async function scanWorkspaceFiles(
   descCache?: DescriptionCache,
 ): Promise<WorkspaceFile[]> {
   const extensions = new Set(config.indexing.includeExtensions);
+  // `chunking.parsers` implies the extension is wanted: mapping an extension to
+  // a parser is pointless if the scanner never picks the files up.
+  for (const rawKey of Object.keys(config.chunking?.parsers ?? {})) {
+    const key = normalizeExtensionKey(rawKey);
+    if (key) extensions.add(key);
+  }
 
   let imageVisionProvider: ImageVisionProvider | null = null;
   let imagePrompt: string | undefined;

@@ -157,7 +157,7 @@ export async function prepareFile(
   previous: ManifestFile | undefined,
   config: {
     embedding: { documentPrefix?: string };
-    chunking?: { nodeTypes?: Record<string, string[]> };
+    chunking?: { nodeTypes?: Record<string, string[]>; parsers?: Record<string, string> };
     description?: { maxContentChars?: number };
     indexing?: { maxSvgSizeBytes?: number; embedDescriptions?: boolean; maxChunkSize?: number; chunkOverlap?: number };
   },
@@ -227,6 +227,7 @@ export async function prepareFile(
       maxSvgSizeBytes: config.indexing?.maxSvgSizeBytes,
       maxChunkSize: config.indexing?.maxChunkSize,
       chunkOverlap: config.indexing?.chunkOverlap,
+      languageByExtension: config.chunking?.parsers,
     }).catch((err) => {
       logger.warn(`  ${fileLabel} (chunking failed: ${(err as Error).message})`);
       return null;
@@ -428,7 +429,7 @@ export async function processFile(
   config: {
     embedding: { documentPrefix?: string };
     indexing: { embedBatchSize: number; embedConcurrency?: number; maxSvgSizeBytes?: number };
-    chunking?: { nodeTypes?: Record<string, string[]> };
+    chunking?: { nodeTypes?: Record<string, string[]>; parsers?: Record<string, string> };
     description?: { maxContentChars?: number };
   },
   store: VectorStore,

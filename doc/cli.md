@@ -69,7 +69,7 @@ opencode-rag index [options]
 | `-c, --config <path>` | auto-detected | Path to config file |
 
 **How it works:**
-1. Scans workspace files matching `indexing.includeExtensions`, restricted to `indexing.includeDirs` folders when set (files directly in the workspace root are skipped then)
+1. Scans workspace files matching `indexing.includeExtensions` plus any extensions named in `chunking.parsers`, restricted to `indexing.includeDirs` folders when set (files directly in the workspace root are skipped then)
 2. Compares file hashes against the manifest
 3. Clears any files previously flagged with `descriptionFailed` so they are fully re-indexed
 4. Chunks changed/new files via the appropriate chunker

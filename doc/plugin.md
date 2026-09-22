@@ -45,6 +45,8 @@ Provides a quick structural overview of a source file without reading its full c
 
 **Supported languages:** TypeScript, JavaScript, Python, Java, Go, Rust, C, C++, C#, Ruby, Swift, Kotlin, CSS, Markdown. Falls back to regex-based extraction or simple line count for unrecognized formats.
 
+The extension → grammar mapping honors `chunking.parsers` overrides, so a file extension remapped in config (e.g. `.c` → `cpp`, or a new `.cu` → `cpp`) is parsed with the target parser's recipe here as well. The MCP `get_file_skeleton` shares the same implementation (`src/chunker/skeleton.ts`) and behaves identically. See [Chunking](chunking.md#parser-overrides-per-extension-chunkingparsers).
+
 **Example output:**
 ```
 Skeleton — src/plugin.ts

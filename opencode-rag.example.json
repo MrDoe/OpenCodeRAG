@@ -64,6 +64,10 @@
       "watcher": "chokidar"
     }
   },
+  "chunking": {
+    "nodeTypes": {},
+    "parsers": {}
+  },
   "imageDescription": {
     "enabled": true,
     "provider": "ollama",

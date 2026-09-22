@@ -74,6 +74,7 @@ interface SearchResult {
 | `interfaces.ts` | All core interfaces and types |
 | `config.ts` | `RagConfig`, `DEFAULT_CONFIG`, `loadConfig()` with deep merge |
 | `manifest.ts` | File hash manifest with schema versioning and corruption detection |
+| `parser-overrides.ts` | Pure `chunking.parsers` helpers: `normalizeExtensionKey()`, `normalizeParserOverrides()` (import-free so config/factory/scanner can share them) |
 | `runtime-overrides.ts` | Live config overrides with 5s TTL reload |
 | `resolve-api-key.ts` | Auto-resolves OpenAI API key from OpenCode provider config |
 | `fileLogger.ts` | Configurable structured file logging |
@@ -84,7 +85,9 @@ interface SearchResult {
 |---|---|
 | `base.ts` | `TreeSitterChunker` abstract class |
 | `grammar.ts` | tree-sitter WASM initialization and language loading |
-| `factory.ts` | `getChunker()` by extension, `chunkFile()`, `registerChunker()` |
+| `factory.ts` | `getChunker(filePath, languageByExtension?)` (extension map + language map for `chunking.parsers` overrides), `chunkFile()`, `registerChunker()`, `validateParserOverrides()` |
+| `skeleton.ts` | Shared extension → grammar recipe for `get_file_skeleton` (plugin tool + MCP), honors `chunking.parsers` |
+| `loader.ts` | Loads pluggable `chunkers[]` modules, then validates `chunking.parsers` |
 | `*.ts` | Per-language chunker implementations (17 AST languages + 5 document/regex + fallback) |
 
 See [doc/chunking.md](chunking.md) for the full language matrix.
@@ -153,10 +156,10 @@ See [Web UI](webui.md) for the full dashboard reference.
 ## Pipeline Stages
 
 ### 1. Scanning (`scanWorkspace` in `indexer.ts`)
-Walks the workspace directory tree, filtering by `includeExtensions`, `includeDirs` (root-anchored folder whitelist; root files are skipped when set) and `excludeDirs`. Reads text files as UTF-8, binary files (PDF, DOCX, DOC, Excel) via extraction libraries. Supports incremental scanning via git-diff — when a previous git commit is recorded in the manifest, only changed/untracked files are scanned. Out-of-scope files (e.g. after an `includeDirs` change) are removed from the index by the pipeline's stale-path cleanup during a full pass; git-incremental passes only remove git-deleted files.
+Walks the workspace directory tree, filtering by `includeExtensions`, `includeDirs` (root-anchored folder whitelist; root files are skipped when set) and `excludeDirs`. Extensions named in `chunking.parsers` are added to the scanned set implicitly. Reads text files as UTF-8, binary files (PDF, DOCX, DOC, Excel) via extraction libraries. Supports incremental scanning via git-diff — when a previous git commit is recorded in the manifest, only changed/untracked files are scanned. Out-of-scope files (e.g. after an `includeDirs` change) are removed from the index by the pipeline's stale-path cleanup during a full pass; git-incremental passes only remove git-deleted files.
 
 ### 2. Chunking (`chunkFile` in `chunker/factory.ts`)
-Dispatches to the appropriate `Chunker` based on file extension. Each chunker splits content into semantically meaningful units (AST nodes, headings, paragraphs, etc.).
+Dispatches to the appropriate `Chunker` based on file extension — after applying `chunking.parsers` overrides (extension → parser language), which can remap built-ins (`.c` → `cpp`) or add new extensions (`.cu` → `cpp`). Each chunker splits content into semantically meaningful units (AST nodes, headings, paragraphs, etc.).
 
 ### 3. Description (Optional, `DescriptionProvider`)
 An LLM generates a natural-language description of each chunk. By default every chunk gets its own request; the experimental `description.batchEnabled` flag makes the Ollama provider group several chunks into one request (configurable via `description.batchMaxChunks`), with concurrent requests governed by `description.batchConcurrency`. The embedded text becomes `filePath + "\n\n" + description + "\n\n" + content`; with `indexing.embedDescriptions: false` the description is omitted from the embedded text (it is still stored for search-result display — recommended for code-specialized embedders). If disabled, the description defaults to `lines N-M, language`.
