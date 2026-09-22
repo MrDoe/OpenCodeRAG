@@ -78,7 +78,7 @@ restart pattern and browser cache troubleshooting.
 ## Code Navigation
 
 ALWAYS use OpenCodeRAG tools before reading or editing:
-- **Search first** — `search_semantic(query)` instead of grep/glob. Optional args: `pathHints`, `languageHints`, `fileExtensions` (e.g. `[".ts"]`), `topK`
+- **Search first** — `search_semantic(query)` instead of grep/glob
 - **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines
 - **Usages before edit** — `find_usages(symbolName)` before modifying any symbol
 - **Images via describe** — `describe_image(filePath, systemPrompt?)` — never read raw bytes

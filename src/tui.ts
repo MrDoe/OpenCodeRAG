@@ -6,6 +6,7 @@
 import type { JSX } from "@opentui/solid";
 import { createElement, insert, setProp } from "@opentui/solid";
 import { readFileSync, existsSync, writeFileSync, unlinkSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Provider } from "@opencode-ai/sdk/v2";
@@ -13,6 +14,14 @@ import { loadRuntimeOverrides, saveRuntimeOverride } from "./core/runtime-overri
 import { PROVIDER_DEFAULTS } from "./core/provider-defaults.js";
 import { loadConfig, updateConfigValue } from "./core/config.js";
 import { setPendingRagInjection } from "./core/rag-injection-flag.js";
+
+/**
+ * Lazy CommonJS require — this file is ESM ("type": "module"), so a bare
+ * `require()` throws ReferenceError. Used by `readTokenStats` to keep
+ * `./eval/storage.js` out of the TUI startup path (same pattern as
+ * `src/eval/token-counter.ts`).
+ */
+const _require = createRequire(import.meta.url);
 
 /** Cached plugin version string from package.json. */
 let _version: string | undefined;
@@ -801,7 +810,7 @@ function readTokenStats(
     const vs = cfg.vectorStore as Record<string, unknown> | undefined;
     const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
     const storePath = resolve(worktree, storeRelPath);
-    const { listSessions } = require("./eval/storage.js") as typeof import("./eval/storage.js");
+    const { listSessions } = _require("./eval/storage.js") as typeof import("./eval/storage.js");
     const sessions = listSessions(storePath);
     if (sessions.length === 0) return undefined;
     const latest = sessions[0]!;

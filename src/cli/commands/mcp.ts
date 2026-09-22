@@ -6,6 +6,7 @@
  */
 
 import type { Command } from "commander";
+import path from "node:path";
 import { logCliError } from "../format.js";
 import type { CliOptions } from "../types.js";
 
@@ -32,7 +33,7 @@ export function registerMcpCommand(program: Command): void {
         });
       } catch (err) {
         const message = (err as Error).message || String(err);
-        const logFilePath = require("node:path").resolve(process.cwd(), ".opencode", "opencode-rag.log");
+        const logFilePath = path.resolve(process.cwd(), ".opencode", "opencode-rag.log");
         logCliError(logFilePath, "mcp", `\nMCP server failed: ${message}`, err);
         process.exit(1);
       }
