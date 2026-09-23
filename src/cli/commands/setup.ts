@@ -10,6 +10,8 @@ import {
   readVersionFile,
   setupRuntime,
 } from "../../core/setup-runtime.js";
+import { compareVersions, getCurrentVersion, installLatestUpdate } from "../../core/version-check.js";
+import { isLikelyProjectRoot, isWorkspaceInitialized, runWorkspaceInit } from "./init.js";
 
 const PLUGIN_NAME = "opencode-rag-plugin";
 
@@ -50,15 +52,18 @@ function checkOpenCodeRunning(): void {
 export function registerSetupCommand(program: Command): void {
   program
     .command("setup")
-    .description("Install/update the OpenCodeRAG runtime once per machine")
+    .description("Install/update the OpenCodeRAG runtime and initialize the current workspace")
     .addHelpText(
       "after",
       "\nUse cases:\n" +
       "  - First-time install: run once per machine to install the plugin runtime\n" +
-      "    into ~/.opencode/ so OpenCode can discover the RAG plugin.\n" +
-      "  - Updating: re-sync the runtime to the published plugin version.\n" +
+      "    into ~/.opencode/ so OpenCode can discover the RAG plugin. When the\n" +
+      "    plugin is not installed yet, installs the latest version from npm.\n" +
+      "  - Workspace setup: run inside a project to also initialize .opencode/,\n" +
+      "    the skill file and opencode-rag.json for this workspace.\n" +
+      "  - Updating: use 'opencode-rag update' to install a newer release.\n" +
       "  - Troubleshooting: use --check to inspect the runtime, or --force to reinstall.\n" +
-      "\nMachine-level step — run BEFORE 'opencode-rag init' (init configures each workspace).\n",
+      "\nMachine + workspace step: run 'opencode-rag init' only when you need to re-sync\nan already initialized workspace.\n",
     )
     .option("--uninstall", "remove the runtime and cleanup")
     .option("-f, --force", "force re-setup even if up-to-date")
@@ -121,9 +126,10 @@ export function registerSetupCommand(program: Command): void {
       const alreadyInstalled = existsSync(runtimeDist);
 
       if (alreadyInstalled && installedVersion === pluginVersion && !options.force) {
-        console.log(`  ${c.success("Already up-to-date.")} (${c.value(pluginVersion)}) at ${c.file(runtimeDir)}\n`);
-        console.log(`  ${c.dim("Run `opencode-rag setup --force` to re-install.")}\n`);
-        return;
+        console.log(`  ${c.success("Already up-to-date.")} (${c.value(pluginVersion)}) at ${c.file(runtimeDir)}`);
+        console.log(`  ${c.dim("Run `opencode-rag setup --force` to re-install the runtime.\n")}`);
+      } else {
+        await ensureGlobalPlugin();
       }
 
       const result = await setupRuntime({ force: options.force, version: pluginVersion });
@@ -134,8 +140,7 @@ export function registerSetupCommand(program: Command): void {
         console.log(`\n${c.success("Setup complete.")}`);
         console.log(`\n  ${c.dim("Next steps:")}`);
         console.log(`  ${c.dim("  1. Restart OpenCode if it is running")}`);
-        console.log(`  ${c.dim("  2. Run `opencode-rag init` in each workspace")}`);
-        console.log(`  ${c.dim("  3. Run `opencode-rag index` to build the search index")}`);
+        console.log(`  ${c.dim("  2. Run `opencode-rag index` to build the search index")}`);
       } else {
         for (const err of result.errors) {
           console.error(`  ${c.error("✗")} ${err}`);
@@ -144,8 +149,90 @@ export function registerSetupCommand(program: Command): void {
         process.exit(1);
       }
 
+      // --- workspace step: automatically initialize the current workspace ---
+      const cwd = process.cwd();
+      console.log(`\n${c.heading("Workspace")}`);
+      if (isLikelyProjectRoot(cwd)) {
+        if (isWorkspaceInitialized(cwd)) {
+          console.log(`  ${c.exists("Exists:")}   OpenCodeRAG already initialized in ${c.file(cwd)}`);
+          console.log(`  ${c.dim("Run `opencode-rag init` to re-sync workspace files when needed.\n")}`);
+        } else {
+          await runWorkspaceInit({});
+        }
+      } else {
+        console.log(`  ${c.dim("Current directory is not a project root - skipping workspace initialization.")}`);
+        console.log(`  ${c.dim("Run `opencode-rag init` inside the workspace when needed.\n")}`);
+      }
+
       checkOpenCodeRunning();
 
       console.log();
     });
+}
+
+/**
+ * Ensure the plugin package is installed globally.
+ *
+ * When it is missing (e.g. fresh machine), queries the npm registry for the
+ * latest OpenCodeRAG version and installs it, so a bare `opencode-rag setup`
+ * bootstraps the whole stack. When the plugin exists but a newer version is
+ * published, prints a hint pointing at `opencode-rag update`.
+ */
+async function ensureGlobalPlugin(): Promise<void> {
+  let globalPluginDir = "";
+  try {
+    const globalRoot = execSync("npm root -g", { encoding: "utf-8", timeout: 10_000 }).trim();
+    globalPluginDir = path.join(globalRoot, PLUGIN_NAME);
+  } catch {
+    // npm unavailable -> bootstrap cannot run
+  }
+
+  const distOk =
+    globalPluginDir !== "" &&
+    existsSync(path.join(globalPluginDir, "dist", "plugin-entry.js")) &&
+    existsSync(path.join(globalPluginDir, "dist", "cli.js"));
+  if (distOk) {
+    const latest = getLatestNpmVersion();
+    if (latest && compareVersions(latest, getCurrentVersion()) > 0) {
+      console.log(`  ${c.warn("Newer version available on npm:")} ${c.value(latest)}`);
+      console.log(`  ${c.dim("Run `opencode-rag update` to install it.\n")}`);
+    }
+    return;
+  }
+
+  console.log(`  ${c.warn("Plugin not installed globally.")} Looking up the latest version on npm...\n`);
+  const latest = getLatestNpmVersion();
+  if (!latest) {
+    console.error(`  ${c.error("✗-")} Could not determine the latest version from npm. Install manually with:`);
+    console.error(`  ${c.file("npm install -g opencode-rag-plugin")}`);
+    console.error(`  ${c.dim("then re-run `opencode-rag setup`.\n")}`);
+    process.exit(1);
+  }
+  console.log(`  ${c.created("Found:")} latest npm release ${c.value(latest)}`);
+  console.log(`  ${c.dim("Installing...")}\n`);
+  const updated = await installLatestUpdate({ verbose: false });
+  if (!updated.success) {
+    console.error(`  ${c.error("✗-")} ${updated.message}`);
+    process.exit(1);
+  }
+  console.log(`  ${c.success("✓")} ${updated.message}`);
+}
+
+/**
+ * Query the npm registry for the latest published version of the plugin.
+ *
+ * Best-effort: returns `null` when npm is unavailable or the lookup fails.
+ *
+ * @returns The latest version string, or `null` on failure.
+ */
+function getLatestNpmVersion(): string | null {
+  try {
+    const out = execSync(`npm view ${PLUGIN_NAME} dist-tags.latest`, {
+      encoding: "utf-8",
+      timeout: 15_000,
+    }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
 }

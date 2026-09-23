@@ -1,6 +1,6 @@
 # Configuration
 
-Configuration is defined in `opencode-rag.json` (created by `opencode-rag init`). You only need to define values you want to override — missing sections inherit from `DEFAULT_CONFIG`.
+Configuration is defined in `opencode-rag.json` (created by `opencode-rag init`, or automatically by `opencode-rag setup`). You only need to define values you want to override — missing sections inherit from `DEFAULT_CONFIG`.
 
 ## Configuration Layering
 

@@ -53,13 +53,26 @@ export function registerInitCommand(program: Command): void {
       "    Ollama backend (GPU vs CPU).\n" +
       "  - Re-running in an existing workspace: re-syncs plugin/skill files and keeps the\n" +
       "    existing opencode-rag.json (overwriting requires interactive confirmation).\n" +
-      "\nWorkspace-level step — run AFTER 'opencode-rag setup' on this machine, then 'opencode-rag index'.\n",
+      "\nUsually run automatically by 'opencode-rag setup'; run manually to re-sync an existing workspace.\n",
     )
     .option("-f, --force", "overwrite existing files")
     .option("--skip-install", "skip installing workspace-local plugin dependencies")
     .option("--skip-health-check", "skip provider connectivity and model availability check")
-    .action(async (options: InitOptions) => {
-      try {
+    .action((options: InitOptions) => runWorkspaceInit(options));
+}
+
+/**
+ * Run the full workspace initialization: `.opencode/` directory structure,
+ * plugin entry files, `opencode-rag.json`, skill file, AGENTS.md guidance,
+ * provider health checks, and plugin linking from the global runtime cache.
+ *
+ * Shared between the `init` command and the automatic workspace step of
+ * `opencode-rag setup`.
+ *
+ * @param options - init options (force, skipInstall, skipHealthCheck).
+ */
+export async function runWorkspaceInit(options: InitOptions = {}): Promise<void> {
+  try {
       const cwd = process.cwd();
       const packageMetadata = getPackageMetadata();
       // Use findConfigFile so an existing config in .opencode/rag.json (or
@@ -369,5 +382,42 @@ export function registerInitCommand(program: Command): void {
     } finally {
       destroyAllPooledConnections();
     }
-    });
+}
+
+/**
+ * Best-effort check whether `cwd` looks like a project root (git repo or
+ * common project manifest files). `opencode-rag setup` uses this to decide
+ * whether to automatically initialize the current workspace.
+ *
+ * @param cwd - Directory to inspect.
+ * @returns Whether the directory looks like a project root.
+ */
+export function isLikelyProjectRoot(cwd: string): boolean {
+  if (existsSync(path.join(cwd, ".git"))) {
+    return true;
+  }
+  const markers = [
+    "package.json",
+    "AGENTS.md",
+    "README.md",
+    "pyproject.toml",
+    "Cargo.toml",
+    "go.mod",
+    "opencode-rag.json",
+  ];
+  return markers.some((marker) => existsSync(path.join(cwd, marker)));
+}
+
+/**
+ * Check whether the workspace at `cwd` has already been initialized with
+ * OpenCodeRAG (plugin entry files and the TUI plugin config are present).
+ *
+ * @param cwd - Directory to inspect.
+ * @returns Whether the workspace looks initialized.
+ */
+export function isWorkspaceInitialized(cwd: string): boolean {
+  return (
+    existsSync(path.join(cwd, ".opencode", "plugins", "rag-plugin.js")) &&
+    existsSync(path.join(cwd, ".opencode", "tui.json"))
+  );
 }

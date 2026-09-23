@@ -373,7 +373,7 @@ $ opencode-rag quirk test "some brand new fact"
 
 ### `setup`
 
-Set up the OpenCodeRAG runtime at `~/.opencode/` so OpenCode can discover the plugin.
+Set up the OpenCodeRAG runtime at `~/.opencode/` so OpenCode can discover the plugin, and initialize the current workspace.
 
 ```bash
 opencode-rag setup [options]
@@ -386,14 +386,16 @@ opencode-rag setup [options]
 | `-f, --force` | `false` | Force re-setup even if up-to-date |
 | `--uninstall` | `false` | Remove the runtime and cleanup |
 
-**How it works:**
-1. Detects the globally-installed package (`npm install -g opencode-rag-plugin`)
+**Machine step - how it works:**
+1. Detects the globally-installed package (`npm install -g opencode-rag-plugin`); when it is missing, looks up the **latest version on npm** and installs it automatically
 2. Creates a junction/symlink at `~/.opencode/node_modules/opencode-rag-plugin` pointing to the global npm prefix
 3. Also links `@opencode-ai/plugin` for OpenCode compatibility
 4. Writes a version marker (`.bundle-version`)
 5. Verifies the installation
 
-No `npm install` into `~/.opencode/` is needed — the junction-links resolve transparently through Node.js.
+No `npm install` into `~/.opencode/` is needed - the junction-links resolve transparently through Node.js.
+
+**Workspace step:** When run inside a project root (git repo or a manifest such as `package.json`), `setup` automatically initializes the workspace with the same files `opencode-rag init` creates. When the workspace is already initialized, `setup` reports it and leaves it untouched. Use `opencode-rag init` explicitly to re-sync an initialized workspace (e.g. after AGENTS.md/skill changes).
 
 **Updating from npm:** After `npm update -g opencode-rag-plugin`, run `opencode-rag setup` to sync the runtime.
 

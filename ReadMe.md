@@ -14,9 +14,9 @@ You don't need a dedicated GPU to run smaller embedding LLMs, as these models ca
 # 1. Install globally (automatically sets up the OpenCode runtime)
 npm install -g opencode-rag-plugin
 
-# 2. Initialize in your project
+# 2. One command per workspace - runtime check + workspace setup
 cd /path/to/your/project
-opencode-rag init
+opencode-rag setup
 
 # 3. Index your workspace
 opencode-rag index
@@ -24,6 +24,13 @@ opencode-rag index
 # 4. CLI search test
 opencode-rag query "authentication middleware"
 ```
+
+`opencode-rag setup` installs/verifies the machine-level runtime and, when
+run inside a project, initializes the workspace (`.opencode/`, plugin entries,
+skill file, `opencode-rag.json`) in one step. When the plugin is not installed
+globally yet, it fetches the latest published version from npm automatically.
+`opencode-rag init` remains available for re-syncing an already initialized
+workspace, and `opencode-rag update` upgrades to a newer release.
 
 **Prerequisites:** Node.js v22+, [Ollama](https://ollama.ai) (default) or other LLM-hosters (OpenAI-, Google- or Anthropic-compatible).
 

@@ -28,11 +28,11 @@ After making source changes, sync them to the global runtime:
 ```bash
 npm run build                 # compile src/ → dist/
 npm link                      # link local package as global npm package
-opencode-rag setup --force    # sync symlink at ~/.opencode/ to your local build
-opencode-rag init              # (optional) update workspace AGENTS.md + skill
+opencode-rag setup --force    # sync symlink at ~/.opencode/ to your local build + refresh the workspace
+# optional: opencode-rag init # force re-sync of workspace files (AGENTS.md, skill)
 ```
 
-> **Note:** `npm i -g opencode-rag-plugin` installs from the npm registry, not your local source. Always use `npm run build && npm link && opencode-rag setup --force` to test local changes. Re-run `opencode-rag init` in target workspaces to pick up AGENTS.md changes.
+> **Note:** `npm i -g opencode-rag-plugin` installs from the npm registry, not your local source. Always use `npm run build && npm link && opencode-rag setup --force` to test local changes. `opencode-rag setup` auto-initializes *fresh* workspaces; re-run `opencode-rag init` in already initialized target workspaces to pick up AGENTS.md changes.
 
 ## Testing
 

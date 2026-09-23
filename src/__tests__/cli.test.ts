@@ -359,3 +359,51 @@ describe("opencode-rag describe-image", () => {
     );
   });
 });
+
+describe("workspace detection helpers (setup integration)", () => {
+  let tmpDir: string;
+
+  before(() => {
+    tmpDir = join(tmpdir(), `opencode-rag-detect-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  after(() => {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup failures
+    }
+  });
+
+  it("isLikelyProjectRoot detects git repos and manifest files", async () => {
+    const { isLikelyProjectRoot } = await import("../cli/commands/init.js");
+
+    // An empty directory is not a project root.
+    assert.equal(isLikelyProjectRoot(tmpDir), false);
+
+    // A manifest file makes it one.
+    writeFileSync(join(tmpDir, "package.json"), "{}", "utf-8");
+    assert.equal(isLikelyProjectRoot(tmpDir), true);
+
+    // A .git directory also makes it one (fresh checkout without manifests).
+    rmSync(join(tmpDir, "package.json"), { force: true });
+    mkdirSync(join(tmpDir, ".git"), { recursive: true });
+    assert.equal(isLikelyProjectRoot(tmpDir), true);
+  });
+
+  it("isWorkspaceInitialized requires plugin entry and tui config", async () => {
+    const { isWorkspaceInitialized } = await import("../cli/commands/init.js");
+
+    assert.equal(isWorkspaceInitialized(tmpDir), false);
+
+    // Only the server plugin entry exists -> not initialized yet.
+    mkdirSync(join(tmpDir, ".opencode", "plugins"), { recursive: true });
+    writeFileSync(join(tmpDir, ".opencode", "plugins", "rag-plugin.js"), "x", "utf-8");
+    assert.equal(isWorkspaceInitialized(tmpDir), false);
+
+    // TUI config present -> initialized.
+    writeFileSync(join(tmpDir, ".opencode", "tui.json"), "{}", "utf-8");
+    assert.equal(isWorkspaceInitialized(tmpDir), true);
+  });
+});
