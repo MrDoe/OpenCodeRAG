@@ -387,7 +387,9 @@ opencode-rag setup [options]
 | `--uninstall` | `false` | Remove the runtime and cleanup |
 
 **Machine step - how it works:**
-1. Detects the globally-installed package (`npm install -g opencode-rag-plugin`); when it is missing, looks up the **latest version on npm** and installs it automatically
+1. Checks the installed version against the **latest version on npm**; when
+   outdated, fetches and installs the new version (self-update, independent of
+   how the package was installed - global prefix, runtime junction or dev link)
 2. Creates a junction/symlink at `~/.opencode/node_modules/opencode-rag-plugin` pointing to the global npm prefix
 3. Also links `@opencode-ai/plugin` for OpenCode compatibility
 4. Writes a version marker (`.bundle-version`)

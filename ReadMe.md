@@ -27,8 +27,8 @@ opencode-rag query "authentication middleware"
 
 `opencode-rag setup` installs/verifies the machine-level runtime and, when
 run inside a project, initializes the workspace (`.opencode/`, plugin entries,
-skill file, `opencode-rag.json`) in one step. When the plugin is not installed
-globally yet, it fetches the latest published version from npm automatically.
+skill file, `opencode-rag.json`) in one step. When the installed version is
+outdated, it fetches and installs the latest published version from npm.
 `opencode-rag init` remains available for re-syncing an already initialized
 workspace, and `opencode-rag update` upgrades to a newer release.
 
