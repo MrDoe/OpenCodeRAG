@@ -54,6 +54,39 @@ export const theme = signal<"dark" | "light">(
     : "dark",
 );
 export const sidebarOpen = signal<boolean>(true);
+
+// Sidebar resize (drag the border between file tree and main content)
+export const SIDEBAR_WIDTH_DEFAULT = 256; // px — matches the previous fixed w-64
+export const SIDEBAR_WIDTH_MIN = 180;
+export const SIDEBAR_WIDTH_MAX = 560;
+export const SIDEBAR_WIDTH_STEP = 16; // px per arrow-key press on the resize handle
+
+/** Clamp a sidebar width to the supported range and whole pixels. */
+export function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(width)));
+}
+
+function readStoredSidebarWidth(): number {
+  if (typeof localStorage === "undefined") return SIDEBAR_WIDTH_DEFAULT;
+  const stored = Number(localStorage.getItem("sidebarWidth"));
+  return Number.isFinite(stored) && stored > 0 ? clampSidebarWidth(stored) : SIDEBAR_WIDTH_DEFAULT;
+}
+
+/** Sidebar width in px. Applied to the DOM on change; persist with persistSidebarWidth(). */
+export const sidebarWidth = signal<number>(readStoredSidebarWidth());
+
+export function setSidebarWidth(width: number): void {
+  sidebarWidth.value = clampSidebarWidth(width);
+}
+
+export function persistSidebarWidth(): void {
+  try {
+    localStorage.setItem("sidebarWidth", String(sidebarWidth.value));
+  } catch {
+    // Storage unavailable — the width still applies for this session.
+  }
+}
+
 export const toasts = signal<ToastMessage[]>([]);
 
 let toastNextId = 0;

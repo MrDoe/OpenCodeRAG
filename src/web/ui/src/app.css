@@ -78,6 +78,24 @@ body {
     background: var(--bg-tertiary);
   }
 
+  /* Sidebar resize handle — straddles the sidebar's right border */
+  .sidebar-resizer {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: -3px;
+    width: 7px;
+    cursor: col-resize;
+    touch-action: none;
+    background: transparent;
+    transition: background-color 0.15s;
+  }
+  .sidebar-resizer:hover,
+  .sidebar-resizer.dragging,
+  .sidebar-resizer:focus-visible {
+    background: color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+
   .kpi-card {
     background: var(--bg-card);
     border: 1px solid var(--border);

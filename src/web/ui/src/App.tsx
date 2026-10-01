@@ -1,12 +1,14 @@
+import { useRef } from "preact/hooks";
 import { useRouter } from "./hooks/useRouter";
 import { useTheme } from "./hooks/useTheme";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { sidebarOpen, currentView } from "./state/store";
+import { sidebarOpen, currentView, sidebarWidth } from "./state/store";
 import { ToastContainer } from "./components/Toast";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { FileTree } from "./components/FileTree";
 import { ScopeSelector } from "./components/ScopeSelector";
+import { SidebarResizer } from "./components/SidebarResizer";
 
 import { Dashboard } from "./views/Dashboard";
 import { Chunks } from "./views/Chunks";
@@ -32,6 +34,7 @@ export function App() {
   useTheme();
   useKeyboardShortcuts();
   const route = useRouter();
+  const sidebarRef = useRef<HTMLElement | null>(null);
 
   // Sync currentView with route
   currentView.value = route.view;
@@ -94,13 +97,21 @@ export function App() {
               onClick={() => { sidebarOpen.value = false; }}
             />
             <aside
-              className="w-64 overflow-y-auto shrink-0 border-r z-40 fixed lg:relative inset-y-0 left-0"
-              style={{ background: "var(--bg-secondary)", borderColor: "var(--border)" }}
-              role="tree"
-              aria-label="File tree"
+              ref={sidebarRef}
+              className="shrink-0 border-r z-40 fixed lg:relative inset-y-0 left-0 flex flex-col max-w-[85vw] lg:max-w-none"
+              style={{
+                background: "var(--bg-secondary)",
+                borderColor: "var(--border)",
+                // peek() instead of a signal read: dragging updates the width
+                // imperatively (see useSidebarResize) and must not re-render App.
+                width: `${sidebarWidth.peek()}px`,
+              }}
             >
-              <ScopeSelector />
-              <FileTree />
+              <div className="flex-1 min-h-0 overflow-y-auto" role="tree" aria-label="File tree">
+                <ScopeSelector />
+                <FileTree />
+              </div>
+              <SidebarResizer targetRef={sidebarRef} />
             </aside>
           </>
         )}
