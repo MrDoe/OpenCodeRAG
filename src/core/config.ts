@@ -328,7 +328,9 @@ export interface RerankingConfig {
   maxDocChars?: number;
   /** Additional gate on the rerank score itself (0 = pure reorder, default). NOT comparable to retrieval.minScore — rerank scores are provider-scaled, not calibrated. */
   minScore?: number;
-  /** Per-call timeout in ms; on expiry the fusion order is kept. @default 1500 */
+  /** Per-call timeout in ms; on expiry the fusion order is kept. @default 4000 */
+  // The 2026-10-02 eval measured p50 ≈ 3.0 s / p95 ≈ 3.8 s for 20 candidates on a local
+  // 0.6B reranker — the old 1500 ms default degraded nearly every query to fusion order.
   timeoutMs?: number;
   /**
    * Query template applied before scoring. With a `{query}` placeholder the
@@ -337,7 +339,12 @@ export interface RerankingConfig {
    * reuse embedding.queryPrefix here. @default ""
    */
   queryTemplate?: string;
-  /** Document text: raw content, or description + content. @default "content" */
+  /**
+   * Document text: raw content, or description + content.
+   * `"content+description"` was the best arm in the 2026-10-02 eval (Hit@1 29.2 % vs 22.9 %,
+   * MRR 0.466 vs 0.414) — descriptions carry signal the raw code text misses.
+   * @default "content+description"
+   */
   docField?: "content" | "content+description";
   /** Proxy configuration for the rerank endpoint. */
   proxy?: ProxyConfig;
@@ -717,9 +724,9 @@ export const DEFAULT_CONFIG: RagConfig = {
     candidates: 20,
     maxDocChars: 1200,
     minScore: 0,
-    timeoutMs: 1500,
+    timeoutMs: 4000,
     queryTemplate: "",
-    docField: "content",
+    docField: "content+description",
   },
   openCode: {
     enabled: true,

@@ -171,9 +171,9 @@ for the stage semantics.
     "candidates": 20,
     "maxDocChars": 1200,
     "minScore": 0,
-    "timeoutMs": 1500,
+    "timeoutMs": 4000,
     "queryTemplate": "",
-    "docField": "content"
+    "docField": "content+description"
   }
 }
 ```
@@ -188,9 +188,9 @@ for the stage semantics.
 | `candidates` | `20` | Candidates sent per query (pool = `max(topK, candidates)`, never below `topK`) |
 | `maxDocChars` | `1200` | Per-candidate document truncation |
 | `minScore` | `0` | Extra gate on the rerank score; `0` = pure reorder. Rerank scores are **not** calibrated — calibrate via the eval module |
-| `timeoutMs` | `1500` | Per-call timeout; on expiry the fusion order is kept |
+| `timeoutMs` | `4000` | Per-call timeout (2026-10-02 eval: p95 ≈ 3.8 s for 20 candidates); on expiry the fusion order is kept |
 | `queryTemplate` | `""` | `{query}` placeholder (or prefix) for instruct-style rerankers; do NOT reuse `embedding.queryPrefix` |
-| `docField` | `"content"` | `"content"` or `"content+description"` |
+| `docField` | `"content+description"` | `"content"` or `"content+description"`; the description variant was the best arm in the eval |
 | `proxy` | — | Proxy config, same shape as `embedding.proxy` |
 
 Server requirements: llama-server started with `--reranking --pooling rank`, and the

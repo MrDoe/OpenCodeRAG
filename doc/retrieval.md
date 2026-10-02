@@ -111,11 +111,17 @@ Key properties (all deliberate):
 | Pool | `max(topK, candidates)` top fused results; everything beyond is never sent and trails the pool in fusion order |
 | Score | `result.score` becomes the rerank score; fused components stay in `explanation.scoreBreakdown`, plus the new `rerankScore` field. Rerank scores are provider-scaled, **not** calibrated and not comparable to `retrieval.minScore` |
 | Gate | Optional `reranking.minScore` (default `0` = pure reorder, nothing dropped) |
-| Docs | `docField: "content"` (default) or `"content+description"`; each doc truncated to `maxDocChars` |
+| Docs | `docField: "content+description"` (default; best eval arm) or `"content"`; each doc truncated to `maxDocChars` |
 | Query | `reranking.queryTemplate` (`{query}` placeholder or prefix) for instruct-style rerankers — `embedding.queryPrefix` is deliberately **not** reused |
 | Failure | Provider errors/timeouts degrade to fusion order with a console warning; after 3 consecutive failures the provider enters a 5-minute cooldown (`available() === false`) and is skipped without a call |
 | Caching | Per-provider in-memory LRU keyed on model + query + document text |
 | Batching | >16 docs are split into concurrent batched calls |
+
+**Measured defaults (2026-10-02 eval, 48 labeled queries):** reranking lifted Hit@1 from 14.6 % to
+29.2 % and MRR from 0.339 to 0.466 with `content+description` and 20 candidates, at p50 ≈ 3.1 s —
+hence the 4000 ms default timeout (p95 ≈ 3.8 s). `candidates: 30` added ~1.4 s for no metric gain.
+German queries were the weak spot (small sample) — consider excluding non-English queries from
+reranking before enabling it broadly.
 
 The provider is a process-wide singleton per endpoint (`getRerankerFor(cfg.reranking)`),
 so cooldown and cache survive across retrievals. All retrieval surfaces (plugin

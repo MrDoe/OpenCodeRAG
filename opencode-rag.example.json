@@ -61,9 +61,9 @@
     "candidates": 20,
     "maxDocChars": 1200,
     "minScore": 0,
-    "timeoutMs": 1500,
+    "timeoutMs": 4000,
     "queryTemplate": "",
-    "docField": "content"
+    "docField": "content+description"
   },
   "openCode": {
     "enabled": true,
