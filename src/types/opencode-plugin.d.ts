@@ -39,8 +39,8 @@ declare module "@opencode-ai/plugin" {
       output: { args: Record<string, unknown> }
     ) => Promise<void>;
     "tool.execute.after"?: (
-      input: { tool: string; sessionID: string; callID: string },
-      output: { title: string; output: string; metadata: unknown }
+      input: { tool: string; sessionID: string; callID: string; status?: "completed" | "error" },
+      output: { title: string; output: string; metadata: unknown; error?: string }
     ) => Promise<void>;
     "experimental.chat.messages.transform"?: (
       input: Record<string, never>,

@@ -1,7 +1,7 @@
 /**
  * @fileoverview Performs hybrid vector-keyword retrieval with configurable scoring and explanation.
  */
-import type { Chunk, EmbeddingProvider, KeywordIndex, VectorStore, SearchResult, MetadataFilter } from "../core/interfaces.js";
+import type { Chunk, EmbeddingProvider, KeywordIndex, RerankProvider, VectorStore, SearchResult, MetadataFilter } from "../core/interfaces.js";
 
 /** Multiplier applied to topK when fetching raw results from vector/keyword stores.
  *  We request extra results up-front, then after hybrid fusion + minScore filtering,
@@ -29,6 +29,111 @@ export interface RetrieveOptions {
   queryPrefix?: string;
   explain?: boolean;
   filter?: MetadataFilter;
+  /**
+   * Optional cross-encoder reranker. When set (and not cooling down), the top
+   * fused candidates are re-scored and re-ordered after the fusion `minScore`
+   * gate. Any provider failure/timeout degrades to the fusion order.
+   */
+  reranker?: RerankProvider;
+  /** Tunables for the rerank stage (defaults apply when omitted). */
+  reranking?: RerankStageOptions;
+}
+
+/** Tunables for the optional rerank stage inside retrieve(). */
+export interface RerankStageOptions {
+  /** Candidates (after the fusion minScore gate) sent to the reranker. Default 20. */
+  candidates?: number;
+  /** Per-document text truncation in characters. Default 1200. */
+  maxDocChars?: number;
+  /** Gate on the rerank score itself; 0 (default) = pure reorder, nothing dropped. */
+  minScore?: number;
+  /** `{query}`-placeholder template or prefix applied to the query before scoring. */
+  queryTemplate?: string;
+  /** Score raw chunk content or description+content. Default "content". */
+  docField?: "content" | "content+description";
+  /** Per-call timeout in ms handed to the provider. Default 1500. */
+  timeoutMs?: number;
+}
+
+const RERANK_DEFAULTS = {
+  candidates: 20,
+  maxDocChars: 1200,
+  minScore: 0,
+  timeoutMs: 1500,
+} as const;
+
+/** Apply the rerank query template: `{query}` substitution, else prefix. */
+function applyQueryTemplate(query: string, template?: string): string {
+  if (!template) return query;
+  return template.includes("{query}") ? template.split("{query}").join(query) : template + query;
+}
+
+/** Build the rerank document text for a chunk, honoring docField + truncation. */
+function buildRerankDoc(chunk: Chunk, docField: "content" | "content+description", maxChars: number): string {
+  const text =
+    docField === "content+description" && chunk.description
+      ? `${chunk.description}\n${chunk.content}`
+      : chunk.content;
+  return text.length > maxChars ? text.slice(0, maxChars) : text;
+}
+
+/**
+ * Optional reorder stage applied to minScore-filtered, fusion-sorted results.
+ *
+ * The first `candidates` results are scored by the reranker and re-ordered
+ * (rerank score desc, fusion rank as tie-breaker); the remainder keeps its
+ * fusion order and trails the pool. `result.score` is replaced by the rerank
+ * score (the fused components stay in `explanation.scoreBreakdown`, plus the
+ * new `rerankScore`). A provider in cooldown, missing, or failing never
+ * changes behavior beyond that reorder.
+ */
+async function applyRerankStage(
+  query: string,
+  results: SearchResult[],
+  topK: number,
+  reranker?: RerankProvider,
+  stage?: RerankStageOptions,
+): Promise<SearchResult[]> {
+  if (!reranker) return results.slice(0, topK);
+  const pool = results.slice(0, Math.max(topK, stage?.candidates ?? RERANK_DEFAULTS.candidates));
+  const tail = results.slice(pool.length);
+  if (pool.length === 0) return results.slice(0, topK);
+  if (!reranker.available()) return [...pool, ...tail].slice(0, topK);
+
+  const maxChars = stage?.maxDocChars ?? RERANK_DEFAULTS.maxDocChars;
+  const docField = stage?.docField ?? "content";
+  const docs = pool.map((r) => buildRerankDoc(r.chunk, docField, maxChars));
+
+  let scores: number[];
+  try {
+    scores = await reranker.rerank(
+      applyQueryTemplate(query, stage?.queryTemplate),
+      docs,
+      { timeoutMs: stage?.timeoutMs ?? RERANK_DEFAULTS.timeoutMs },
+    );
+  } catch (err) {
+    reranker.noteFailure();
+    console.warn(
+      `[retriever] rerank skipped (${err instanceof Error ? err.message : String(err)}) — keeping fusion order`,
+    );
+    return [...pool, ...tail].slice(0, topK);
+  }
+  reranker.noteSuccess();
+
+  const minRerank = stage?.minScore ?? RERANK_DEFAULTS.minScore;
+  const indexed = pool.map((r, i) => ({ r, i, score: scores[i] ?? 0 }));
+  for (const entry of indexed) {
+    entry.r.score = entry.score;
+    if (entry.r.explanation) {
+      entry.r.explanation.scoreBreakdown.rerankScore = entry.score;
+    }
+  }
+  const reordered = indexed
+    .filter((e) => minRerank <= 0 || e.score >= minRerank)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((e) => e.r);
+
+  return [...reordered, ...tail].slice(0, topK);
 }
 
 /** Classify a query as a bare symbol lookup vs. natural-language prose.
@@ -118,7 +223,7 @@ export async function retrieve(
     }
 
     if (keywordResults.length === 0) {
-      const filtered = vectorResults.filter((r) => r.score >= minScore).slice(0, topK);
+      const filtered = vectorResults.filter((r) => r.score >= minScore);
       if (options.explain) {
         for (const r of filtered) {
           r.explanation = {
@@ -134,7 +239,7 @@ export async function retrieve(
         }
         attachConfidence(filtered);
       }
-      return filtered;
+      return applyRerankStage(query, filtered, topK, options.reranker, options.reranking);
     }
     const vRank = new Map<string, number>(vectorResults.map((r, i) => [r.chunk.id, i]));
     const kRank = new Map<string, number>(keywordResults.map((r, i) => [r.chunk.id, i]));
@@ -176,11 +281,10 @@ export async function retrieve(
     })
       .filter((r): r is SearchResult => r !== null)
       .filter((r) => r.score >= minScore)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
+      .sort((a, b) => b.score - a.score);
 
     if (options.explain) attachConfidence(combinedResults);
-    return combinedResults;
+    return applyRerankStage(query, combinedResults, topK, options.reranker, options.reranking);
   } catch (err) {
     // Never silently mask retrieval failures as "no results" — an embedder
     // outage or store bug must be visible, not indistinguishable from an

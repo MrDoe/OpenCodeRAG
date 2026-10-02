@@ -279,30 +279,61 @@ function splitOversized(
     let currentCharCount = 0;
     let lineOffset = 0;
 
+    const flushWindow = (endLineExclusive: number): void => {
+      if (currentLines.length === 0) return;
+      subChunks.push({
+        id: uuid(),
+        content: currentLines.join("\n"),
+        metadata: {
+          filePath,
+          startLine: chunk.metadata.startLine + lineOffset,
+          endLine: chunk.metadata.startLine + endLineExclusive - 1,
+          language: chunk.metadata.language,
+        },
+      });
+      // Seed the next window with the last `overlap` lines so split chunks
+      // still share their boundary context.
+      const tail = overlap > 0 ? currentLines.slice(Math.max(0, currentLines.length - overlap)) : [];
+      currentLines = [...tail];
+      currentCharCount = tail.reduce((sum, l) => sum + l.length + 1, 0);
+      lineOffset = endLineExclusive - tail.length;
+    };
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!;
       const lineLen = line.length + 1;
+
+      // A single line longer than the character budget cannot be split at
+      // line boundaries. Hard-wrap it by characters so no chunk exceeds
+      // maxChars -- otherwise minified bundles (one long line) become
+      // whole-file chunks that exceed the embedding model's context size.
+      if (maxChars > 0 && line.length > maxChars) {
+        flushWindow(i);
+        // The wrapped slices must stay within the character budget, so the
+        // overlap lines seeded by flushWindow are intentionally not reused.
+        currentLines = [];
+        currentCharCount = 0;
+        for (let start = 0; start < line.length; start += maxChars) {
+          subChunks.push({
+            id: uuid(),
+            content: line.slice(start, start + maxChars),
+            metadata: {
+              filePath,
+              startLine: chunk.metadata.startLine + i,
+              endLine: chunk.metadata.startLine + i,
+              language: chunk.metadata.language,
+            },
+          });
+        }
+        lineOffset = i + 1;
+        continue;
+      }
 
       if (
         currentLines.length > 0 &&
         (currentLines.length >= maxLines || currentCharCount + lineLen > maxChars)
       ) {
-        subChunks.push({
-          id: uuid(),
-          content: currentLines.join("\n"),
-          metadata: {
-            filePath,
-            startLine: chunk.metadata.startLine + lineOffset,
-            endLine: chunk.metadata.startLine + i - 1,
-            language: chunk.metadata.language,
-          },
-        });
-        // Seed the next window with the last `overlap` lines so split chunks
-        // still share their boundary context.
-        const tail = overlap > 0 ? currentLines.slice(Math.max(0, currentLines.length - overlap)) : [];
-        currentLines = [...tail];
-        currentCharCount = tail.reduce((sum, l) => sum + l.length + 1, 0);
-        lineOffset = i - tail.length;
+        flushWindow(i);
       }
 
       currentLines.push(line);
@@ -400,10 +431,10 @@ export async function chunkFile(
     }
   }
 
-  const chunks = await chunker.chunk(filePath, content);
+  let chunks = await chunker.chunk(filePath, content);
 
   if (chunks.length === 0) {
-    return fallbackChunker.chunk(filePath, content);
+    chunks = await fallbackChunker.chunk(filePath, content);
   }
 
   const overlap = Math.max(0, options?.chunkOverlap ?? 0);

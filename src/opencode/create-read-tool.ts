@@ -7,6 +7,7 @@ import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider, type KeywordIndex, type VectorStore, type SearchResult } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { retrieve } from "../retriever/retriever.js";
+import { getRerankerFor } from "../reranker/factory.js";
 import { normalizeReadArgs, resolveWorkspacePath } from "./tool-args.js";
 import { buildReadQuery } from "./read-query.js";
 import { formatHybridReadOutput } from "./read-format.js";
@@ -49,6 +50,9 @@ export function createRagReadTool(
   // Over-fetch by 4x so post-filtering (line range, minScore) still yields enough results
   const retrievalTopK = maxContextChunks * 4;
   const readRelatedFilesMax = openCodeCfg.readRelatedFilesMax ?? 5;
+
+  const rerankProvider = getRerankerFor(config.reranking) ?? undefined;
+  const rerankOptions = config.reranking;
 
   return tool({
     description:
@@ -104,7 +108,7 @@ export function createRagReadTool(
                 rawResults = cached.rawResults;
               } else {
                 const retrievalQuery = buildSessionQuery(messageText, resolvedPath, normalized);
-                rawResults = await retrieve(retrievalQuery, embedder, store, { topK: retrievalTopK, keywordIndex, hybridEnabled: config.retrieval.hybridSearch?.enabled, queryPrefix: config.embedding.queryPrefix, filter: CODE_SEARCH_FILTER });
+                rawResults = await retrieve(retrievalQuery, embedder, store, { topK: retrievalTopK, keywordIndex, hybridEnabled: config.retrieval.hybridSearch?.enabled, queryPrefix: config.embedding.queryPrefix, reranker: rerankProvider, reranking: rerankOptions, filter: CODE_SEARCH_FILTER });
                 const maxSize = options.maxSessionCacheSize ?? 50;
                 if (!sessionRetrievalCache.has(sessionID) && sessionRetrievalCache.size >= maxSize) {
                   const oldest = sessionRetrievalCache.keys().next().value;
@@ -119,7 +123,7 @@ export function createRagReadTool(
                 startLine: normalized.startLine,
                 endLine: normalized.endLine,
               });
-              rawResults = await retrieve(retrievalQuery, embedder, store, { topK: retrievalTopK, keywordIndex, hybridEnabled: config.retrieval.hybridSearch?.enabled, queryPrefix: config.embedding.queryPrefix, filter: CODE_SEARCH_FILTER });
+              rawResults = await retrieve(retrievalQuery, embedder, store, { topK: retrievalTopK, keywordIndex, hybridEnabled: config.retrieval.hybridSearch?.enabled, queryPrefix: config.embedding.queryPrefix, reranker: rerankProvider, reranking: rerankOptions, filter: CODE_SEARCH_FILTER });
             }
 
             // Collect related files from raw results (before filtering)

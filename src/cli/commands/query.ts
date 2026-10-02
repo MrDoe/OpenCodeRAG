@@ -10,6 +10,7 @@ import path from "node:path";
 import pc from "picocolors";
 import { CODE_SEARCH_FILTER } from "../../core/interfaces.js";
 import { retrieve } from "../../retriever/retriever.js";
+import { getRerankerFor } from "../../reranker/factory.js";
 import { c, resolveCliContext, cleanupContext, logCliError, logCliInfo, formatDuration } from "../format.js";
 import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "../../retriever/context-optimizer.js";
 import type { CliOptions } from "../types.js";
@@ -62,6 +63,8 @@ export function registerQueryCommand(program: Command): void {
           keywordWeight: hybridCfg?.keywordWeight,
           hybridEnabled: hybridCfg?.enabled,
           queryPrefix: config.embedding.queryPrefix,
+          reranker: getRerankerFor(config.reranking) ?? undefined,
+          reranking: config.reranking,
           explain: options.explain ?? false,
           filter: CODE_SEARCH_FILTER,
         });
@@ -83,6 +86,9 @@ export function registerQueryCommand(program: Command): void {
           if (r.explanation) {
             const sb = r.explanation.scoreBreakdown;
             logCliInfo(logFilePath, "query", `  ${c.label("  Vector:")} ${c.score(sb.rawVectorScore.toFixed(4))}  ${c.label("Keyword:")} ${c.score(sb.rawKeywordScore.toFixed(4))}  ${c.label("KW weight:")} ${sb.keywordWeight.toFixed(2)}`);
+            if (sb.rerankScore !== undefined) {
+              logCliInfo(logFilePath, "query", `  ${c.label("  Rerank:")} ${c.score(sb.rerankScore.toFixed(4))}`);
+            }
             if (r.explanation.matchedTerms && r.explanation.matchedTerms.length > 0) {
               logCliInfo(logFilePath, "query", `  ${c.label("  Matched:")} ${c.lang(r.explanation.matchedTerms.join(", "))}`);
             }

@@ -115,8 +115,16 @@ See [doc/chunking.md](chunking.md) for the full language matrix.
 
 | File | Role |
 |---|---|
-| `retriever.ts` | `retrieve()` — vector + hybrid keyword/vector search |
+| `retriever.ts` | `retrieve()` — vector + hybrid keyword/vector search, optional rerank stage |
 | `keyword-index.ts` | `KeywordIndex` — zero-dep TF×IDF inverted index with CamelCase/snake_case tokenizer |
+
+### Reranker (`src/reranker/`)
+
+| File | Role |
+|---|---|
+| `base.ts` | `RerankProviderBase` — failure cooldown + bounded (query, doc) score cache |
+| `llama-server.ts` | `LlamaServerReranker` — llama-server `/v1/rerank` adapter (batching, auth) |
+| `factory.ts` | `createReranker()` dispatch + `getRerankerFor()` per-endpoint singleton |
 
 ### Vector Store (`src/vectorstore/`)
 
@@ -171,7 +179,7 @@ Texts are optionally prefixed with `documentPrefix` (e.g., `search_document:`) a
 Chunks and their embeddings are stored in LanceDB in **bulk window writes**: all chunks of a processing window go in as a single `table.add`, followed by one `table.delete` per modified file (dedup of the prior revision). During a full rebuild (`--force`) the writes are append-only — the temporary rebuild store starts empty, so dedup deletes are skipped entirely. This keeps the number of LanceDB version commits proportional to the number of modified files instead of the number of chunks (previously K+2 transactions per file caused version-manifest accumulation that made the store phase degrade quadratically as the index grew). The store phase is launched as a non-awaited promise so it overlaps the next window's prepare/describe/embed phases, and it is compacted periodically (`indexing.optimizeIntervalWindows`) plus once at the end of a pass to prune old versions. The keyword index is maintained separately as an in-memory TF×IDF inverted index, serialized to `keyword-index.json`.
 
 ### 6. Retrieval (`retrieve` in `retriever/retriever.ts`)
-The query is prefixed with `queryPrefix` and embedded. Vector search returns results. If hybrid search is enabled, keyword search runs in parallel. Results are fused via weighted score: `(1 - kw) * vScore + kw * kScore`.
+The query is prefixed with `queryPrefix` and embedded. Vector search returns results. If hybrid search is enabled, keyword search runs in parallel. Results are fused via weighted score: `(1 - kw) * vScore + kw * kScore`. After the fusion `minScore` gate, an optional cross-encoder rerank stage (`src/reranker/`, off by default) re-scores the top candidates via llama-server `/v1/rerank` and reorders them; failures/timeouts/cooldowns degrade to the fusion order. See [Retrieval](retrieval.md#cross-encoder-reranking-optional).
 
 ## Configuration Layering
 

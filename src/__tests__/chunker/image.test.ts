@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it, before } from "node:test";
+import { createServer } from "node:http";
 
 describe("ImageChunker", () => {
   let chunker: any;
@@ -305,5 +306,68 @@ describe("resolveOnDemandImageConfig", () => {
     resolveFn(base);
     assert.equal(base.model, "index-model");
     assert.deepEqual(base.onDemand, { model: "other-model" });
+  });
+});
+
+describe("OpenAI image vision think handling", () => {
+  function startMockServer(
+    handler: (body: Record<string, any>) => { status: number; body: unknown }
+  ): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+    return new Promise((resolve) => {
+      const server = createServer((req, res) => {
+        let data = "";
+        req.on("data", (chunk) => { data += chunk; });
+        req.on("end", () => {
+          const body = JSON.parse(data);
+          const result = handler(body);
+          res.writeHead(result.status, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result.body));
+        });
+      });
+      server.listen(0, "127.0.0.1", () => {
+        const addr = server.address();
+        const port = typeof addr === "object" && addr ? addr.port : 0;
+        resolve({
+          baseUrl: `http://127.0.0.1:${port}/v1`,
+          close: () => new Promise<void>((res, rej) => server.close((err) => (err ? rej(err) : res()))),
+        });
+      });
+    });
+  }
+
+  async function describeWith(extra: Record<string, unknown>) {
+    let captured: Record<string, any> = {};
+    const { baseUrl, close } = await startMockServer((body) => {
+      captured = body;
+      return { status: 200, body: { choices: [{ message: { content: "An image." } }] } };
+    });
+    try {
+      const mod = await import("../../chunker/image.js");
+      const provider = mod.createImageVisionProvider({
+        enabled: true,
+        provider: "openai",
+        model: "Ornith-1.5-9B",
+        baseUrl,
+        apiKey: "sk-test",
+        timeoutMs: 5000,
+        prompt: "Describe this image",
+        ...extra,
+      });
+      const out = await provider.describeImage("aGVsbG8=", "image/png", "Describe this image");
+      return { out, captured };
+    } finally {
+      await close();
+    }
+  }
+
+  it("forwards enable_thinking=false via chat_template_kwargs when think is false", async () => {
+    const { out, captured } = await describeWith({ think: false });
+    assert.equal(out, "An image.");
+    assert.deepStrictEqual(captured.chat_template_kwargs, { enable_thinking: false });
+  });
+
+  it("omits chat_template_kwargs when think is not configured", async () => {
+    const { captured } = await describeWith({});
+    assert.equal("chat_template_kwargs" in captured, false);
   });
 });

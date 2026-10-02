@@ -104,6 +104,8 @@ export async function search(
       hybridEnabled: ctx.config.retrieval.hybridSearch?.enabled,
       queryPrefix: ctx.config.embedding.queryPrefix,
       explain: options.explain,
+      reranker: ctx.reranker,
+      reranking: ctx.config.reranking,
       filter: {
         pathPatterns: options.pathHints,
         languages: options.languageHints,

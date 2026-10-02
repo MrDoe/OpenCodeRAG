@@ -53,6 +53,18 @@
       "keywordWeight": 0.4
     }
   },
+  "reranking": {
+    "enabled": false,
+    "provider": "llama-server",
+    "baseUrl": "http://127.0.0.1:8080/v1",
+    "model": "qwen3-reranker-0.6b",
+    "candidates": 20,
+    "maxDocChars": 1200,
+    "minScore": 0,
+    "timeoutMs": 1500,
+    "queryTemplate": "",
+    "docField": "content"
+  },
   "openCode": {
     "enabled": true,
     "maxContextChunks": 10,
@@ -125,6 +137,13 @@
     "sessionEndExtraction": true,
     "autoCaptureMaxPerTurn": 2,
     "autoCaptureDedupThreshold": 0.85,
+    "injectOnToolError": true,
+    "toolErrorMinScore": 0.7,
+    "toolErrorTopK": 2,
+    "toolErrorMinTokenOverlap": 1,
+    "toolErrorCooldownMs": 60000,
+    "toolErrorMaxPerSession": 3,
+    "toolErrorLatencyBudgetMs": 1500,
     "decay": {
       "enabled": false,
       "halfLifeDays": 30

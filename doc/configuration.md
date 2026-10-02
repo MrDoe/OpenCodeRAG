@@ -152,6 +152,51 @@ Controls how queries are matched against the index.
 | `contextOptimization.adjacentGapThreshold` | `5` | Max line gap for adjacent merge (lines between end and next start) |
 | `contextOptimization.similarityThreshold` | `0.8` | Jaccard similarity threshold (0–1) for same-file dedup |
 
+### `reranking`
+
+Optional cross-encoder re-scoring of fused retrieval results (**off by default**).
+When enabled, the top fused candidates (after the `retrieval.minScore` gate) are
+re-scored by a reranker model served by llama-server's `/v1/rerank` endpoint and
+reordered; provider failures, timeouts, and cooldowns always degrade to the plain
+hybrid order. See [Retrieval: Cross-Encoder Reranking](retrieval.md#cross-encoder-reranking-optional)
+for the stage semantics.
+
+```json
+{
+  "reranking": {
+    "enabled": false,
+    "provider": "llama-server",
+    "baseUrl": "http://127.0.0.1:8080/v1",
+    "model": "qwen3-reranker-0.6b",
+    "candidates": 20,
+    "maxDocChars": 1200,
+    "minScore": 0,
+    "timeoutMs": 1500,
+    "queryTemplate": "",
+    "docField": "content"
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `enabled` | `false` | Master switch — nothing is created or called when off |
+| `provider` | `"llama-server"` | Only llama-server (`/v1/rerank`, Cohere-style) for now |
+| `baseUrl` | `http://127.0.0.1:8080/v1` | Rerank endpoint base (llama-swap proxies route `v1/rerank`) |
+| `apiKey` | — | Optional bearer token (e.g. llama-swap auth) |
+| `model` | `qwen3-reranker-0.6b` | Model name sent to the server |
+| `candidates` | `20` | Candidates sent per query (pool = `max(topK, candidates)`, never below `topK`) |
+| `maxDocChars` | `1200` | Per-candidate document truncation |
+| `minScore` | `0` | Extra gate on the rerank score; `0` = pure reorder. Rerank scores are **not** calibrated — calibrate via the eval module |
+| `timeoutMs` | `1500` | Per-call timeout; on expiry the fusion order is kept |
+| `queryTemplate` | `""` | `{query}` placeholder (or prefix) for instruct-style rerankers; do NOT reuse `embedding.queryPrefix` |
+| `docField` | `"content"` | `"content"` or `"content+description"` |
+| `proxy` | — | Proxy config, same shape as `embedding.proxy` |
+
+Server requirements: llama-server started with `--reranking --pooling rank`, and the
+reranker sharing a llama-swap *group* with the embedding model (or a separate port) to
+avoid model-swap thrashing per query. Health checks report the reranker as type `rerank`.
+
 ### `description`
 
 Controls LLM-based description generation for code chunks.

@@ -85,6 +85,11 @@ export interface SearchExplanation {
     vectorRank?: number;
     /** Rank (0-indexed) in the keyword index results. */
     keywordRank?: number;
+    /** Cross-encoder relevance from the optional rerank stage. Higher means more
+     *  relevant. NOT a calibrated probability (provider-dependent, llama-server
+     *  semantics) and NOT comparable to the RRF-normalized fused components.
+     *  Set only when the rerank stage actually ran for this result. */
+    rerankScore?: number;
   };
   /** Calibrated relevance in [0,1] derived from the raw vector-score spread of the
    *  candidate set — unlike the fused `score` (RRF-normalized so rank 0 is always
@@ -135,6 +140,34 @@ export interface EmbeddingProvider {
   readonly name: string;
   /** Embed one or more text strings. `purpose` may apply a prefix for query vs. document embeddings. */
   embed(texts: string[], purpose?: "query" | "document"): Promise<number[][]>;
+}
+
+/**
+ * Cross-encoder reranker: scores (query, document) pairs for relevance.
+ *
+ * Deliberately narrow so a decision model (typed classifier) can implement the
+ * same contract later. Providers never throw into retrieval hot paths by
+ * design: callers catch `rerank()` rejections, degrade to the original order,
+ * and feed the failure into `noteFailure()` so repeated outages trip an
+ * automatic cooldown (`available() === false`).
+ */
+export interface RerankProvider {
+  /** Provider name (e.g. "llama-server"). */
+  readonly name: string;
+  /** Model identifier used for scoring (cache/log attribution). */
+  readonly model: string;
+  /** False while a failure cooldown is active — callers must skip reranking. */
+  available(): boolean;
+  /**
+   * Score every document against the query; the returned array is index-aligned
+   * with `documents` (higher = more relevant). May reject — the caller then
+   * keeps the pre-rerank order and calls `noteFailure()`.
+   */
+  rerank(query: string, documents: string[], opts?: { timeoutMs?: number }): Promise<number[]>;
+  /** Record a failed call (counts toward the cooldown). */
+  noteFailure(): void;
+  /** Record a successful call (resets the failure streak). */
+  noteSuccess(): void;
 }
 
 /** In-memory TF-IDF inverted index for keyword-based search alongside vector search. */

@@ -6,14 +6,15 @@
 
 import type { Plugin, PluginInput, Hooks, ToolDefinition } from "@opencode-ai/plugin";
 import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
-import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type VectorStore, type SearchResult, type MetadataFilter } from "./core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type RerankProvider, type VectorStore, type SearchResult, type MetadataFilter } from "./core/interfaces.js";
 import { normalizeFileExtensions } from "./core/filters.js";
 import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
 import { createEmbedder, probeEmbeddingDimension } from "./embedder/factory.js";
 import { readStoreDimension } from "./vectorstore/lancedb.js";
 import { createDescriptionProvider } from "./describer/factory.js";
 import { createVectorStore } from "./vectorstore/factory.js";
-import { retrieve } from "./retriever/retriever.js";
+import { retrieve, type RerankStageOptions } from "./retriever/retriever.js";
+import { getRerankerFor } from "./reranker/factory.js";
 import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "./retriever/context-optimizer.js";
 import { loadChunkersFromConfig } from "./chunker/loader.js";
 import { appendDebugLog } from "./core/fileLogger.js";
@@ -40,6 +41,14 @@ import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "
 import { destroyAllPooledConnections } from "./embedder/http.js";
 import { listQuirks, lintQuirks, recallQuirks, sharedWords, reconcileQuirks } from "./quirks/quirk-store.js";
 import { autoCaptureQuirks, type CaptureExchange } from "./quirks/auto-capture.js";
+import {
+  createToolErrorInjectionState,
+  selectToolErrorQuirks,
+  formatToolErrorQuirkBlock,
+  toToolErrorCaptureEntry,
+  type ToolErrorInfo,
+  type ToolErrorInjectionState,
+} from "./quirks/tool-error-recall.js";
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
 import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -48,6 +57,8 @@ import path from "node:path";
 const MAX_SESSION_MAP_SIZE = 50;
 /** Maximum tool results kept per session (for quirk extraction). */
 const MAX_SESSION_TOOL_RESULTS = 20;
+/** Pending tool-error quirk blocks older than this (ms) are dropped instead of injected. */
+const TOOL_ERROR_PENDING_TTL_MS = 120_000;
 
 /** Cache of loaded RAG configurations keyed by workspace directory. */
 const configCache = new Map<string, RagConfig>();
@@ -385,10 +396,12 @@ async function retrieveContext(
   queryPrefix?: string,
   explain = false,
   hybridEnabled?: boolean,
-  filter?: MetadataFilter
+  filter?: MetadataFilter,
+  reranker?: RerankProvider,
+  reranking?: RerankStageOptions
 ): Promise<SearchResult[]> {
   if (query.trim().length === 0) return [];
-  return retrieveFn(query, embedder, store, { topK, minScore, keywordIndex, keywordWeight, hybridEnabled, queryPrefix, explain, filter });
+  return retrieveFn(query, embedder, store, { topK, minScore, keywordIndex, keywordWeight, hybridEnabled, queryPrefix, explain, filter, reranker, reranking });
 }
 
 /**
@@ -407,14 +420,16 @@ async function loadRetrievedResults(
   keywordIndex?: KeywordIndex,
   queryPrefix?: string,
   explain = false,
-  filter?: MetadataFilter
+  filter?: MetadataFilter,
+  reranker?: RerankProvider,
+  reranking?: RerankStageOptions
 ): Promise<SearchResult[]> {
   const minScore = cfg.retrieval.minScore;
   const kw = cfg.retrieval.hybridSearch?.keywordWeight;
   const hybridEnabled = cfg.retrieval.hybridSearch?.enabled;
-  const primaryResults = await retrieveContext(query, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter);
+  const primaryResults = await retrieveContext(query, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter, reranker, reranking);
   const extraResults = extraQuery
-    ? await retrieveContext(extraQuery, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter)
+    ? await retrieveContext(extraQuery, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter, reranker, reranking)
     : [];
 
   const optCfg = cfg.retrieval.contextOptimization ?? DEFAULT_CONTEXT_OPTIMIZATION;
@@ -601,6 +616,10 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   const sessionTranscript = new Map<string, CaptureExchange[]>();
   // Track quirk IDs already injected per session to avoid duplicate injection
   const sessionInjectedQuirks = new Map<string, Set<string>>();
+  // Tool-error quirk path: per-session injection state (cooldown/budget) and the
+  // block pending for the next model request.
+  const sessionToolErrorState = new Map<string, ToolErrorInjectionState>();
+  const sessionPendingToolErrorQuirk = new Map<string, { block: string; ts: number }>();
 
   // Evaluation session logger — captures OpenCode events for analysis
   const sessionLogger: SessionLogger = createSessionLogger(options.storePath);
@@ -660,7 +679,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         const explain = args.explain ?? false;
         const fileExtensions = normalizeFileExtensions(args.fileExtensions);
         const filter: MetadataFilter | undefined = fileExtensions.length > 0 ? { fileExtensions } : undefined;
-        const results = await loadRetrievedResults(query, embedder, store, effectiveCfg, dependencies.retrieve, topK, undefined, keywordIndex, effectiveCfg.embedding.queryPrefix, explain, filter);
+        const results = await loadRetrievedResults(query, embedder, store, effectiveCfg, dependencies.retrieve, topK, undefined, keywordIndex, effectiveCfg.embedding.queryPrefix, explain, filter, getRerankerFor(effectiveCfg.reranking) ?? undefined, effectiveCfg.reranking);
 
         if (results.length === 0) {
           appendVerboseLog(options.logFilePath, CONTEXT_TOOL_NAME, "retrieval completed with no matching chunks", {
@@ -948,6 +967,50 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       try {
         const results = sessionToolResults.get(input.sessionID) ?? [];
         results.push({ tool: input.tool, output: output.output ?? "" });
+
+        // Failed tool calls: feed the auto-capture pipeline (learning loop) and
+        // recall matching quirks for injection into the next model request.
+        // `output.error` is set by the V2 adapter's error branch; the status
+        // check keeps this working if a runtime reports errors via input only.
+        const errorText = output.error ?? (input.status === "error" ? output.output : undefined);
+        if (errorText && errorText.length > 0) {
+          const info: ToolErrorInfo = { tool: input.tool, error: errorText, sessionID: input.sessionID };
+          results.push(toToolErrorCaptureEntry(info));
+
+          const memCfg = getEffectiveCfg().memory;
+          if (memCfg?.enabled && memCfg.injectOnToolError) {
+            const state = sessionToolErrorState.get(input.sessionID) ?? createToolErrorInjectionState({
+              cooldownMs: memCfg.toolErrorCooldownMs ?? 60_000,
+              maxPerSession: memCfg.toolErrorMaxPerSession ?? 3,
+            });
+            boundedSet(sessionToolErrorState, input.sessionID, state, MAX_SESSION_MAP_SIZE);
+
+            const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+            const recall = (query: string, recallOpts: { topK: number; minScore: number }) =>
+              recallQuirks(qDeps, query, recallOpts);
+            const budgetMs = memCfg.toolErrorLatencyBudgetMs ?? 1500;
+            await Promise.race([
+              selectToolErrorQuirks(recall, info, state, {
+                minScore: memCfg.toolErrorMinScore ?? 0.7,
+                topK: memCfg.toolErrorTopK ?? 2,
+                minTokenOverlap: memCfg.toolErrorMinTokenOverlap ?? 1,
+              }).then((hits) => {
+                if (hits.length > 0) {
+                  boundedSet(
+                    sessionPendingToolErrorQuirk,
+                    input.sessionID,
+                    { block: formatToolErrorQuirkBlock(info, hits), ts: Date.now() },
+                    MAX_SESSION_MAP_SIZE,
+                  );
+                }
+              }),
+              new Promise<void>((resolve) => {
+                setTimeout(resolve, budgetMs);
+              }),
+            ]).catch(() => {});
+          }
+        }
+
         // Cap the per-session list — long sessions accumulate full tool
         // outputs; only the recent entries matter for quirk extraction.
         const capped = results.length > MAX_SESSION_TOOL_RESULTS ? results.slice(-MAX_SESSION_TOOL_RESULTS) : results;
@@ -1052,6 +1115,23 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               }
             }
           }
+        }
+
+        // Tool-error quirks: flush the pending block captured in tool.execute.after.
+        // Freshness-bounded — a stale error must not leak into a later turn.
+        try {
+          const sessionId = (_input as { sessionID?: string })?.sessionID;
+          if (sessionId) {
+            const pending = sessionPendingToolErrorQuirk.get(sessionId);
+            if (pending) {
+              if (Date.now() - pending.ts < TOOL_ERROR_PENDING_TTL_MS) {
+                output.system.unshift(pending.block);
+              }
+              sessionPendingToolErrorQuirk.delete(sessionId);
+            }
+          }
+        } catch {
+          // Non-critical — must never throw
         }
       } catch {
         // Non-critical — must never throw
@@ -1466,6 +1546,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             keywordIndex,
             keywordWeight: hybridCfg?.keywordWeight,
             queryPrefix: effectiveCfg.embedding.queryPrefix,
+            reranker: getRerankerFor(effectiveCfg.reranking) ?? undefined,
+            reranking: effectiveCfg.reranking,
             // Never surface quirk chunks in hotkey file lists / chunk injections.
             filter: CODE_SEARCH_FILTER,
           });

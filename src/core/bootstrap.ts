@@ -10,11 +10,13 @@ import { loadChunkersFromConfig } from "../chunker/loader.js";
 import { createEmbedder, probeEmbeddingDimension } from "../embedder/factory.js";
 import { createDescriptionProvider } from "../describer/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
+import { getRerankerFor } from "../reranker/factory.js";
 import { readStoreDimension } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import { reconcileQuirks } from "../quirks/quirk-store.js";
 import type {
   EmbeddingProvider,
+  RerankProvider,
   VectorStore,
   KeywordIndex as IKeywordIndex,
   DescriptionProvider,
@@ -48,6 +50,8 @@ export interface RagContext {
   keywordIndex: IKeywordIndex;
   /** Optional LLM-based description provider. */
   descriptionProvider?: DescriptionProvider;
+  /** Cross-encoder reranker for the retrieval stage (undefined when disabled). */
+  reranker?: RerankProvider;
   /** Detected embedding dimension. */
   dimension: number;
   /** Resolved path to the debug log file. */
@@ -196,6 +200,10 @@ export async function resolveRagContext(
       ? createDescriptionProvider(descriptionConfig)
       : undefined;
 
+  // Optional cross-encoder reranker (process-wide singleton per endpoint so
+  // cooldown + score cache survive across retrievals). Null/disabled by default.
+  const reranker = getRerankerFor(cfg.reranking) ?? undefined;
+
   return {
     config: cfg,
     embedder,
@@ -203,6 +211,7 @@ export async function resolveRagContext(
     storePath,
     keywordIndex,
     descriptionProvider,
+    reranker,
     dimension,
     logFilePath,
     configPath,

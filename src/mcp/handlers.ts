@@ -6,6 +6,7 @@ import { normalizeFileExtensions } from "../core/filters.js";
 import type { RagConfig } from "../core/config.js";
 import { SUPPORTED_IMAGE_EXTENSIONS, type ImageVisionProvider } from "../chunker/image.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
+import { getRerankerFor } from "../reranker/factory.js";
 import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "../retriever/context-optimizer.js";
 import { extractSkeleton, getExtension } from "../chunker/skeleton.js";
 import type { ParserOverrides } from "../core/parser-overrides.js";
@@ -123,6 +124,8 @@ export async function handleSearchSemantic(
     keywordWeight: cfg.retrieval.hybridSearch?.keywordWeight,
     hybridEnabled: cfg.retrieval.hybridSearch?.enabled,
     queryPrefix: cfg.embedding.queryPrefix,
+    reranker: getRerankerFor(cfg.reranking) ?? undefined,
+    reranking: cfg.reranking,
     filter,
   };
 

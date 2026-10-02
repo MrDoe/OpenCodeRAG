@@ -11,6 +11,7 @@ import { listSessions, getSession, deleteSession, compareSessions, validateSessi
 import { analyzeTokenUsage, compareTokenAnalyses, projectTokenSavings } from "../eval/token-analysis.js";
 import { listQuirks, lintQuirks, removeQuirk, type QuirkStoreDeps } from "../quirks/quirk-store.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
+import { getRerankerFor } from "../reranker/factory.js";
 import { updateConfigValue, type RagConfig } from "../core/config.js";
 import { createExcludeMatcher } from "../core/exclude.js";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider } from "../core/interfaces.js";
@@ -530,6 +531,8 @@ async function handleRetrieve(
       hybridEnabled: hybrid,
       queryPrefix: cfg.embedding.queryPrefix,
       explain,
+      reranker: getRerankerFor(cfg.reranking) ?? undefined,
+      reranking: cfg.reranking,
       filter: {
         pathPatterns: pathFilter ? pathFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
         languages: langFilter ? langFilter.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
@@ -564,7 +567,9 @@ async function handleRetrieve(
                   keywordWeight: r.explanation.scoreBreakdown.keywordWeight,
                   vectorRank: r.explanation.scoreBreakdown.vectorRank,
                   keywordRank: r.explanation.scoreBreakdown.keywordRank,
+                  rerankScore: r.explanation.scoreBreakdown.rerankScore,
                 },
+                confidence: r.explanation.confidence,
                 matchedTerms: r.explanation.matchedTerms,
               }
             : undefined,

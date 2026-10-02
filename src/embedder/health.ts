@@ -14,7 +14,7 @@ export interface HealthCheckResult {
   /** Model identifier that was tested */
   model: string;
   /** Which capability was checked */
-  type: "embedding" | "description" | "image_description" | "image_description_on_demand";
+  type: "embedding" | "description" | "image_description" | "image_description_on_demand" | "rerank";
   /** Whether the provider is reachable and the model is available */
   status: "ok" | "missing" | "error";
   /** Human-readable error message when status is not "ok" */
@@ -44,7 +44,61 @@ export async function checkProviderHealth(config: RagConfig): Promise<HealthChec
     }
   }
 
+  if (config.reranking?.enabled) {
+    checks.push(checkRerankModel(config));
+  }
+
   return Promise.all(checks);
+}
+
+/** Check the rerank endpoint (llama-server `/v1/rerank`) with a minimal two-document scoring call. */
+async function checkRerankModel(config: RagConfig): Promise<HealthCheckResult> {
+  const rr = config.reranking;
+  const provider = rr?.provider ?? "llama-server";
+  const model = rr?.model ?? "unknown";
+  if (!rr?.enabled || !rr.baseUrl || !rr.model) {
+    return { provider, model, type: "rerank", status: "error", error: "reranking.enabled is true but reranking.baseUrl/model is not configured" };
+  }
+
+  const headers: Record<string, string> = {};
+  if (rr.apiKey) {
+    headers.Authorization = `Bearer ${rr.apiKey}`;
+  }
+
+  try {
+    const response = await postJson(
+      `${rr.baseUrl.replace(/\/+$/, "")}/rerank`,
+      { model: rr.model, query: "health check", documents: ["First health check document.", "Second health check document."] },
+      headers,
+      Math.min(rr.timeoutMs ?? 1500, 15000),
+      rr.proxy,
+    );
+
+    if (response.ok) {
+      return { provider, model, type: "rerank", status: "ok" };
+    }
+
+    const body = await response.text().catch(() => "");
+    if (response.status === 404) {
+      return {
+        provider,
+        model,
+        type: "rerank",
+        status: "error",
+        error: "HTTP 404 from the rerank endpoint — is llama-server started with --reranking (and does your proxy route /v1/rerank)?",
+      };
+    }
+    if (isModelNotFoundError(body)) {
+      return { provider, model, type: "rerank", status: "missing" };
+    }
+    return { provider, model, type: "rerank", status: "error", error: `HTTP ${response.status}: ${body.slice(0, 200)}` };
+  } catch (err) {
+    const msg = (err as Error).message || String(err);
+    if (isConnectionError(msg)) {
+      return { provider, model, type: "rerank", status: "error", error: "Connection refused. Is the rerank server running?" };
+    }
+    return { provider, model, type: "rerank", status: "error", error: msg.slice(0, 200) };
+  }
 }
 
 /** Dispatch the embedding-model check to the correct provider-specific handler. */

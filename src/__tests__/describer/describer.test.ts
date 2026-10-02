@@ -802,3 +802,48 @@ describe("LlmDescriptionProvider retry logic", () => {
   });
 
 });
+
+describe("LlmDescriptionProvider think handling (OpenAI-compatible)", () => {
+  it("forwards enable_thinking=false via chat_template_kwargs when think is false", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const { baseUrl, close } = await startMockServer((body) => {
+      capturedBody = body;
+      return {
+        status: 200,
+        body: { choices: [{ message: { content: "A description." } }] },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ provider: "openai", baseUrl: `${baseUrl}/v1`, think: false })
+      );
+      const description = await provider.generateDescription(makeChunk());
+      assert.equal(description, "A description.");
+      assert.deepStrictEqual(capturedBody.chat_template_kwargs, { enable_thinking: false });
+    } finally {
+      await close();
+    }
+  });
+
+  it("omits chat_template_kwargs when think is not configured", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    const { baseUrl, close } = await startMockServer((body) => {
+      capturedBody = body;
+      return {
+        status: 200,
+        body: { choices: [{ message: { content: "A description." } }] },
+      };
+    });
+
+    try {
+      const provider = new LlmDescriptionProvider(
+        makeConfig({ provider: "openai", baseUrl: `${baseUrl}/v1` })
+      );
+      await provider.generateDescription(makeChunk());
+      assert.equal("chat_template_kwargs" in capturedBody, false);
+    } finally {
+      await close();
+    }
+  });
+});

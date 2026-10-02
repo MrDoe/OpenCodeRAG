@@ -215,7 +215,15 @@ export class LlmDescriptionProvider implements DescriptionProvider {
 
     const body = isOllama
       ? { model: this.config.model, messages, stream: false, think: this.config.think ?? false, options: { num_ctx: this.config.numCtx }, keep_alive: normalizeKeepAlive(this.config.keepAlive) }
-      : { model: this.config.model, messages };
+      : {
+          model: this.config.model,
+          messages,
+          // Reasoning models (Qwen3.x etc.) think before answering; a full
+          // reasoning pass per chunk makes indexing ~50x slower. Honor
+          // `think: false` for OpenAI-compatible providers as well by
+          // forwarding chat_template_kwargs (llama.cpp / vLLM convention).
+          ...(this.config.think === false ? { chat_template_kwargs: { enable_thinking: false } } : {}),
+        };
 
     const headers: Record<string, string> = {};
     if (this.config.apiKey) {

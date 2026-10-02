@@ -86,7 +86,14 @@ export interface DescriptionConfig {
   retryMax?: number;
   /** Base delay in ms between retries (exponential backoff). */
   retryBaseDelayMs?: number;
-  /** Whether to include chain-of-thought tokens in the response. */
+  /**
+   * Whether the model may emit chain-of-thought tokens before the answer.
+   * For the Ollama provider this sets the `think` request field. For
+   * OpenAI-compatible providers `false` forwards
+   * `chat_template_kwargs.enable_thinking=false` (llama.cpp / vLLM
+   * convention); without it, reasoning models spend thousands of extra
+   * tokens per description and indexing runs ~50x slower.
+   */
   think?: boolean;
   /** Context window size for the LLM. */
   numCtx?: number;
@@ -225,6 +232,24 @@ export interface MemoryConfig {
   autoCaptureMaxPerTurn: number;
   /** Lexical similarity threshold (0-1) above which a candidate is considered a duplicate and skipped. */
   autoCaptureDedupThreshold: number;
+  /**
+   * Inject matching quirks into the next model request after a FAILED tool call
+   * (default true). Failed calls are also appended to the auto-capture pipeline,
+   * so recurring errors can become quirks.
+   */
+  injectOnToolError: boolean;
+  /** Minimum relevance score (0-1) for a quirk to be injected after a tool error (default 0.7). */
+  toolErrorMinScore: number;
+  /** Max quirks injected per tool error (default 2). */
+  toolErrorTopK: number;
+  /** Minimum shared word tokens (>=3 chars) between a quirk and the error text; 0 disables (default 1). */
+  toolErrorMinTokenOverlap: number;
+  /** Cooldown per normalized tool-error signature in ms (default 60000). */
+  toolErrorCooldownMs: number;
+  /** Max tool-error quirk injections per session (default 3). */
+  toolErrorMaxPerSession: number;
+  /** Latency budget (ms) for tool-error quirk recall; exceeded -> no injection (default 1500). */
+  toolErrorLatencyBudgetMs: number;
   /** Decay settings for aging quirks. */
   decay: {
     /** Whether confidence decays over time. */
@@ -274,6 +299,48 @@ export interface ContextOptimizationConfig {
   adjacentGapThreshold: number;
   /** Jaccard similarity threshold (0-1) for same-file dedup. */
   similarityThreshold: number;
+}
+
+/**
+ * Optional cross-encoder rerank stage (opt-in, default OFF).
+ *
+ * After hybrid fusion the top candidates are re-scored by a cross-encoder
+ * (e.g. Qwen3-Reranker served by llama-server's `/v1/rerank`). The stage is a
+ * pure reorder (+ optional gate); the fusion `minScore` gate runs unchanged
+ * BEFORE reranking, so disabling reranking reproduces today's behavior
+ * exactly. Provider errors/timeouts always degrade to the fusion order —
+ * retrieval never fails because of the reranker.
+ */
+export interface RerankingConfig {
+  /** Master switch — when false (default) no reranker is created. */
+  enabled: boolean;
+  /** Rerank provider implementation. @default "llama-server" */
+  provider?: "llama-server";
+  /** Base URL of the rerank endpoint (e.g. http://127.0.0.1:8080/v1). The stage POSTs to {baseUrl}/rerank. */
+  baseUrl: string;
+  /** Optional bearer token (e.g. llama-swap auth). */
+  apiKey?: string;
+  /** Reranker model name passed to the server. */
+  model: string;
+  /** How many fused candidates to send per query (after the fusion minScore gate). @default 20 */
+  candidates?: number;
+  /** Each candidate's document text is truncated to this many characters. @default 1200 */
+  maxDocChars?: number;
+  /** Additional gate on the rerank score itself (0 = pure reorder, default). NOT comparable to retrieval.minScore — rerank scores are provider-scaled, not calibrated. */
+  minScore?: number;
+  /** Per-call timeout in ms; on expiry the fusion order is kept. @default 1500 */
+  timeoutMs?: number;
+  /**
+   * Query template applied before scoring. With a `{query}` placeholder the
+   * query is substituted, otherwise the template is used as a prefix.
+   * Use this for instruct-style rerankers (e.g. Qwen3-Reranker) — do NOT
+   * reuse embedding.queryPrefix here. @default ""
+   */
+  queryTemplate?: string;
+  /** Document text: raw content, or description + content. @default "content" */
+  docField?: "content" | "content+description";
+  /** Proxy configuration for the rerank endpoint. */
+  proxy?: ProxyConfig;
 }
 
 /** Complete configuration for the OpenCodeRAG pipeline. */
@@ -420,6 +487,8 @@ export interface RagConfig {
     /** Context window optimization settings for post-retrieval quality filtering. */
     contextOptimization?: ContextOptimizationConfig;
   };
+  /** Optional cross-encoder rerank stage (opt-in; absent = disabled). */
+  reranking?: RerankingConfig;
   /** OpenCode plugin integration settings. */
   openCode: {
     /** Whether the OpenCode plugin is active. */
@@ -638,6 +707,20 @@ export const DEFAULT_CONFIG: RagConfig = {
       similarityThreshold: 0.8,
     },
   },
+  reranking: {
+    enabled: false,
+    provider: "llama-server",
+    // llama-server's default port; llama-swap users typically point this at
+    // their swap proxy (which routes v1/rerank) instead.
+    baseUrl: "http://127.0.0.1:8080/v1",
+    model: "qwen3-reranker-0.6b",
+    candidates: 20,
+    maxDocChars: 1200,
+    minScore: 0,
+    timeoutMs: 1500,
+    queryTemplate: "",
+    docField: "content",
+  },
   openCode: {
     enabled: true,
     maxContextChunks: 10,
@@ -784,6 +867,13 @@ export const DEFAULT_CONFIG: RagConfig = {
     sessionEndExtraction: true,
     autoCaptureMaxPerTurn: 2,
     autoCaptureDedupThreshold: 0.85,
+    injectOnToolError: true,
+    toolErrorMinScore: 0.7,
+    toolErrorTopK: 2,
+    toolErrorMinTokenOverlap: 1,
+    toolErrorCooldownMs: 60_000,
+    toolErrorMaxPerSession: 3,
+    toolErrorLatencyBudgetMs: 1500,
     decay: {
       enabled: false,
       halfLifeDays: 30,
@@ -837,7 +927,7 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   const warnings: string[] = [];
 
   const KNOWN_TOP_KEYS = new Set([
-    "embedding", "indexing", "vectorStore", "retrieval",
+    "embedding", "indexing", "vectorStore", "retrieval", "reranking",
     "openCode", "chunkers", "chunking", "description",
     "imageDescription", "documentationMode", "wikiMode", "mcp", "autoUpdate", "memory", "ui", "tui", "logging",
   ]);
@@ -932,6 +1022,22 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     // > 1 would make dedup reject every candidate; < 0 disables it silently
     if (t < 0 || t > 1) warnings.push("memory.autoCaptureDedupThreshold must be between 0 and 1");
   }
+  if (config.memory?.toolErrorMinScore != null) {
+    const r = config.memory.toolErrorMinScore;
+    if (r < 0 || r > 1) warnings.push("memory.toolErrorMinScore must be between 0 and 1");
+  }
+  if (config.memory?.toolErrorTopK != null && config.memory.toolErrorTopK < 1) {
+    warnings.push("memory.toolErrorTopK must be >= 1");
+  }
+  if (config.memory?.toolErrorCooldownMs != null && config.memory.toolErrorCooldownMs < 0) {
+    warnings.push("memory.toolErrorCooldownMs must be >= 0");
+  }
+  if (config.memory?.toolErrorMaxPerSession != null && config.memory.toolErrorMaxPerSession < 0) {
+    warnings.push("memory.toolErrorMaxPerSession must be >= 0");
+  }
+  if (config.memory?.toolErrorLatencyBudgetMs != null && config.memory.toolErrorLatencyBudgetMs < 0) {
+    warnings.push("memory.toolErrorLatencyBudgetMs must be >= 0");
+  }
   if (config.memory?.decay && config.memory.decay.halfLifeDays <= 0) {
     warnings.push("memory.decay.halfLifeDays must be > 0");
   }
@@ -991,6 +1097,24 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     const onDemand = config.imageDescription.onDemand;
     if (onDemand?.timeoutMs !== undefined && onDemand.timeoutMs <= 0) {
       warnings.push("imageDescription.onDemand.timeoutMs must be > 0");
+    }
+  }
+
+  if (config.reranking?.enabled) {
+    const rr = config.reranking;
+    if (!rr.baseUrl) warnings.push("reranking.baseUrl must be set when reranking.enabled is true");
+    if (!rr.model) warnings.push("reranking.model must be set when reranking.enabled is true");
+    if (rr.candidates !== undefined && (rr.candidates < 1 || rr.candidates > 100)) {
+      warnings.push("reranking.candidates should be between 1 and 100 (latency scales linearly with document count)");
+    }
+    if (rr.minScore !== undefined && (rr.minScore < 0 || rr.minScore > 1)) {
+      warnings.push("reranking.minScore must be between 0 and 1");
+    }
+    if (rr.timeoutMs !== undefined && rr.timeoutMs <= 0) {
+      warnings.push("reranking.timeoutMs must be > 0");
+    }
+    if (rr.maxDocChars !== undefined && rr.maxDocChars <= 0) {
+      warnings.push("reranking.maxDocChars must be > 0");
     }
   }
 
@@ -1073,6 +1197,11 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
         ) ?? {}),
       } as ContextOptimizationConfig,
     },
+    // Flat section — no nested objects, a shallow spread merge is safe.
+    reranking: {
+      ...DEFAULT_CONFIG.reranking,
+      ...(safeObj<RerankingConfig>((parsed as { reranking?: unknown }).reranking) ?? {}),
+    } as RerankingConfig,
     openCode: (() => {
       const base = DEFAULT_CONFIG.openCode;
       const user: Partial<typeof base> = (parsed as { openCode?: Partial<typeof base> }).openCode ?? {};

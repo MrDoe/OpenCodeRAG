@@ -164,6 +164,7 @@ class OpenAIImageVisionProvider implements ImageVisionProvider {
   private readonly apiKey: string;
   private readonly timeoutMs: number;
   private readonly extraHeaders: Record<string, string>;
+  private readonly think?: boolean;
   private proxy?: ProxyConfig;
 
   constructor(config: ImageDescriptionConfig, extraHeaders?: Record<string, string>) {
@@ -172,6 +173,7 @@ class OpenAIImageVisionProvider implements ImageVisionProvider {
     this.apiKey = config.apiKey ?? "";
     this.timeoutMs = config.timeoutMs;
     this.extraHeaders = extraHeaders ?? {};
+    this.think = config.think;
     this.proxy = config.proxy;
   }
 
@@ -197,6 +199,10 @@ class OpenAIImageVisionProvider implements ImageVisionProvider {
       model: this.model,
       messages,
       max_tokens: 2048,
+      // Reasoning models (Qwen3.x / Ornith etc.) think before answering; honor
+      // `think: false` for OpenAI-compatible providers by forwarding
+      // chat_template_kwargs (llama.cpp / vLLM convention).
+      ...(this.think === false ? { chat_template_kwargs: { enable_thinking: false } } : {}),
     };
 
     const headers: Record<string, string> = {

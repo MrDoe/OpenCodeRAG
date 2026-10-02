@@ -82,14 +82,49 @@ type V2Tool = {
   ): Promise<{ content?: string; output?: unknown; metadata?: Record<string, unknown> }>;
 };
 
-/** V2 `execute.after` hook event (completed branch). */
+/** V2 `execute.after` hook event — fires for BOTH the completed and the error branch. */
 type V2ToolExecuteAfterEvent = {
   tool: string;
   sessionID: string;
   id: unknown;
   status: "completed" | "error";
-  result?: { output?: unknown; content?: string | readonly unknown[] };
+  result?: { output?: unknown; content?: string | readonly unknown[]; error?: unknown; message?: unknown };
+  /** Error payload fields observed on the error branch (defensively optional). */
+  error?: unknown;
+  message?: unknown;
 };
+
+/**
+ * Extract a human-readable error string from a V2 `execute.after` error event.
+ * The exact error payload differs across OpenCode versions; probe the known
+ * shapes and fall back to a JSON dump or a generic message.
+ */
+function extractToolErrorText(event: V2ToolExecuteAfterEvent): string {
+  const result = event.result;
+  const candidates: unknown[] = [
+    event.error,
+    event.message,
+    result?.error,
+    result?.message,
+    typeof result?.content === "string" ? result.content : undefined,
+    result?.output,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim().length > 0) return candidate;
+    if (candidate !== null && typeof candidate === "object") {
+      const message = (candidate as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim().length > 0) return message;
+    }
+  }
+  if (result !== undefined) {
+    try {
+      return JSON.stringify(result);
+    } catch {
+      // circular payload — fall through to the generic message
+    }
+  }
+  return "unknown tool error";
+}
 
 /** V2 `prompt` hook event. */
 type V2PromptHookEvent = {
@@ -269,21 +304,31 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
   }
 
   // ── tool.execute.after ───────────────────────────────────────────────────
+  // Forwards BOTH branches: completed calls keep the existing contract, error
+  // calls additionally carry `input.status = "error"` and `output.error`, so
+  // the V1-side handler (tool-error quirk injection, auto-capture) can see
+  // failed tool calls. Previously the error branch was silently dropped.
   const toolAfterHook = hooks["tool.execute.after"];
   if (toolAfterHook) {
     const registration = await ctx.tool.hook("execute.after", async (event) => {
       try {
-        if (event.status !== "completed") return;
+        const isError = event.status === "error";
         const result = event.result as { output?: unknown; content?: string | unknown[] } | undefined;
-        const outputText =
-          typeof result?.content === "string"
+        const outputText = isError
+          ? extractToolErrorText(event)
+          : typeof result?.content === "string"
             ? result.content
             : result?.output !== undefined
               ? JSON.stringify(result.output)
               : "";
         await toolAfterHook(
-          { sessionID: event.sessionID, tool: event.tool, callID: event.id } as never,
-          { output: outputText } as never,
+          {
+            sessionID: event.sessionID,
+            tool: event.tool,
+            callID: event.id,
+            status: isError ? "error" : "completed",
+          } as never,
+          { output: outputText, error: isError ? outputText : undefined } as never,
         );
       } catch {
         // Non-critical — must never throw

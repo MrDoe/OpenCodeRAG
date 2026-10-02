@@ -19,6 +19,12 @@ User Query
               │
          Sort by score (desc)
               │
+         ┌─ Optional: Cross-Encoder Rerank (reranking.enabled) ─┐
+         │  pool = first max(topK, candidates) fused results    │
+         │  score docs via /v1/rerank → reorder, score replaced │
+         │  failure/timeout/cooldown → fusion order kept         │
+         └───────────────────────────────────────────────────────┘
+              │
          Slice to topK
               │
     ╔════════════════════════════════════════════╗
@@ -86,6 +92,40 @@ Options:
 | `queryPrefix` | — | Prefix applied to query before embedding |
 | `filter` | — | [`MetadataFilter`](#metadata-filtering) to narrow results before scoring |
 | `explain` | `false` | Include score breakdown / matched terms in results |
+| `reranker` | — | Optional [`RerankProvider`](#cross-encoder-reranking-optional) applied after fusion |
+| `reranking` | — | Tunables for the rerank stage (see [`reranking` config](configuration.md#reranking)) |
+
+## Cross-Encoder Reranking (Optional)
+
+**Off by default.** When `reranking.enabled` is `true`, the fused, `minScore`-filtered,
+fusion-sorted results pass through an extra stage (`src/reranker/`) before the `topK`
+slice: the first `max(topK, candidates)` results are re-scored by a cross-encoder
+(llama-server `/v1/rerank`, e.g. Qwen3-Reranker) and reordered by the returned
+relevance score — the fusion `minScore` gate itself stays unchanged, so disabling
+reranking reproduces plain hybrid behavior exactly.
+
+Key properties (all deliberate):
+
+| Aspect | Behavior |
+|---|---|
+| Pool | `max(topK, candidates)` top fused results; everything beyond is never sent and trails the pool in fusion order |
+| Score | `result.score` becomes the rerank score; fused components stay in `explanation.scoreBreakdown`, plus the new `rerankScore` field. Rerank scores are provider-scaled, **not** calibrated and not comparable to `retrieval.minScore` |
+| Gate | Optional `reranking.minScore` (default `0` = pure reorder, nothing dropped) |
+| Docs | `docField: "content"` (default) or `"content+description"`; each doc truncated to `maxDocChars` |
+| Query | `reranking.queryTemplate` (`{query}` placeholder or prefix) for instruct-style rerankers — `embedding.queryPrefix` is deliberately **not** reused |
+| Failure | Provider errors/timeouts degrade to fusion order with a console warning; after 3 consecutive failures the provider enters a 5-minute cooldown (`available() === false`) and is skipped without a call |
+| Caching | Per-provider in-memory LRU keyed on model + query + document text |
+| Batching | >16 docs are split into concurrent batched calls |
+
+The provider is a process-wide singleton per endpoint (`getRerankerFor(cfg.reranking)`),
+so cooldown and cache survive across retrievals. All retrieval surfaces (plugin
+`search_semantic` + hotkey injection + read override, MCP `search_semantic`, Web
+`/api/retrieve`, library `search()`, CLI `query`) honor the config.
+
+Infrastructure note: llama-swap routes `/v1/rerank` natively, but llama-server must be
+started with `--reranking --pooling rank`, and the reranker should share a llama-swap
+*group* with the embedding model (or run on a separate port) — otherwise every query
+swaps models back and forth. See `doc/configuration.md#reranking`.
 
 ## Metadata Filtering
 

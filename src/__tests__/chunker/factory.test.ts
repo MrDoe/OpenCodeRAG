@@ -192,3 +192,41 @@ describe("chunkFile with nodeTypes overrides", () => {
     assert.ok(chunks.length > 0, "should fall back to line-based chunking");
   });
 });
+
+describe("chunkFile single-line (minified) hard wrap", () => {
+  it("hard-wraps one oversized line instead of emitting a whole-file chunk", async () => {
+    const singleLine = "a".repeat(20000);
+    const chunks = await chunkFile("minified.js", singleLine);
+
+    assert.ok(chunks.length > 1, "expected a single oversized line to be split into multiple chunks");
+    for (const chunk of chunks) {
+      assert.ok(
+        chunk.content.length <= 8000,
+        `chunk has ${chunk.content.length} chars, expected <= 8000`
+      );
+      assert.equal(chunk.metadata.startLine, 1);
+      assert.equal(chunk.metadata.endLine, 1);
+    }
+    assert.equal(
+      chunks.map((c) => c.content).join(""),
+      singleLine,
+      "hard-wrapped slices must preserve the original line"
+    );
+  });
+
+  it("keeps surrounding lines and line metadata intact around a wrapped line", async () => {
+    const content = ["head", "z".repeat(9000), "tail"].join("\n");
+    const chunks = await chunkFile("mixed.min.js", content);
+
+    assert.ok(chunks.some((c) => c.content === "head"), "head line must survive");
+    assert.ok(chunks.some((c) => c.content === "tail"), "tail line must survive");
+
+    const wrapped = chunks.filter((c) => c.content.startsWith("z"));
+    assert.ok(wrapped.length >= 2, "long line must be split into multiple slices");
+    for (const chunk of wrapped) {
+      assert.ok(chunk.content.length <= 8000);
+      assert.equal(chunk.metadata.startLine, 2);
+      assert.equal(chunk.metadata.endLine, 2);
+    }
+  });
+});
