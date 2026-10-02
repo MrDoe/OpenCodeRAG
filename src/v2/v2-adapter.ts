@@ -76,6 +76,17 @@ type V2Tool = {
   name: string;
   description: string;
   input: Record<string, unknown>;
+  /**
+   * Registered tool options. `codemode: false` is REQUIRED for the tool to be
+   * offered directly to the agent: in OpenCode v2 (2.0.x) tools registered
+   * without an explicit `codemode: false` are only reachable through the Code
+   * Mode `execute` runtime's `tools.*` catalog (plugin and MCP tools alike —
+   * see `Mcp.LocalConfigEncoded.codemode`), which surfaces as "No tool named
+   * ... is currently available" for every direct call. The crosstalk plugin
+   * uses the same `options: { codemode: false }` pattern for its top-level
+   * tools.
+   */
+  options: { codemode: boolean };
   execute(
     input: unknown,
     context: { sessionID?: string },
@@ -199,12 +210,18 @@ function zodShapeToJsonSchema(shape: Record<string, unknown>): Record<string, un
  * Convert a V1 tool definition (from `@opencode-ai/plugin/tool`) into a V2
  * tool definition. V1 executors return `{ title, output, metadata }`; V2
  * results carry `content`/`output`/`metadata`.
+ *
+ * @param codemode - When false (default) the tool is exposed directly to the
+ *   agent; when true it is only reachable through the Code Mode `execute`
+ *   runtime. Without an explicit `codemode: false` OpenCode v2 (2.0.x) folds
+ *   plugin tools into the Code Mode catalog, so every RAG tool would be
+ *   unusable outside `execute`.
  */
 function v1ToolToV2(name: string, def: {
   description?: string;
   args?: Record<string, unknown>;
   execute?: (args: unknown, context?: { sessionID?: string }) => Promise<unknown>;
-}): V2Tool {
+}, codemode: boolean): V2Tool {
   const v1Result = (result: unknown): { content?: string; output?: unknown; metadata?: Record<string, unknown> } => {
     const r = result as { title?: string; output?: string; metadata?: Record<string, unknown> } | undefined;
     const metadata = { ...(r?.metadata ?? {}) };
@@ -218,6 +235,7 @@ function v1ToolToV2(name: string, def: {
     name,
     description: def.description ?? "",
     input: zodShapeToJsonSchema(def.args ?? {}),
+    options: { codemode },
     async execute(input, context) {
       const fn = def.execute;
       if (typeof fn !== "function") {
@@ -244,6 +262,14 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
     ctx.options as never,
   )) as Hooks;
 
+  // Tool exposure: default to DIRECT tools (`codemode: false`), matching the
+  // crosstalk plugin. OpenCode v2 (2.0.x) folds plugin tools without an
+  // explicit `codemode: false` into the Code Mode catalog, making them
+  // unreachable outside `execute`. Set the plugin option `codemode: true`
+  // (via `plugins: [{ "package": "opencode-rag-plugin", "options": { "codemode": true } }]`)
+  // to force the previous code-mode-only behavior.
+  const codemode = typeof ctx.options?.codemode === "boolean" ? ctx.options.codemode : false;
+
   const registrations: V2Registration[] = [];
 
   // ── Tools ────────────────────────────────────────────────────────────────
@@ -256,7 +282,7 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
   if (toolEntries.length > 0) {
     const registration = await ctx.tool.transform((editor) => {
       for (const [name, def] of toolEntries) {
-        editor.add(v1ToolToV2(name, def));
+        editor.add(v1ToolToV2(name, def, codemode));
       }
     });
     registrations.push(registration);

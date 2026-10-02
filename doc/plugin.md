@@ -94,6 +94,33 @@ Reads an image file from disk, resizes it, and sends it to the configured vision
 
 **Returns:** Markdown block with file path, the generated description, and the provider/model that produced it.
 
+### Tool exposure (OpenCode v2)
+
+OpenCode v2 (2.0.x) offers plugin tools to the agent directly **only when they are
+registered with `options.codemode: false`**; tools without an explicit
+`codemode: false` are folded into the Code Mode catalog and become reachable
+exclusively through the `execute` runtime's `tools.*` (every direct call fails
+with *"No tool named … is currently available"*). The plugin therefore registers
+all of its tools with `codemode: false` by default, so `search_semantic`,
+`get_file_skeleton`, `find_usages`, `describe_image`, `read`, and the quirk
+tools are available directly in the session.
+
+To force the code-mode-only behavior (e.g. for restricted agents), opt out via
+the plugin options in `opencode.json(c)`:
+
+```jsonc
+{
+  "plugins": [
+    { "package": "opencode-rag-plugin", "options": { "codemode": true } }
+  ]
+}
+```
+
+Note: the setting is read at plugin load — an already running session keeps its
+tool snapshot until the plugin is reloaded or OpenCode is restarted. MCP servers
+use the same flag (`codemode` on the server config) if you want their tools
+direct as well.
+
 ### 2. `chat.message` Hook — Hotkey-Activated Injection
 
 The plugin captures `message.part.updated` events to accumulate the **last assistant message's text**. When you trigger injection via hotkey, the search query combines:
