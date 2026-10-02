@@ -130,6 +130,7 @@ describe("installLatestUpdate", () => {
         throw new Error("npm down");
       },
       _getCurrentVersion: () => "1.0.0",
+      _packageManager: "npm",
     });
     assert.equal(result.success, false);
     assert.equal(result.fromVersion, "1.0.0");
@@ -137,11 +138,23 @@ describe("installLatestUpdate", () => {
     assert.match(result.message, /npm down/);
   });
 
+  it("reports failure when no package manager is available", async () => {
+    const result = await installLatestUpdate({
+      _execSync: () => "",
+      _getCurrentVersion: () => "1.0.0",
+      _packageManager: null,
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.fromVersion, "1.0.0");
+    assert.match(result.message, /No package manager \(npm\/pnpm\/yarn\/bun\)/);
+  });
+
   it("reports failure when runtime sync fails", async () => {
     const result = await installLatestUpdate({
       _execSync: () => "",
       _getCurrentVersion: () => "2.0.0",
       _setupRuntime: async () => ({ success: false, errors: ["junction broken"] }),
+      _packageManager: "pnpm",
     });
     assert.equal(result.success, false);
     assert.equal(result.toVersion, "2.0.0");
@@ -154,6 +167,7 @@ describe("installLatestUpdate", () => {
       _execSync: () => "",
       _getCurrentVersion: () => "1.5.0",
       _setupRuntime: async () => ({ success: true, errors: [] }),
+      _packageManager: "npm",
     });
     assert.equal(result.success, true);
     assert.equal(result.fromVersion, "1.5.0");
@@ -167,6 +181,7 @@ describe("installLatestUpdate", () => {
       _execSync: () => "",
       _getCurrentVersion: () => (calls++ === 0 ? "1.5.0" : "1.6.0"),
       _setupRuntime: async () => ({ success: true, errors: [] }),
+      _packageManager: "bun",
     });
     assert.equal(result.success, true);
     assert.equal(result.fromVersion, "1.5.0");

@@ -3,13 +3,17 @@
  */
 /**
  * `update` command — checks for a newer published version of OpenCodeRAG and,
- * by default, installs it (via `npm install -g ...@latest`) then re-syncs the
- * OpenCode runtime junctions so the new build is picked up on next restart.
+ * by default, installs it via the package manager that owns the global install
+ * (npm/pnpm/yarn/bun, `<pkg>@latest`) then re-syncs the OpenCode runtime
+ * junctions so the new build is picked up on next restart.
  */
 
 import type { Command } from "commander";
 import { c } from "../format.js";
 import { checkForUpdate, getCurrentVersion, installLatestUpdate } from "../../core/version-check.js";
+import { bestAvailablePackageManager, globalInstallCommand } from "../../core/package-manager.js";
+
+const PLUGIN_NAME = "opencode-rag-plugin";
 
 interface UpdateOptions {
   /** Only report whether an update is available; do not install. */
@@ -72,7 +76,8 @@ export function registerUpdateCommand(program: Command): void {
       } else {
         console.error(`  ${c.error("✗")} ${result.message}`);
         console.error(`\n  ${c.error("Update failed. You can retry with `opencode-rag update` or install manually:")}\n`);
-        console.error(`  ${c.dim("  npm install -g opencode-rag-plugin@latest && opencode-rag setup")}\n`);
+        const hintPm = bestAvailablePackageManager() ?? "npm";
+        console.error(`  ${c.dim(`  ${globalInstallCommand(hintPm, `${PLUGIN_NAME}@latest`)} && opencode-rag setup`)}\n`);
         process.exit(1);
       }
     });

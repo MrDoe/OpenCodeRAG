@@ -41,6 +41,8 @@ cd /path/to/your/workspace
 opencode-rag setup
 ```
 
+> **Alternative package managers:** `pnpm add -g opencode-rag-plugin`, `yarn global add opencode-rag-plugin`, and `bun add -g opencode-rag-plugin` are equally supported. `opencode-rag setup` and `opencode-rag update` detect the package manager that owns the global install and run its equivalent commands — npm does not need to be on `PATH` at all.
+
 > `opencode-rag setup` is both a **machine-level** step (installs the plugin runtime into `~/.opencode/` once per machine; when outdated, fetches and installs the latest published npm version of itself) and a **workspace-level** step (auto-initializes the current project - config, skill, AGENTS.md - when it looks like a project root). `opencode-rag init` remains available for re-syncing an already initialized workspace. Both commands explain their exact use cases in their help output (`opencode-rag setup --help` / `opencode-rag init --help`).
 
 Tree-sitter grammars ship as pre-built WASM files (bundled in `wasm/` and `@vscode/tree-sitter-wasm`). Native dependencies (`sharp`, `@lancedb/lancedb`) use pre-built platform binaries. The plugin is workspace-local — OpenCode loads it from `.opencode/plugins/`. Data (vector store, manifest) lives in the workspace.

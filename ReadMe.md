@@ -34,6 +34,8 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 
 **Prerequisites:** Node.js v22+, [Ollama](https://ollama.ai) (default) or other LLM-hosters (OpenAI-, Google- or Anthropic-compatible).
 
+`pnpm add -g opencode-rag-plugin`, `yarn global add opencode-rag-plugin`, and `bun add -g opencode-rag-plugin` work as drop-in replacements for the global install — setup and update detect the package manager that owns the install and never require npm on `PATH`.
+
 > **Contributors / developers:** Clone the repo and use `npm install --legacy-peer-deps; npm run build` — see [Development docs](doc/development.md).
 
 ## Key Features

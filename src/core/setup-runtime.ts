@@ -10,6 +10,13 @@ import {
   lstatSync,
 } from "node:fs";
 import { execSync } from "node:child_process";
+import {
+  bestAvailablePackageManager,
+  globalInstallCommand,
+  installHint,
+  resolveGlobalInstall,
+  type GlobalInstall,
+} from "./package-manager.js";
 
 const PLUGIN_NAME = "opencode-rag-plugin";
 
@@ -20,13 +27,6 @@ export interface SetupResult {
 
 export function getRuntimeDir(): string {
   return path.join(os.homedir(), ".opencode");
-}
-
-export function getNpmGlobalRoot(): string {
-  return execSync("npm root -g", {
-    encoding: "utf-8",
-    timeout: 10_000,
-  }).trim();
 }
 
 function createJunction(targetPath: string, linkPath: string): void {
@@ -53,8 +53,8 @@ export function readVersionFile(versionFile: string): string | null {
 }
 
 /** Bin name npm generates for this package (without .cmd/.ps1). */
-function getBinName(): string {
-  const pkgJson = path.join(getNpmGlobalRoot(), PLUGIN_NAME, "package.json");
+function getBinName(packageDir: string): string {
+  const pkgJson = path.join(packageDir, "package.json");
   try {
     const pkg = JSON.parse(readFileSync(pkgJson, "utf-8")) as { bin?: Record<string, string> | string };
     if (pkg.bin && typeof pkg.bin === "object") {
@@ -75,14 +75,18 @@ function getBinName(): string {
  * (e.g. Notepad++) instead of Node.js, the CLI opens the editor instead of
  * running. This function patches the wrappers to call `node` explicitly.
  *
- * Runs only on Windows. Safe to call on every setup — detects already-patched
- * wrappers by checking for the `node` prefix.
+ * npm only: pnpm/bun/yarn shims already invoke `node` explicitly, and their
+ * global bin directories are not laid out relative to the global root the way
+ * npm's are (`<prefix>\node_modules` next to `<prefix>`). Runs only on
+ * Windows; safe to call on every setup — detects already-patched wrappers by
+ * checking for the `node` prefix.
  */
-export function patchWindowsWrappers(npmGlobalRoot: string): void {
+export function patchWindowsWrappers(install: GlobalInstall): void {
   if (process.platform !== "win32") return;
+  if (install.pm !== "npm") return;
 
-  const binDir = path.resolve(npmGlobalRoot, "..");
-  const binName = getBinName();
+  const binDir = path.resolve(install.globalRoot, "..");
+  const binName = getBinName(install.packageDir);
 
   // ── .cmd wrapper ──────────────────────────────────────────────
   const cmdFile = path.join(binDir, `${binName}.cmd`);
@@ -137,21 +141,19 @@ export async function setupRuntime(options?: {
     return { success: true, errors: [] };
   }
 
-  let npmGlobalRoot: string;
-  try {
-    npmGlobalRoot = getNpmGlobalRoot();
-  } catch {
-    errors.push("npm is not available on PATH. Cannot determine global package location.");
+  // Locate the global install with any package manager (issue #34: npm may be
+  // absent entirely — pnpm/yarn/bun installs must work too).
+  const install = resolveGlobalInstall(PLUGIN_NAME);
+  if (!install) {
+    errors.push(
+      `Could not find a global ${PLUGIN_NAME} install (checked npm, pnpm, yarn, and bun). ` +
+        `Install it first: ${installHint(PLUGIN_NAME)}`,
+    );
     return { success: false, errors };
   }
 
-  const globalPluginDir = path.join(npmGlobalRoot, PLUGIN_NAME);
-  const globalSdkPluginDir = path.join(npmGlobalRoot, "@opencode-ai", "plugin");
-
-  if (!existsSync(globalPluginDir)) {
-    errors.push(`Plugin not found at: ${globalPluginDir}`);
-    return { success: false, errors };
-  }
+  const globalPluginDir = install.packageDir;
+  const globalSdkPluginDir = path.join(install.globalRoot, "@opencode-ai", "plugin");
 
   if (!existsSync(path.join(globalPluginDir, "dist", "cli.js"))) {
     errors.push(`Global install seems incomplete: dist/ not found in ${globalPluginDir}`);
@@ -194,17 +196,25 @@ export async function setupRuntime(options?: {
   }
 
   // Ensure the @opencode-ai/plugin SDK is available globally.
-  // We must NOT run `npm install` inside the runtime dir because npm
-  // re-resolves all of node_modules/ and replaces the plugin junction
-  // with the published npm version (corrupting the local link).
+  // We must NOT run a package install inside the runtime dir because the
+  // package manager re-resolves all of node_modules/ and replaces the plugin
+  // junction with the published npm version (corrupting the local link).
   if (!existsSync(globalSdkPluginDir)) {
+    const sdkPm = install.pm ?? bestAvailablePackageManager();
+    if (!sdkPm) {
+      errors.push(
+        "No package manager (npm/pnpm/yarn/bun) found on PATH — cannot install the @opencode-ai/plugin SDK globally.",
+      );
+      return { success: false, errors };
+    }
+    const sdkInstallCommand = globalInstallCommand(sdkPm, "@opencode-ai/plugin");
     try {
-      execSync(`npm install -g @opencode-ai/plugin`, {
+      execSync(sdkInstallCommand, {
         stdio: "pipe",
         timeout: 60_000,
       });
     } catch (cause) {
-      errors.push(`Failed to install @opencode-ai/plugin SDK globally: ${(cause as Error).message}`);
+      errors.push(`Failed to install @opencode-ai/plugin SDK globally (${sdkInstallCommand}): ${(cause as Error).message}`);
       return { success: false, errors };
     }
   }
@@ -245,7 +255,7 @@ export async function setupRuntime(options?: {
 
   writeFileSync(versionFile, pluginVersion, "utf-8");
 
-  patchWindowsWrappers(npmGlobalRoot);
+  patchWindowsWrappers(install);
 
   const cliEntry = path.join(runtimePluginDir, "dist", "cli.js");
   const pluginEntry = path.join(runtimePluginDir, "dist", "plugin-entry.js");

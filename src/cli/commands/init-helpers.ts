@@ -14,8 +14,8 @@ import {
   rmSync,
   symlinkSync,
 } from "node:fs";
-import { execSync } from "node:child_process";
 import { DEFAULT_CONFIG } from "../../core/config.js";
+import { installHint, resolveGlobalInstall } from "../../core/package-manager.js";
 import { c } from "../format.js";
 import { BEGIN_MARKER, END_MARKER, buildAgentsMdDirective } from "../../opencode/system-guidance.js";
 import {
@@ -409,29 +409,22 @@ export async function installPluginFromGlobal(
   const workspaceTarget = path.join(opencodeDir, "node_modules", packageName);
 
   if (!existsSync(globalPluginDir)) {
-    // Fallback: try the global npm prefix
-    let globalRoot: string;
-    try {
-      globalRoot = execSync("npm root -g", { encoding: "utf-8", timeout: 10_000 }).trim();
-    } catch {
-      throw new Error(
-        `Global plugin cache not found at ${globalPluginDir}. ` +
-        "Run 'opencode-rag setup' or install globally with 'npm install -g opencode-rag-plugin' first.",
-      );
-    }
-    const globalNpmPluginDir = path.join(globalRoot, packageName);
-    if (existsSync(globalNpmPluginDir) && existsSync(path.join(globalNpmPluginDir, "dist", "cli.js"))) {
-      console.log(`  ${c.created("Found:")} ${packageName} in global npm prefix, linking...`);
+    // Fallback: locate a global install via any package manager (issue #34:
+    // npm may be absent — pnpm/yarn/bun installs must resolve too).
+    const install = resolveGlobalInstall(packageName);
+    if (install && existsSync(path.join(install.packageDir, "dist", "cli.js"))) {
+      const pmLabel = install.pm ? `global ${install.pm} install` : "global install";
+      console.log(`  ${c.created("Found:")} ${packageName} in ${pmLabel}, linking...`);
       if (existsSync(workspaceTarget)) {
         rmSync(workspaceTarget, { recursive: true, force: true });
       }
       mkdirSync(path.dirname(workspaceTarget), { recursive: true });
-      createJunction(globalNpmPluginDir, workspaceTarget);
+      createJunction(install.packageDir, workspaceTarget);
       const cliEntry = path.join(workspaceTarget, "dist", "cli.js");
       if (existsSync(cliEntry)) {
-        console.log(`  ${c.success("Linked:")} ${packageName} from global npm`);
-        // Also link @opencode-ai/plugin from global npm
-        const globalSdkDir = path.join(globalRoot, "@opencode-ai", "plugin");
+        console.log(`  ${c.success("Linked:")} ${packageName} from the global install`);
+        // Also link @opencode-ai/plugin from the same global node_modules
+        const globalSdkDir = path.join(install.globalRoot, "@opencode-ai", "plugin");
         const workspaceSdkDir = path.join(opencodeDir, "node_modules", "@opencode-ai", "plugin");
         if (existsSync(globalSdkDir) && !existsSync(workspaceSdkDir)) {
           mkdirSync(path.dirname(workspaceSdkDir), { recursive: true });
@@ -442,7 +435,7 @@ export async function installPluginFromGlobal(
             cpSync(globalSdkDir, workspaceSdkDir, { recursive: true });
           }
         }
-        console.log(`  ${c.success("Linked:")} @opencode-ai/plugin from global npm`);
+        console.log(`  ${c.success("Linked:")} @opencode-ai/plugin from the global install`);
         return;
       }
       // Junction failed or incomplete — fall through to error
@@ -450,7 +443,7 @@ export async function installPluginFromGlobal(
     }
     throw new Error(
       `Global plugin cache not found at ${globalPluginDir}. ` +
-      "Run 'opencode-rag setup' or install globally with 'npm install -g opencode-rag-plugin' first.",
+      `Run 'opencode-rag setup' or install globally first (${installHint(packageName)}).`,
     );
   }
 

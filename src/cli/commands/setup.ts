@@ -11,6 +11,7 @@ import {
   setupRuntime,
 } from "../../core/setup-runtime.js";
 import { compareVersions, getCurrentVersion, installLatestUpdate } from "../../core/version-check.js";
+import { bestAvailablePackageManager, globalUninstallCommand } from "../../core/package-manager.js";
 import { isLikelyProjectRoot, isWorkspaceInitialized, runWorkspaceInit } from "./init.js";
 
 const PLUGIN_NAME = "opencode-rag-plugin";
@@ -113,7 +114,8 @@ export function registerSetupCommand(program: Command): void {
         removeIfExists(versionFile);
         console.log(`  ${c.updated("Removed:")} ${c.file(runtimePluginDir)}`);
         console.log(`  ${c.updated("Removed:")} ${c.file(runtimeSdkPluginDir)}`);
-        console.log(`\n  ${c.success("Done.")} Run ${c.file("npm uninstall -g opencode-rag-plugin")} to remove the global package.\n`);
+        const uninstallPm = bestAvailablePackageManager() ?? "npm";
+        console.log(`\n  ${c.success("Done.")} Run ${c.file(globalUninstallCommand(uninstallPm, PLUGIN_NAME))} to remove the global package.\n`);
         return;
       }
 
@@ -182,9 +184,9 @@ export function registerSetupCommand(program: Command): void {
  */
 async function ensureUpToDate(): Promise<void> {
   const current = getCurrentVersion();
-  const latest = getLatestNpmVersion();
+  const latest = await getLatestNpmVersion();
   if (!latest) {
-    console.log(`  ${c.dim("Could not check npm for the latest version (offline?).")}`);
+    console.log(`  ${c.dim("Could not check the npm registry for the latest version (offline?).")}`);
     console.log(`  ${c.dim("Run `opencode-rag update` later to upgrade.\n")}`);
     return;
   }
@@ -207,18 +209,45 @@ async function ensureUpToDate(): Promise<void> {
 /**
  * Query the npm registry for the latest published version of the plugin.
  *
- * Best-effort: returns `null` when npm is unavailable or the lookup fails.
+ * Fetches the registry over HTTPS directly so the check works no matter which
+ * package manager installed this CLI — the npm binary may not even exist on
+ * machines set up via pnpm/yarn/bun (GitHub issue #34). Honors
+ * `npm_config_registry` (set by all four managers) for private mirrors.
+ *
+ * Best-effort: returns `null` when every endpoint lookup fails (offline,
+ * mirror without the endpoint, malformed response).
  *
  * @returns The latest version string, or `null` on failure.
  */
-function getLatestNpmVersion(): string | null {
+async function getLatestNpmVersion(): Promise<string | null> {
+  const registry = (process.env.npm_config_registry || "https://registry.npmjs.org").replace(/\/+$/, "");
+  const pkgPath = PLUGIN_NAME.includes("/") ? PLUGIN_NAME.replace("/", "%2F") : PLUGIN_NAME;
+  // Prefer the lightweight dist-tags endpoint; fall back to the version
+  // document for mirrors that do not implement it.
+  const urls = [
+    `${registry}/-/package/${pkgPath}/dist-tags`,
+    `${registry}/${pkgPath}/latest`,
+  ];
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
-    const out = execSync(`npm view ${PLUGIN_NAME} dist-tags.latest`, {
-      encoding: "utf-8",
-      timeout: 15_000,
-    }).trim();
-    return out || null;
-  } catch {
+    for (const url of urls) {
+      try {
+        const response = await fetch(url, {
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
+        });
+        if (!response.ok) continue;
+        const data = (await response.json()) as { latest?: unknown; version?: unknown };
+        const version = data.latest ?? data.version;
+        if (typeof version === "string" && version) return version;
+      } catch {
+        // Try the next endpoint.
+      }
+    }
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }

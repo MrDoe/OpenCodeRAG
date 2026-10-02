@@ -1,7 +1,8 @@
 /**
  * @fileoverview Version check and self-update functionality. Checks GitHub
- * releases for new versions and installs the newest version via npm, then
- * re-syncs the OpenCode runtime junctions.
+ * releases for new versions and installs the newest version via the package
+ * manager that owns the global install (npm/pnpm/yarn/bun), then re-syncs the
+ * OpenCode runtime junctions.
  */
 
 import { readFileSync } from "node:fs";
@@ -9,6 +10,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 import { setupRuntime } from "./setup-runtime.js";
+import {
+  bestAvailablePackageManager,
+  globalInstallCommand,
+  resolveGlobalInstall,
+  type PackageManagerName,
+} from "./package-manager.js";
 
 /** npm package name (must match the `name` field in package.json). */
 const PACKAGE_NAME = "opencode-rag-plugin";
@@ -42,7 +49,7 @@ export interface InstallUpdateResult {
   toVersion?: string;
 }
 
-/** Callable shape for the npm runner (a subset of execSync's signature). */
+/** Callable shape for the installer runner (a subset of execSync's signature). */
 type NpmRunner = (command: string, options: { stdio: "inherit" | "pipe"; timeout: number }) => unknown;
 
 /**
@@ -142,25 +149,31 @@ export async function checkForUpdate(currentVersion: string): Promise<UpdateInfo
 /**
  * Install the newest published version of OpenCodeRAG.
  *
- * Runs `npm install -g <package>@latest` to refresh the global install, then
- * calls {@link setupRuntime} with `force: true` to re-create the
- * `~/.opencode/node_modules/` junctions so OpenCode picks up the new build on
- * the next restart.
+ * Runs the global install command of the package manager that owns the
+ * current install (`npm install -g` / `pnpm add -g` / `yarn global add` /
+ * `bun add -g` with `<package>@latest`) — the npm binary itself is not
+ * required when the package was installed with another manager (GitHub
+ * issue #34). Then calls {@link setupRuntime} with `force: true` to
+ * re-create the `~/.opencode/node_modules/` junctions so OpenCode picks up
+ * the new build on the next restart.
  *
- * @param options - Optional verbosity flag. When `verbose` is true, npm output
- *   is streamed to the console; otherwise it is captured silently. The
- *   `_execSync` and `_setupRuntime` seams are for testing only.
+ * @param options - Optional verbosity flag. When `verbose` is true, installer
+ *   output is streamed to the console; otherwise it is captured silently. The
+ *   `_execSync`, `_setupRuntime`, `_getCurrentVersion`, and `_packageManager`
+ *   seams are for testing only.
  * @returns An {@link InstallUpdateResult} with success status, message, and the
  *   from/to versions.
  */
 export async function installLatestUpdate(options?: {
   verbose?: boolean;
-  /** Test seam: override the npm runner. */
+  /** Test seam: override the installer runner. */
   _execSync?: NpmRunner;
   /** Test seam: override the runtime sync. */
   _setupRuntime?: typeof setupRuntime;
   /** Test seam: override the version reader for the "to" version. */
   _getCurrentVersion?: typeof getCurrentVersion;
+  /** Test seam: pin the package manager (`null` = force "none found"). */
+  _packageManager?: PackageManagerName | null;
 }): Promise<InstallUpdateResult> {
   const verbose = options?.verbose ?? false;
   const stdio: "inherit" | "pipe" = verbose ? "inherit" : "pipe";
@@ -169,15 +182,30 @@ export async function installLatestUpdate(options?: {
   const readVersion = options?._getCurrentVersion ?? getCurrentVersion;
   const fromVersion = readVersion();
 
+  // Note: an explicit `null` pins "no package manager" (test seam), so this
+  // must not use ?? — null is a value here, not an absence.
+  const pm = options?._packageManager !== undefined
+    ? options._packageManager
+    : resolveGlobalInstall(PACKAGE_NAME)?.pm ?? bestAvailablePackageManager();
+  if (!pm) {
+    return {
+      success: false,
+      message:
+        `No package manager (npm/pnpm/yarn/bun) found on PATH. Update manually with ` +
+        `'npm install -g ${PACKAGE_NAME}@latest' or the equivalent for your package manager.`,
+      fromVersion,
+    };
+  }
+
   try {
-    run(`npm install -g ${PACKAGE_NAME}@latest --no-fund --no-audit`, {
+    run(globalInstallCommand(pm, `${PACKAGE_NAME}@latest`), {
       stdio,
       timeout: 120_000,
     });
   } catch (err) {
     return {
       success: false,
-      message: `npm install failed: ${(err as Error).message}`,
+      message: `${pm} install failed: ${(err as Error).message}`,
       fromVersion,
     };
   }
