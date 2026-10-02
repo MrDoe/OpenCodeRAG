@@ -83,6 +83,13 @@ opencode-rag index [options]
 
 **Full rebuild (`--force`):** Clears the store, clears keyword index, and re-indexes everything.
 
+**End of a pass:** the summary line reports `N chunks written this pass` — the
+chunks of the files this run processed, not the size of the store. Files whose
+embedding never completed get no manifest entry, so the rows an earlier pass
+wrote for them are swept at the end of any pass that changed the index
+(`Orphan cleanup: removed …`); `status` reports the current count as
+`Orphan chunks`.
+
 **Watch mode (`--watch`):** Uses chokidar to monitor file changes. Re-indexes debounced changes automatically.
 
 ### `query`
@@ -128,7 +135,16 @@ opencode-rag status [options]
 - Manifest status (ok/missing/corrupt)
 - Last indexed timestamp
 - Up-to-date files vs. pending files
+- Expected chunks (sum of the chunk counts the manifest records)
+- Orphan chunks — stored chunks no manifest entry owns (files whose embedding
+  never completed). The next full `index` pass sweeps them.
 - Keyword index chunk count
+
+> **Reading the numbers:** `New files` / `Modified files` / `Unchanged files`
+> count **files**, while `Indexed chunks` / `Expected chunks` count **chunks** —
+> one file produces several chunks, so the two groups are never expected to be
+> equal. `Consistency check: OK` means every manifest entry has at least one row
+> in the store.
 
 ### `list`
 
@@ -192,7 +208,18 @@ opencode-rag clear [options]
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
 
-Uses `store.dropDatabase()` for a clean slate, also clears the keyword index and manifest.
+Clears the vector store, then removes the manifest and the keyword index.
+
+Before clearing, the existing LanceDB table is backed up by **moving**
+`chunks.lance` to `chunks.lance.backup-<timestamp>` inside the store directory —
+instantaneous, so a large store does not sit in a multi-minute copy that can be
+interrupted. Delete those backup directories yourself once you no longer need
+them, they are never cleaned up automatically.
+
+The command then verifies the table really is empty: if rows remain (interrupted
+run, or the store is held open by a plugin/watcher process) it prints
+`Clear incomplete`, keeps manifest and keyword index in place so the index stays
+consistent, and exits with code 1.
 
 ### `describe-image`
 

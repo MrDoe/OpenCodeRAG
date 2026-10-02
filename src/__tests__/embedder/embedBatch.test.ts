@@ -113,3 +113,79 @@ describe("embedBatch", () => {
     ]);
   });
 });
+
+describe("embedBatch failure handling", () => {
+  function contextError(): Error {
+    return new Error(
+      'OpenAI embedding failed (400): {"error":{"message":"request exceeds the available context size (8192 tokens)","type":"exceed_context_size_error"}}'
+    );
+  }
+
+  it("splits a batch rejected for context size and keeps healthy texts", async () => {
+    let calls = 0;
+    const embedder: EmbeddingProvider = {
+      name: "mock",
+      async embed(texts: string[]): Promise<number[][]> {
+        calls++;
+        if (texts.some((t) => t.includes("BIG"))) {
+          throw contextError();
+        }
+        return texts.map((t) => [t.length]);
+      },
+    };
+
+    const result = await embedBatch(embedder, ["ok1", "BIG-one", "ok2", "ok3"], 4, "document", 1, undefined, 0);
+
+    assert.deepStrictEqual(result, [[3], [], [3], [3]]);
+    // Whole batch + two halves + single retry for the offending text.
+    assert.ok(calls >= 4, `expected split retries, got ${calls} calls`);
+  });
+
+  it("splits a batch that times out so healthy texts keep their vectors", async () => {
+    let calls = 0;
+    const embedder: EmbeddingProvider = {
+      name: "mock",
+      async embed(texts: string[]): Promise<number[][]> {
+        calls++;
+        if (texts.some((t) => t.includes("SLOW"))) {
+          throw new Error("Request timed out after 30000ms");
+        }
+        return texts.map((t) => [t.length]);
+      },
+    };
+
+    const result = await embedBatch(
+      embedder,
+      ["a1", "b2", "c3", "SLOW-oversized-css-chunk", "d4", "e5", "f6", "g7"],
+      8,
+      "document",
+      1,
+      undefined,
+      3,
+      0,
+    );
+
+    // Only the text that made the request time out loses its vector. Before
+    // recursive splitting was applied to timeouts, the whole 100-text batch
+    // was discarded and every healthy chunk in it silently vanished.
+    assert.deepStrictEqual(result, [[2], [2], [2], [], [2], [2], [2], [2]]);
+    assert.ok(calls > 8, `expected recursive splitting, got ${calls} calls`);
+    assert.ok(calls < 24, `splitting must stay bounded, got ${calls} calls`);
+  });
+
+  it("fails fast without splitting on non-context permanent errors", async () => {
+    let calls = 0;
+    const embedder: EmbeddingProvider = {
+      name: "mock",
+      async embed(): Promise<number[][]> {
+        calls++;
+        throw new Error("OpenAI embedding failed (401): unauthorized");
+      },
+    };
+
+    const result = await embedBatch(embedder, ["a", "b", "c", "d"], 4, "document", 1, undefined, 0);
+
+    assert.equal(calls, 1, "permanent auth errors must not be retried or split");
+    assert.deepStrictEqual(result, [[], [], [], []]);
+  });
+});

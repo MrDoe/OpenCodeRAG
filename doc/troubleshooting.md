@@ -76,6 +76,49 @@ Lowering `ollamaMaxBatchSize` sends smaller sub-batches to Ollama, so each reque
 
 **Note:** If your config file explicitly sets `embedding.timeoutMs`, it overrides the default. Check `opencode-rag.json` for any explicit value.
 
+**A timeout costs more than the batch it timed out on.** A request that times
+out usually means one oversized text is still being chewed through by the
+server, so the whole request — and with it every healthy text in the same
+batch — comes back without a vector. `embedder.batch` therefore splits a batch
+that failed for a non-permanent reason in half and retries recursively down to
+single texts: only the text(s) that individually fail end up without a vector,
+and those chunks are retried on the next pass. Look for
+`Embedding batch failed after N attempt(s)` and `Splitting failed batch of N
+text(s)` (scope `embedder.batch`) in `.opencode/opencode-rag.log`.
+
+### Chunks Stored Does Not Match The Manifest
+
+**Symptom:** `opencode-rag status` shows more indexed chunks than expected
+chunks, or an index pass prints `14038 chunks stored` after reporting only a
+handful of processed files.
+
+**Cause:** a file whose chunks only *partially* embedded never gets a manifest
+entry (the entry would claim the file is complete), yet the rows an earlier pass
+already wrote for it stayed in the table. Dedup only fires for files that write
+*new* rows, so nothing ever removed them and the store count kept drifting away
+from the manifest. `opencode-rag clear` that was interrupted while it was still
+copying its backup produced the same shape: a backup directory, but a store and
+manifest that were never touched.
+
+**Fix:** run `opencode-rag index`. Any pass that changes the index ends with an
+orphan sweep that deletes rows no manifest entry owns (plus their keyword-index
+entries) and logs `Orphan cleanup: removed N chunk(s) from M file(s)`. `status`
+shows the current delta as `Orphan chunks`; `Indexed chunks` minus
+`Expected chunks` minus the quirk rows should be 0 afterwards.
+
+### `clear` Appears To Do Nothing
+
+**Symptom:** `opencode-rag clear` prints `Clearing N indexed chunks...` and then
+nothing — no `Done.` line — while a `chunks.lance.backup-*` directory appears.
+
+**Cause:** the process was interrupted while the backup of a large store was
+still being copied, before anything was actually cleared.
+
+**Fix:** run `clear` again. It now moves the table instead of copying it (so the
+window for an interruption is gone), prints the backup path before starting, and
+verifies the table is empty afterwards — a clear that did not finish exits with
+code 1 and leaves manifest and keyword index untouched.
+
 ### LanceDB Connection Issues
 
 **Symptom:** `@lancedb/lancedb` throws errors about missing native binary or peer dependency.

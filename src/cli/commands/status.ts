@@ -120,6 +120,14 @@ export function registerStatusCommand(program: Command): void {
         logCliInfo(logFilePath, "status", `${c.label("Pending files:")}     ${c.num(summary.pendingFiles)}`);
         logCliInfo(logFilePath, "status", `${c.label("Indexed chunks:")}    ${c.num(summary.storeChunkCount)}`);
         logCliInfo(logFilePath, "status", `${c.label("Expected chunks:")}   ${c.num(summary.manifestExpectedChunks)}`);
+        logCliInfo(logFilePath, "status", `${c.label("Orphan chunks:")}    ${c.num(summary.orphanChunks)}`);
+        if (summary.orphanChunks > 0) {
+          logCliInfo(
+            logFilePath,
+            "status",
+            `${c.label("Unaccounted rows:")}  ${c.warn("yes")} — stored chunks no manifest entry owns (files whose embedding never completed). Run 'opencode-rag index' to sweep them.`,
+          );
+        }
         // Read watcher status from the background auto-indexer
         const watcherStatusPath = path.join(storePath, "watcher-status.json");
         let watchModeDisplay: string;

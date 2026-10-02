@@ -117,6 +117,21 @@ function testConfig(): RagConfig {
   };
 }
 
+/**
+ * Minimal chunk with a fixed vector. Used to seed store rows the pipeline
+ * never wrote — the shape a file with partially failing embeddings leaves
+ * behind (rows in the table, no manifest entry owning them).
+ */
+function seededChunk(filePath: string, embedding: number[]): Chunk {
+  return {
+    id: `seed-${path.basename(filePath)}`,
+    content: "seeded content",
+    description: "seeded",
+    embedding,
+    metadata: { filePath, startLine: 1, endLine: 2, language: "typescript" },
+  };
+}
+
 describe("indexer", () => {
   let workspaceDir: string;
   let storeDir: string;
@@ -360,6 +375,102 @@ describe("indexer", () => {
     assert.equal(summary.upToDateFiles, 0);
     assert.equal(summary.pendingFiles, 1);
     assert.equal(summary.manifestEntries, 1);
+  });
+
+  it("sweeps stored chunks that no manifest entry owns", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+
+    // Establish a consistent baseline first (store + manifest agree).
+    await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+    });
+    assert.equal(await store.count(), 1);
+
+    // Then inject a row the manifest knows nothing about.
+    const ghost = path.join(workspaceDir, "src", "ghost.ts");
+    await store.addChunks([seededChunk(ghost, [1, 0, 0, 0])]);
+    assert.equal(await store.count(), 2);
+
+    // Touch a.ts so the pass has work to do and runs its end-of-pass sweep.
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 2; }\n");
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+    });
+
+    assert.equal(stats.modifiedFiles, 1);
+    assert.equal(stats.finalCount, 1, "orphan swept, indexed chunk kept");
+    const storedPaths = await store.getFilePaths();
+    assert.ok(!storedPaths.includes(normalizeFilePath(ghost)), "ghost row removed");
+  });
+
+  it("drops stale rows of an uncommitted file that produces no vectors", async () => {
+    const good = path.join(workspaceDir, "src", "good.ts");
+    await writeFile(good, "function good() { return 1; }\n");
+    await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+    });
+    assert.equal(await store.count(), 1);
+
+    // A new file that already carries rows from an earlier partial pass.
+    const broken = path.join(workspaceDir, "src", "broken.ts");
+    await writeFile(broken, "function broken() { return 1; }\n");
+    await store.addChunks([seededChunk(broken, [1, 0, 0, 0])]);
+    assert.equal(await store.count(), 2);
+
+    // Provider rejects this file's text, so not a single chunk gets a vector.
+    const rejecting: EmbeddingProvider = {
+      name: "rejecting",
+      async embed(texts: string[]): Promise<number[][]> {
+        if (texts.some((t) => t.includes("broken"))) {
+          throw new Error("OpenAI embedding failed (400): exceed_context_size_error");
+        }
+        return texts.map(() => [1, 0, 0, 0]);
+      },
+    };
+
+    const stats = await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder: rejecting,
+    });
+
+    assert.equal(stats.newFiles, 1, "the uncommitted file is retried as new");
+    assert.ok(stats.embeddingFailures > 0, "the un-embedded chunk must be counted for retry");
+    assert.equal(await store.count(), 1, "stale rows of the uncommitted file are removed");
+    const manifest = await loadManifest(storeDir);
+    assert.ok(!manifest.manifest.files[normalizeFilePath(broken)], "file stays uncommitted");
+  });
+
+  it("reports unaccounted (orphan) chunks in the status summary", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+    await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+    });
+
+    // Seeded AFTER the pass so its end-of-pass sweep cannot remove it.
+    await store.addChunks([seededChunk(path.join(workspaceDir, "src", "ghost.ts"), [1, 0, 0, 0])]);
+
+    const summary = await getIndexStatusSummary(workspaceDir, storeDir, testConfig(), store, true);
+    assert.equal(summary.manifestExpectedChunks, 1);
+    assert.equal(summary.orphanChunks, 1);
   });
 
   it("rebuilds safely when manifest is missing but store has data", async () => {

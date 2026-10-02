@@ -20,7 +20,7 @@ import type { ImageVisionProvider } from "../chunker/image.js";
 import { embedBatch, probeEmbeddingDimension } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { swapStoreDirectories } from "../vectorstore/lancedb.js";
-import { reconcileQuirks } from "../quirks/quirk-store.js";
+import { reconcileQuirks, QUIRK_FILE_PREFIX } from "../quirks/quirk-store.js";
 import { createIndexStats, type IndexRunStats, type IndexStatusSummary } from "./stats.js";
 import { prepareFile, buildTextsToEmbed, type WorkerResult, type PreparedFile } from "./worker.js";
 import { tagChunksRole } from "../core/chunk-role.js";
@@ -162,6 +162,34 @@ export async function runIndexPass(options: RunIndexPassOptions): Promise<IndexR
   }
 }
 
+/**
+ * Warning text for description settings that leave chain-of-thought enabled,
+ * or `null` when thinking is safely disabled.
+ *
+ * Ollama requests default to thinking off. OpenAI-compatible providers inherit
+ * whatever the served model does, and reasoning models (Qwen3.x etc.) then
+ * spend thousands of extra tokens per chunk, making indexing ~50x slower.
+ * `think: false` forwards `chat_template_kwargs.enable_thinking=false` for
+ * those providers (see LlmDescriptionProvider).
+ *
+ * @param description - Description config slice (`think`, `provider`).
+ * @returns Human-readable warning, or `null` when no warning is needed.
+ */
+export function getDescriptionThinkingWarning(
+  description?: { think?: boolean; provider?: string },
+): string | null {
+  if (!description) return null;
+  const risky =
+    description.think === true ||
+    (description.think === undefined && description.provider !== "ollama");
+  if (!risky) return null;
+  return (
+    `Description thinking is enabled (description.think=${description.think === true ? "true" : "unset"}, ` +
+    `provider "${description.provider}") - reasoning models can spend thousands of tokens per chunk ` +
+    "and make indexing ~50x slower. Set description.think=false to disable chain-of-thought."
+  );
+}
+
 async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): Promise<IndexRunStats> {
   const loadResult = await loadManifest(options.storePath);
   const manifest = loadResult.manifest;
@@ -173,6 +201,13 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   if (options.force) {
     manifestStatus = "missing";
     logger.debug("Force mode: ignoring manifest");
+  }
+
+  // Advisory: chain-of-thought generation can make description latency ~50x
+  // higher on reasoning models - warn once per run when it is not disabled.
+  if (options.descriptionProvider) {
+    const warning = getDescriptionThinkingWarning(options.config.description);
+    if (warning) logger.warn(warning);
   }
 
   // Compute a hash of the current description config — used to skip re-description
@@ -587,6 +622,13 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   }
 
   /**
+   * Files that received rows during THIS pass. The end-of-pass orphan sweep
+   * leaves them alone on purpose: their rows are the current, honest state of
+   * a file that is still waiting for a complete embedding run.
+   */
+  const writtenThisPass = new Set<string>();
+
+  /**
    * Store one window's prepared files into the vector store and update the
    * manifest. Runs as a standalone async step so the caller can overlap it
    * with the next window's prepare/describe/embed phases (the store phase is
@@ -603,6 +645,10 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     const storePhaseStart = Date.now();
     logger.info(`Store phase: storing ${filesToStore} file(s) into vector database...`);
     let storedFiles = 0;
+    // Files whose chunks ALL failed to embed while no manifest entry exists.
+    // Rows an earlier pass wrote for them would otherwise never be removed:
+    // dedup only fires for files that insert new rows.
+    const staleUncommittedPaths = new Set<string>();
 
     // Compute per-file store payloads first (pure computation, no I/O).
     const storePayloads: Array<{ prep: PreparedFile; validChunks: Chunk[]; allEmbedded: boolean }> = [];
@@ -622,7 +668,12 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           `  ${prep.fileLabel}: ${validChunks.length}/${prep.chunks?.length} chunks embedded — marking for retry on next pass`,
         );
       }
-      if (validChunks.length > 0) tempStoreWroteChunks = true;
+      if (validChunks.length > 0) {
+        tempStoreWroteChunks = true;
+        writtenThisPass.add(prep.normalizedPath);
+      } else if ((prep.chunks?.length ?? 0) > 0 && !manifest.files[prep.normalizedPath]) {
+        staleUncommittedPaths.add(prep.normalizedPath);
+      }
       storePayloads.push({ prep, validChunks, allEmbedded });
     }
 
@@ -645,6 +696,19 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           await effectiveStore.addChunks(item.chunks, { dedup: item.dedup });
         }
       }
+    }
+
+    // Drop rows an EARLIER pass left behind for a file that produced no
+    // vectors at all here and has no manifest entry protecting them. Skipped
+    // whenever dedup is skipped too (empty/temp store cannot hold stale rows).
+    if (!skipDedup && staleUncommittedPaths.size > 0) {
+      for (const stalePath of staleUncommittedPaths) {
+        await effectiveStore.deleteByFilePath(stalePath);
+        options.keywordIndex?.removeByFilePath(stalePath);
+      }
+      logger.info(
+        `Removed stored chunks of ${staleUncommittedPaths.size} file(s) that produced no vectors (stale partial writes)`,
+      );
     }
 
     // Manifest updates + progress reporting (per file, in-memory only).
@@ -1154,7 +1218,52 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     }
   }
 
-  logger.info(`Index pass complete: ${stats.totalChunks} total chunks (${finalResults.length} files processed)`);
+  // ── Orphan sweep: rows no manifest entry accounts for ───────────────────
+  // A file whose chunks only partially embedded gets NO manifest entry, so
+  // every later pass treats it as new again — but the rows an earlier pass
+  // already wrote kept inflating `store.count()` forever, which is what made
+  // "chunks stored" drift away from the manifest. Quirk chunks are owned by
+  // quirks.jsonl (reconcileQuirks manages their lifecycle) and files written in
+  // this pass hold the current state of a still-unfinished file — both skipped.
+  const passTouchedIndex =
+    stats.newFiles + stats.modifiedFiles + stats.deletedFiles + stats.removedFiles > 0 ||
+    stats.embeddingFailures > 0;
+  if (!aborted() && !tempStorePath && passTouchedIndex) {
+    try {
+      // Case-insensitive backstop: a path whose only difference is casing must
+      // never be mistaken for an orphan (that would delete live data).
+      const manifestKeysLower = new Set(
+        Object.keys(manifest.files).map((k) => k.toLowerCase()),
+      );
+      const orphans: Array<{ filePath: string; chunkCount: number }> = [];
+      for (const stored of await options.store.listFiles()) {
+        const key = normalizeFilePath(stored.filePath);
+        if (manifest.files[key]) continue;
+        if (manifestKeysLower.has(key.toLowerCase())) continue;
+        if (writtenThisPass.has(key)) continue;
+        if (path.basename(key).startsWith(QUIRK_FILE_PREFIX)) continue;
+        orphans.push({ filePath: stored.filePath, chunkCount: stored.chunkCount });
+      }
+      if (orphans.length > 0) {
+        let removedRows = 0;
+        for (const orphan of orphans) {
+          await options.store.deleteByFilePath(orphan.filePath);
+          options.keywordIndex?.removeByFilePath(orphan.filePath);
+          removedRows += orphan.chunkCount;
+        }
+        logger.info(
+          `Orphan cleanup: removed ${removedRows} chunk(s) from ${orphans.length} file(s) without a manifest entry`,
+        );
+      }
+    } catch (err) {
+      // Best-effort: a failed sweep must never fail the pass.
+      logger.warn(`Orphan cleanup failed: ${(err as Error).message}`);
+    }
+  }
+
+  logger.info(
+    `Index pass complete: ${stats.totalChunks} chunks written this pass (${finalResults.length} files processed)`,
+  );
 
   // Update timestamps; advance lastGitCommit ONLY on a complete pass
   manifest.lastIndexedAt = Date.now();
@@ -1348,6 +1457,7 @@ export async function getIndexStatusSummary(
       rebuildRequired: storeCount > 0,
       storeChunkCount: storeCount,
       manifestExpectedChunks: 0,
+      orphanChunks: 0,
     };
   }
 
@@ -1388,6 +1498,25 @@ export async function getIndexStatusSummary(
     );
   }
 
+  // Rows without a manifest entry (partial-embedding leftovers). Quirk chunks
+  // live in quirks.jsonl and are deliberately not counted as orphans. A store
+  // that cannot enumerate files simply reports 0.
+  let orphanChunks = 0;
+  try {
+    const manifestKeysLower = new Set(
+      Object.keys(manifest.files).map((k) => k.toLowerCase()),
+    );
+    for (const file of await store.listFiles()) {
+      const key = normalizeFilePath(file.filePath);
+      if (manifest.files[key]) continue;
+      if (manifestKeysLower.has(key.toLowerCase())) continue;
+      if (path.basename(key).startsWith(QUIRK_FILE_PREFIX)) continue;
+      orphanChunks += file.chunkCount;
+    }
+  } catch {
+    orphanChunks = 0;
+  }
+
   return {
     manifestStatus: loadResult.status,
     manifestEntries: Object.keys(manifest.files).length,
@@ -1397,5 +1526,6 @@ export async function getIndexStatusSummary(
     rebuildRequired: false,
     storeChunkCount: storeCount,
     manifestExpectedChunks,
+    orphanChunks,
   };
 }

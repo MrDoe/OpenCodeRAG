@@ -8,6 +8,8 @@ import { OllamaProvider } from "./ollama.js";
 import { OpenAIProvider } from "./openai.js";
 import { CohereProvider } from "./cohere.js";
 import pLimit from "p-limit";
+import path from "node:path";
+import { appendDebugLog } from "../core/fileLogger.js";
 
 /**
  * Create an embedding provider instance based on the application configuration.
@@ -97,6 +99,34 @@ function isPermanentError(err: unknown): boolean {
 }
 
 /**
+ * Provider errors that mean the request exceeded the model context window.
+ * llama.cpp rejects the WHOLE request when any single input is over the limit
+ * (HTTP 400 exceed_context_size_error), so such batches are split and retried.
+ */
+const CONTEXT_LIMIT_RE = /exceed_context_size|exceeds the available context size/i;
+
+function isContextLimitError(err: unknown): boolean {
+  return CONTEXT_LIMIT_RE.test(err instanceof Error ? err.message : String(err));
+}
+
+/**
+ * Provider request timeouts. The server usually keeps chewing on an oversized
+ * input after the client gave up, so a timeout is the silent twin of a
+ * context-limit rejection: without splitting, every healthy text in the batch
+ * loses its vector too.
+ */
+const TIMEOUT_RE = /timed out|timeout/i;
+
+function isTimeoutError(err: unknown): boolean {
+  return TIMEOUT_RE.test(err instanceof Error ? err.message : String(err));
+}
+
+/** Resolve the workspace debug log file used for batch failure diagnostics. */
+function getBatchLogFilePath(): string {
+  return path.resolve(process.cwd(), ".opencode", "opencode-rag.log");
+}
+
+/**
  * Embed a list of texts in batches with optional concurrency control and per-batch retry.
  *
  * Splits the input texts into chunks of `batchSize` and embeds them sequentially
@@ -107,7 +137,11 @@ function isPermanentError(err: unknown): boolean {
  * for transient failures — auth/validation errors are not retried). If all
  * retries are exhausted or the provider returns a mismatched embedding count,
  * the batch is skipped and empty arrays are returned for those texts so the
- * caller can still process successfully embedded batches.
+ * caller can still process successfully embedded batches. Failures are logged
+ * to the workspace debug log (scope `embedder.batch`); batches that fail for a
+ * non-permanent reason (provider context limit, request timeout, count or
+ * dimension mismatch) are split in half and retried recursively down to single
+ * texts, so one oversized or slow text cannot discard its healthy siblings.
  *
  * @param embedder - The embedding provider to use
  * @param texts - Array of text strings to embed
@@ -138,8 +172,15 @@ export async function embedBatch(
     batches.push({ index: i, texts: texts.slice(i, i + batchSize) });
   }
 
-  async function embedWithRetry(batchTexts: string[]): Promise<number[][] | null> {
-    for (let attempt = 0; attempt <= retryMax; attempt++) {
+  // `depth` counts split levels: the top-level batch gets the full retry
+  // budget, every sub-batch only a single attempt — otherwise one slow text
+  // would multiply its retries across the whole split tree and stall the pass.
+  async function embedWithRetry(batchTexts: string[], depth = 0): Promise<number[][] | null> {
+    const maxRetries = depth === 0 ? retryMax : Math.min(1, retryMax);
+    let lastError: unknown;
+    let attempts = 0;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      attempts = attempt + 1;
       try {
         const embeddings = await embedder.embed(batchTexts, purpose);
         // Validate the response shape: a count mismatch would silently attach
@@ -158,14 +199,54 @@ export async function embedBatch(
         }
         return embeddings;
       } catch (err) {
-        if (attempt < retryMax && !isPermanentError(err)) {
+        lastError = err;
+        if (attempt < maxRetries && !isPermanentError(err)) {
           const delay = retryBaseDelayMs * Math.pow(2, attempt) * (0.8 + Math.random() * 0.4);
           await new Promise(resolve => setTimeout(resolve, delay));
-        } else if (attempt >= retryMax || isPermanentError(err)) {
-          return null;
+        } else if (attempt >= maxRetries || isPermanentError(err)) {
+          break;
         }
       }
     }
+
+    const longestText = batchTexts.reduce((max, text) => Math.max(max, text.length), 0);
+    appendDebugLog(getBatchLogFilePath(), {
+      scope: "embedder.batch",
+      severity: "warn",
+      message:
+        `Embedding batch failed after ${attempts} attempt(s) ` +
+        `(${batchTexts.length} text(s), longest ${longestText} chars): ` +
+        `${lastError instanceof Error ? lastError.message : String(lastError)}`,
+      error: lastError,
+    });
+
+    // A single overlong or slow text can make the provider reject the whole
+    // request (llama.cpp HTTP 400 exceed_context_size_error) or time it out.
+    // Split the batch recursively so one bad text cannot discard its healthy
+    // siblings; text(s) that still fail come back as empty vectors and are
+    // counted by the caller. A context-limit rejection carries a permanent 400
+    // status, so it needs its own predicate; timeouts are already non-permanent
+    // (belt and braces). Genuine permanent errors never split — halving the
+    // batch would fail the same way, only slower.
+    const splittable =
+      !isPermanentError(lastError) || isContextLimitError(lastError) || isTimeoutError(lastError);
+    if (batchTexts.length > 1 && splittable) {
+      const mid = Math.ceil(batchTexts.length / 2);
+      appendDebugLog(getBatchLogFilePath(), {
+        scope: "embedder.batch",
+        severity: "info",
+        message:
+          `Splitting failed batch of ${batchTexts.length} text(s) into ${mid}+${batchTexts.length - mid} ` +
+          `(depth ${depth + 1}) after: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+      });
+      const left = await embedWithRetry(batchTexts.slice(0, mid), depth + 1);
+      const right = await embedWithRetry(batchTexts.slice(mid), depth + 1);
+      return [
+        ...(left ?? batchTexts.slice(0, mid).map(() => [] as number[])),
+        ...(right ?? batchTexts.slice(mid).map(() => [] as number[])),
+      ];
+    }
+
     return null;
   }
 

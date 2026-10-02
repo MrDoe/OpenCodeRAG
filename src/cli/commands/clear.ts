@@ -11,6 +11,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { c, resolveCliContext, cleanupContext, logCliError, logCliInfo } from "../format.js";
 import { manifestPathFor } from "../../core/manifest.js";
+import { indexPathFor } from "../../retriever/keyword-index.js";
 import type { CliOptions } from "../types.js";
 
 /**
@@ -77,8 +78,41 @@ export function registerClearCommand(program: Command): void {
 
         logCliInfo(logFilePath, "clear", `${c.label("Clearing")} ${c.num(prevCount)} indexed chunks...`);
         await store.clear();
+
+        // Trust, but verify: an interrupted clear used to leave the store AND
+        // the manifest completely untouched while printing nothing after the
+        // "Clearing…" line. Only drop the manifest/keyword index once the
+        // table is provably empty, so a failed clear cannot desynchronise them.
+        let remaining: number;
+        try {
+          remaining = await store.count();
+        } catch (err) {
+          logCliError(
+            logFilePath,
+            "clear",
+            `\nClear could not be verified: ${(err as Error).message}. Manifest and keyword index were left in place.`,
+            err,
+          );
+          await cleanupContext(ctx);
+          process.exit(1);
+        }
+        if (remaining > 0) {
+          logCliError(
+            logFilePath,
+            "clear",
+            `\nClear incomplete: ${remaining} of ${prevCount} chunks are still stored (interrupted, or the store is held open by another process). Manifest and keyword index were left in place.`,
+          );
+          await cleanupContext(ctx);
+          process.exit(1);
+        }
+
         await fs.unlink(manifestPathFor(ctx.storePath)).catch(() => {});
-        logCliInfo(logFilePath, "clear", `${c.success("Done.")} vector database cleared.`);
+        await fs.unlink(indexPathFor(ctx.storePath)).catch(() => {});
+        logCliInfo(
+          logFilePath,
+          "clear",
+          `${c.success("Done.")} vector database cleared (was ${c.num(prevCount)} chunks); manifest and keyword index removed.`,
+        );
         await cleanupContext(ctx);
       } catch (err) {
         const message = (err as Error).message || String(err);

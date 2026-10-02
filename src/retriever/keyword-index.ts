@@ -93,7 +93,7 @@ export function tokenize(text: string): string[] {
   return [...tokens];
 }
 
-function indexPathFor(storePath: string): string {
+export function indexPathFor(storePath: string): string {
   return storePath.replace(/\\/g, "/").replace(/\/+$/, "") + "/keyword-index.json";
 }
 

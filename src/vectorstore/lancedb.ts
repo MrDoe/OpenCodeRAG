@@ -1412,7 +1412,7 @@ export class LanceDbStore implements VectorStore {
 
   /**
    * Back up the chunks.lance directory before a destructive operation.
-   * Creates a timestamped copy at chunks.lance.backup-<ISO timestamp>.
+   * Moves it to a timestamped `chunks.lance.backup-<ISO timestamp>` directory.
    * Skips if chunks.lance doesn't exist or noBackup is set.
    * @returns The backup path, or null if nothing was backed up.
    */
@@ -1426,8 +1426,26 @@ export class LanceDbStore implements VectorStore {
     }
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const backupPath = `${lancePath}.backup-${timestamp}`;
-    await fs.cp(lancePath, backupPath, { recursive: true });
-    return backupPath;
+    // Moving the table directory is instantaneous. Copying it first — as this
+    // used to do — takes minutes on a large store and was exactly the window
+    // in which users interrupted `clear`, ending up with a backup directory
+    // and a completely untouched store. Copy is only the fallback for cases
+    // where a rename cannot work (different volume, or locked by another
+    // process on Windows).
+    try {
+      await fs.rename(lancePath, backupPath);
+      return backupPath;
+    } catch (renameErr) {
+      try {
+        await fs.cp(lancePath, backupPath, { recursive: true });
+        return backupPath;
+      } catch (cpErr) {
+        throw new Error(
+          `Could not back up ${lancePath} before clearing: ` +
+          `${(renameErr as Error).message}; copy fallback: ${(cpErr as Error).message}`,
+        );
+      }
+    }
   }
 
   /**
@@ -1441,17 +1459,34 @@ export class LanceDbStore implements VectorStore {
     await this.table?.close();
     this.table = null;
     this.knownDimension = null;
+    // The backup normally MOVES chunks.lance away, so there is no table left
+    // to drop; attempting it on a moved table can throw, and the destructive
+    // fallback below would then delete the whole store directory — including
+    // the fresh backup, the manifest and quirks.jsonl.
+    let tableDirStillThere = true;
+    try {
+      await fs.access(path.join(this.dbPath, "chunks.lance"));
+    } catch {
+      tableDirStillThere = false;
+    }
     try {
       const db = await this.getDb();
-      const tableNames = await db.tableNames();
-      if (tableNames.includes(TABLE_NAME)) {
-        await db.dropTable(TABLE_NAME);
+      if (tableDirStillThere) {
+        const tableNames = await db.tableNames();
+        if (tableNames.includes(TABLE_NAME)) {
+          await db.dropTable(TABLE_NAME);
+        }
       }
       await this.db?.close();
       this.db = null;
-    } catch {
+    } catch (err) {
       await this.db?.close();
       this.db = null;
+      if (backup) {
+        // The backup lives inside this directory — never run the destructive
+        // fallback, it would destroy the backup together with the store.
+        throw err;
+      }
       try {
         await fs.rm(this.dbPath, { recursive: true, force: true });
       } catch {}

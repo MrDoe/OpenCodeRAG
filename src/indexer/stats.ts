@@ -61,6 +61,13 @@ export interface IndexStatusSummary {
   storeChunkCount: number;
   /** Number of chunks the manifest expects. */
   manifestExpectedChunks: number;
+  /**
+   * Stored chunks that NO manifest entry accounts for (excluding quirk chunks,
+   * which quirks.jsonl owns). They come from files whose chunks only partially
+   * embedded — such a file gets no manifest entry, so its rows are not
+   * reachable through any accounting. The next full index pass sweeps them.
+   */
+  orphanChunks: number;
 }
 
 /**

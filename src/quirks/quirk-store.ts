@@ -16,7 +16,7 @@ export interface QuirkStoreDeps {
   storePath: string;
 }
 
-const QUIRK_FILE_PREFIX = "quirk:";
+export const QUIRK_FILE_PREFIX = "quirk:";
 const QUIKK_JSONL = "quirks.jsonl";
 
 function jsonlPath(storePath: string): string {
