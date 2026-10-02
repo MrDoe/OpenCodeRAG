@@ -74,7 +74,12 @@ restart pattern and browser cache troubleshooting.
 
 ## Release
 
-`npm run release:patch` — bumps version, builds, tests, tags, publishes (dry-run via `--dry`).
+`npm run release:patch` / `npm run release:minor` (`--dry` for a dry run) — pushes `main`, runs
+`npm version` (needs a **clean** working tree: commit or stash everything first, including other
+sessions' work), pushes the new tag and opens the GitHub release via `gh`. They do **not** build,
+test or `npm publish` — creating the release triggers `.github/workflows/publish.yml`, which builds,
+tests and publishes to npm with CI credentials (~2-3 min; check `gh run list`). Push `main` once more
+afterwards if you want the bump commit on `origin/main` — the scripts push `main` *before* the bump.
 
 <!-- BEGIN opencode-rag -->
 ## Code Navigation
