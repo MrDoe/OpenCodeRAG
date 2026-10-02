@@ -245,7 +245,18 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
             detectedTuning = undefined;
           }
         }
-        return generateDefaultConfigJson(detectedTuning);
+        // Carry the identity-critical embedding keys (apiKey, vectorDimension)
+        // over from the file being replaced: a reset must never downgrade the
+        // store schema to the 384 default or drop provider auth.
+        let existingRaw: string | undefined;
+        if (configExists) {
+          try {
+            existingRaw = readFileSync(configPath, "utf-8");
+          } catch {
+            existingRaw = undefined;
+          }
+        }
+        return generateDefaultConfigJson(detectedTuning, existingRaw);
       };
 
       if (!configExists) {

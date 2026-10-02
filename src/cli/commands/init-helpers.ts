@@ -498,13 +498,55 @@ export async function installPluginFromGlobal(
 
 
 /**
+ * `embedding` keys that the default template does not model but that MUST
+ * survive a rewrite. Losing `vectorDimension` makes the next run fall back to
+ * the 384 default (and corrupts a rebuild against a store whose schema is
+ * 4096), and `apiKey` is provider auth the template never carries — both are
+ * invisible data loss when a user confirms "Overwrite with default config?".
+ */
+const PRESERVED_EMBEDDING_KEYS = ["apiKey", "vectorDimension"] as const;
+
+/**
+ * Pick the identity-critical `embedding` keys out of an existing config file so
+ * the generated defaults can re-apply them. Malformed input simply yields an
+ * empty set (the pure default template).
+ */
+function preservedEmbeddingKeys(existingConfigRaw?: string): Record<string, unknown> {
+  if (!existingConfigRaw) return {};
+  try {
+    const raw = existingConfigRaw.charCodeAt(0) === 0xfeff
+      ? existingConfigRaw.slice(1)
+      : existingConfigRaw;
+    const parsed = JSON.parse(raw) as { embedding?: Record<string, unknown> };
+    const embedding = parsed?.embedding;
+    if (!embedding || typeof embedding !== "object") return {};
+    const preserved: Record<string, unknown> = {};
+    for (const key of PRESERVED_EMBEDDING_KEYS) {
+      const value = embedding[key];
+      if (value !== undefined && value !== null && value !== "") {
+        preserved[key] = value;
+      }
+    }
+    return preserved;
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Generate the default `opencode-rag.json` configuration content.
  *
  * @param tuning - Optional embedding batch tuning (auto-detected from the
  *   Ollama backend). Falls back to `DEFAULT_CONFIG` for any omitted field.
+ * @param existingConfigRaw - Optional raw text of the config file that is about
+ *   to be replaced. Its `apiKey` and `vectorDimension` are carried over: a
+ *   reset must not silently change the store schema or drop provider auth.
  * @returns A pretty-printed JSON string with all default configuration values.
  */
-export function generateDefaultConfigJson(tuning?: Partial<IndexingTuning>): string {
+export function generateDefaultConfigJson(
+  tuning?: Partial<IndexingTuning>,
+  existingConfigRaw?: string,
+): string {
   return JSON.stringify(
     {
       embedding: {
@@ -512,6 +554,7 @@ export function generateDefaultConfigJson(tuning?: Partial<IndexingTuning>): str
         baseUrl: DEFAULT_CONFIG.embedding.baseUrl,
         model: DEFAULT_CONFIG.embedding.model,
         timeoutMs: DEFAULT_CONFIG.embedding.timeoutMs,
+        ...preservedEmbeddingKeys(existingConfigRaw),
       },
       indexing: {
         includeExtensions: DEFAULT_CONFIG.indexing.includeExtensions,
