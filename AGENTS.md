@@ -133,3 +133,27 @@ If no results, run `opencode-rag index`.
 - A stored quirk is outdated, wrong, or has been fixed — update it or delete it instead of adding a contradicting duplicate
 - NEVER finish a coding session without adding quirks for resolved errors.
 <!-- END opencode-rag -->
+
+<!-- opencode-crosstalk:begin -->
+## OpenCode Crosstalk
+
+Other OpenCode sessions in this workspace are reachable through the
+`opencode-crosstalk` plugin: `crosstalk_status`, `crosstalk_peers`,
+`crosstalk_send`, `crosstalk_inbox`, `crosstalk_claim`, `crosstalk_wait`.
+Talk to each other briefly, but keep working — only stop for coordination that prevents
+a real collision.
+
+- **Declare once - precisely and concisely - then keep moving.** `crosstalk_status` sets your role and goal;
+  `crosstalk_peers` shows active sessions and their leases. Work that does not
+  overlap theirs needs no coordination.
+- **Talk before you collide.** If you need something a peer holds, `crosstalk_send`
+  a short precise ask and continue elsewhere; replies are injected into live turns (use
+  `crosstalk_inbox` to catch up). Never force a claim.
+- **Lease what you are editing now.** `crosstalk_claim` takes an exclusive expiring
+  lease on exact paths — no globs (`resources`, `note`, `ttlSeconds`). `renew` if the
+  work runs long, `release` when done; a refusal names the holder.
+- **Identity is automatic** — never pass a "who am I". Blocking calls are capped by
+  `maxWaitMs` and may return early; that is normal.
+
+Installed globally - `opencode api get /api/plugin` shows if `opencode.crosstalk` is active.
+<!-- opencode-crosstalk:end -->
