@@ -278,6 +278,72 @@ export function generateSkillFile(): string {
 }
 
 /**
+ * Generate the content for `.opencode/skills/make-decision/SKILL.md`.
+ *
+ * Provides decision-model usage guidance for AI assistants: when to reach for
+ * `make_decision`, the three question types, prerequisites, and limits.
+ *
+ * @returns The full Markdown content of the decision skill file.
+ */
+export function generateDecisionSkillFile(): string {
+  return [
+    "---",
+    "name: make-decision",
+    "description: Classify, route, or score short text with the local tev1 decision model via the make_decision tool (Ollama /v1/systemone)",
+    "---",
+    "",
+    "## Decision Model (`make_decision`)",
+    "",
+    "Use `make_decision(state, questions)` when a task reduces to a fast classification, routing choice, policy check, or rubric score over short text — e.g. \"which module owns this error?\", \"is this request within policy?\", \"rate the severity\". It calls a local decision model (tev1) that returns the chosen option with probabilities.",
+    "",
+    "### Prerequisites",
+    "",
+    "- `decision.enabled` must be `true` in `opencode-rag.json` (off by default).",
+    "- Requires Ollama >= 0.35 with a pulled tev1 model (`ollama pull tev1` or `ollama pull tev1:0.8b`).",
+    "- Keep `state` short — the effective context is ~2k tokens. Pass the relevant excerpt, not a whole file.",
+    "",
+    "### Questions",
+    "",
+    "Each question needs `id`, `type`, and `instructions`:",
+    "",
+    "- `choice` — pick one of 2-24 options. `criteria` maps option → description. Add a `none` option when no listed option may fit.",
+    "- `noul` — true/false probability. Optional criteria `{ \"true\": \"...\", \"false\": \"...\" }` describe each side.",
+    "- `score` — place the state on a rubric. `criteria` is an ordered array of 2-24 level descriptions, lowest first.",
+    "",
+    "### Example",
+    "",
+    "```json",
+    "{",
+    "  \"state\": \"Customer says they were charged twice for the October subscription.\",",
+    "  \"questions\": [",
+    "    {",
+    "      \"id\": \"intent\",",
+    "      \"type\": \"choice\",",
+    "      \"instructions\": \"Which support intent best matches the message?\",",
+    "      \"criteria\": {",
+    "        \"duplicate_charge\": \"Charged more than once.\",",
+    "        \"cancel\": \"Wants to end the subscription.\",",
+    "        \"none\": \"None of the listed intents matches.\"",
+    "      }",
+    "    }",
+    "  ]",
+    "}",
+    "```",
+    "",
+    "### Optional: route decisions before asking the user",
+    "",
+    "- When `decision.routeBeforeAsking` is `true`, route option choices through `make_decision` before interrupting the user: proceed when the model is confident, and ask the user only when it is undecided (low `confidence`) or the choice depends on personal preference.",
+    "",
+    "### Limits",
+    "",
+    "- 1-64 questions per call; 2-24 options/levels per question.",
+    "- `confidence` is probability concentration, NOT the chance the answer is correct.",
+    "- Never rely on it as the only check for a high-stakes decision; treat low-confidence answers as undecided.",
+    "",
+  ].join("\n");
+}
+
+/**
  * Merge required entries into an existing `.gitignore` content string.
  *
  * Ensures `node_modules/`, `package-lock.json`, `rag_db/`, and `opencode-rag.log`
@@ -330,14 +396,22 @@ export function mergeGitignoreContent(existingContent?: string): string {
  *
  * @param existingContent - The current `AGENTS.md` content, or `undefined` if absent.
  * @param opts - Optional settings. `promptEnforcement` controls whether the
- *   quirk-capture enforcement rules are included (default `true`).
+ *   quirk-capture enforcement rules are included (default `true`);
+ *   `decisionEnabled` controls whether the `make_decision` guidance section is
+ *   included (default `false` — the tool is not registered when disabled);
+ *   `routeBeforeAsking` adds the optional pre-ask decision-routing rule
+ *   (default `false`).
  * @returns The merged `AGENTS.md` content with a trailing newline.
  */
 export function mergeAgentsMdContent(
   existingContent?: string,
-  opts?: { promptEnforcement?: boolean },
+  opts?: { promptEnforcement?: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean },
 ): string {
-  const section = buildAgentsMdDirective({ promptEnforcement: opts?.promptEnforcement ?? true });
+  const section = buildAgentsMdDirective({
+    promptEnforcement: opts?.promptEnforcement ?? true,
+    decisionEnabled: opts?.decisionEnabled ?? false,
+    routeBeforeAsking: opts?.routeBeforeAsking ?? false,
+  });
 
   if (!existingContent) {
     return `${section}\n`;
@@ -589,6 +663,15 @@ export function generateDefaultConfigJson(
         timeoutMs: DEFAULT_CONFIG.imageDescription!.timeoutMs,
         think: DEFAULT_CONFIG.imageDescription!.think,
         numCtx: DEFAULT_CONFIG.imageDescription!.numCtx,
+      },
+      decision: {
+        enabled: DEFAULT_CONFIG.decision!.enabled,
+        provider: DEFAULT_CONFIG.decision!.provider,
+        baseUrl: DEFAULT_CONFIG.decision!.baseUrl,
+        model: DEFAULT_CONFIG.decision!.model,
+        timeoutMs: DEFAULT_CONFIG.decision!.timeoutMs,
+        keepAlive: DEFAULT_CONFIG.decision!.keepAlive,
+        routeBeforeAsking: DEFAULT_CONFIG.decision!.routeBeforeAsking,
       },
       description: {
         enabled: DEFAULT_CONFIG.description!.enabled,

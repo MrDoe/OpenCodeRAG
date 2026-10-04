@@ -74,11 +74,36 @@ export const QUIRK_ENFORCEMENT_LINES: readonly string[] = [
 ];
 
 /**
+ * The conditional decision-model guidance lines. Only included when
+ * `decision.enabled` is true (the tool is not registered otherwise).
+ */
+export const DECISION_GUIDANCE_LINES: readonly string[] = [
+  "- `make_decision(state, questions)`: classify, route, or score short text with the local tev1 decision model. Questions are `choice`, `noul`, or `score`; keep `state` short and don't rely on it alone for high-stakes decisions.",
+];
+
+/** Extra guidance line, only when `decision.routeBeforeAsking` is enabled. */
+export const DECISION_ROUTING_GUIDANCE_LINE =
+  "- Before asking the user to choose between options, route the decision through `make_decision` first — ask the user only when the model is undecided (low confidence) or the choice is a matter of personal preference.";
+
+/**
  * Build the flat guidance lines array for the runtime system-prompt injector.
  * Returns a new array each call.
  */
-export function buildSystemGuidanceLines(opts: { promptEnforcement: boolean }): string[] {
+export function buildSystemGuidanceLines(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean }): string[] {
   const lines = [...MANDATORY_GUIDANCE_LINES];
+  if (opts.decisionEnabled) {
+    const decisionLines = [...DECISION_GUIDANCE_LINES];
+    if (opts.routeBeforeAsking) {
+      decisionLines.push(DECISION_ROUTING_GUIDANCE_LINE);
+    }
+    // Keep the tool list grouped: insert right after the describe_image line.
+    const idx = lines.findIndex((line) => line.startsWith("- `describe_image"));
+    if (idx >= 0) {
+      lines.splice(idx + 1, 0, ...decisionLines);
+    } else {
+      lines.push(...decisionLines);
+    }
+  }
   if (opts.promptEnforcement) {
     lines.push(...QUIRK_ENFORCEMENT_LINES);
   }
@@ -86,10 +111,28 @@ export function buildSystemGuidanceLines(opts: { promptEnforcement: boolean }): 
 }
 
 /**
+ * The conditional decision-model section for the AGENTS.md directive. Only
+ * included when `decision.enabled` is true.
+ */
+const DECISION_AGENTS_SECTION_LINES: readonly string[] = [
+  "### Decision model (`make_decision`)",
+  "",
+  "- Classify, route, or score short text with the local tev1 model (`state` + 1-64 questions).",
+  "- Question types: `choice` (options map to descriptions), `noul` (true/false probability), `score` (ordered rubric levels, lowest first).",
+  "- Keep `state` short (~2k-token context); add a `none` option when no listed option may fit.",
+  "- Never use it as the only check for a high-stakes decision.",
+  "",
+];
+
+/** Extra directive bullet, only when `decision.routeBeforeAsking` is enabled. */
+const DECISION_ROUTING_AGENTS_LINE =
+  "- With `decision.routeBeforeAsking` enabled: route option choices through `make_decision` before asking the user; ask the user only when the model is undecided (low confidence) or the choice is preference-based.";
+
+/**
  * Build the markdown-formatted AGENTS.md directive section, wrapped in sentinel
  * markers so `mergeAgentsMdContent` can replace it in place on re-runs.
  */
-export function buildAgentsMdDirective(opts: { promptEnforcement: boolean }): string {
+export function buildAgentsMdDirective(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean }): string {
   const lines: string[] = [
     BEGIN_MARKER,
     "## Code Navigation",
@@ -132,6 +175,21 @@ export function buildAgentsMdDirective(opts: { promptEnforcement: boolean }): st
     "- Treating image files as text — use `describe_image` instead of reading raw bytes",
   "- Using `npx opencode-rag quirk` shell commands instead of the built-in quirk tools (`add_quirk` / `recall_quirks` / `update_quirk` / `delete_quirk`) (the tools are faster, already loaded in-process, and go through the trust monitor)",
   ];
+
+  if (opts.decisionEnabled) {
+    const decisionSection = [...DECISION_AGENTS_SECTION_LINES];
+    if (opts.routeBeforeAsking) {
+      // Insert before the trailing blank line of the section.
+      decisionSection.splice(decisionSection.length - 1, 0, DECISION_ROUTING_AGENTS_LINE);
+    }
+    // Place the decision section before the code-navigation decision tree.
+    const idx = lines.indexOf("### Decision tree — ALWAYS follow this order");
+    if (idx >= 0) {
+      lines.splice(idx, 0, ...decisionSection);
+    } else {
+      lines.push(...decisionSection);
+    }
+  }
 
   if (opts.promptEnforcement) {
     lines.push(

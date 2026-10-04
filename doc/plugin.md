@@ -1,6 +1,6 @@
 ﻿# OpenCode Plugin Integration
 
-OpenCodeRAG integrates with OpenCode as a plugin, providing semantic code search directly within agent conversations.
+OpenCodeRAG integrates with OpenCode as a plugin, providing semantic code search, image description, experiential memory, and a local decision-model tool (tev1) directly within agent conversations.
 
 ## How the Plugin Works
 
@@ -31,6 +31,7 @@ For autonomous agent workflows, the plugin also registers smaller, focused tools
 | `get_file_skeleton` | Structural file overview via tree-sitter AST | `filePath` (req) |
 | `find_usages` | Find all references to a symbol | `symbolName` (req), `pathHint?`, `topK?` |
 | `describe_image` | Describe an image file with a vision model (live call) | `filePath` (req), `systemPrompt?` |
+| `make_decision` | Classify/route/score short text with the local tev1 decision model (when `decision.enabled`) | `state` (req), `questions` (req) |
 
 #### `search_semantic`
 Conceptual code search — answers questions like *"How does authentication work?"* or *"Where is the chunking logic?"*. Uses vector + hybrid keyword search and returns the most relevant code snippets with file paths, line numbers, and relevance scores.
@@ -94,6 +95,40 @@ Reads an image file from disk, resizes it, and sends it to the configured vision
 
 **Returns:** Markdown block with file path, the generated description, and the provider/model that produced it.
 
+#### `make_decision`
+
+Answers classification/decision questions with a local decision model ([tev1](https://ollama.com/library/tev1) via Ollama's `/v1/systemone`) — a live call, no indexing involved. Registered only when `decision.enabled` is `true`; requires Ollama ≥ 0.35 and a pulled model (`ollama pull tev1:0.8b` or `ollama pull tev1:4b`). The decision model is **not a chat model**: it scores a `state` against named questions and returns probabilities.
+
+**Parameters:**
+| Param | Required | Description |
+|-------|----------|-------------|
+| `state` | Yes | Text (or JSON string) to judge. Keep it short — the effective context is ~2k tokens. |
+| `questions` | Yes | 1–64 questions, each `{ id, type, instructions, criteria? }`. Types: `choice` (criteria maps option → description, 2–24 options; add a `none` option when no listed option may fit), `noul` (true/false probability; optional `{ "true": "...", "false": "..." }` criteria), `score` (criteria is an ordered array of 2–24 level descriptions, lowest first). |
+
+**Returns:** one answer per question — `choice` with `probabilities`/`confidence`, `noul` (probability true), or `score`/`legend`. `confidence` measures probability concentration, not correctness.
+
+```json
+{
+  "state": "Customer says they were charged twice for the October subscription.",
+  "questions": [
+    {
+      "id": "intent",
+      "type": "choice",
+      "instructions": "Which support intent best matches the message?",
+      "criteria": {
+        "duplicate_charge": "Charged more than once.",
+        "cancel": "Wants to end the subscription.",
+        "none": "None of the listed intents matches."
+      }
+    }
+  ]
+}
+```
+
+Configuration: [`decision`](configuration.md#decision). Inputs are validated before the request (question ids, 2–24 options/levels, `state` length) so malformed calls fail with an actionable message instead of a garbage answer. CLI equivalent: `opencode-rag decide` ([CLI reference](cli.md#decide)). MCP clients see the tool only when `decision.enabled` is `true`.
+
+**Optional pre-ask routing (`decision.routeBeforeAsking`):** off by default. When enabled, the runtime system prompt, the `AGENTS.md` directive, and the `make-decision` skill instruct the agent to resolve option choices through `make_decision` before interrupting the user — proceeding when the answer is confident, and asking only when the model is undecided (low `confidence`) or the choice is preference-based.
+
 ### Tool exposure (OpenCode v2)
 
 OpenCode v2 (2.0.x) offers plugin tools to the agent directly **only when they are
@@ -147,6 +182,8 @@ Use the hotkeys:
 - Zero ongoing token cost — only loaded when the agent chooses to load it
 
 The skill teaches the workflow: skeleton → find_usages → search → read → edit.
+
+`opencode-rag init` also creates `.opencode/skills/make-decision/SKILL.md` — a dedicated skill for the decision-model tool covering when to use `make_decision`, the three question types, prerequisites, and limits. It is generated regardless of `decision.enabled` and is loaded on demand like any other skill.
 
 ### 4. System Prompt Guidance (Always)
 

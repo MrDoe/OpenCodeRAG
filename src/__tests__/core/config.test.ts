@@ -73,6 +73,15 @@ describe("loadConfig", () => {
       assert: (c) => assert.equal(c.vectorStore.path, "/custom/path"),
     },
     {
+      name: "decision model",
+      json: { decision: { model: "tev1:0.8b" } },
+      assert: (c) => {
+        assert.equal(c.decision?.model, "tev1:0.8b");
+        assert.equal(c.decision?.enabled, DEFAULT_CONFIG.decision?.enabled);
+        assert.equal(c.decision?.timeoutMs, DEFAULT_CONFIG.decision?.timeoutMs);
+      },
+    },
+    {
       name: "imageDescription onDemand",
       json: { imageDescription: { onDemand: { provider: "openai", model: "gpt-4o-mini" } } },
       assert: (c) => {
@@ -215,6 +224,17 @@ describe("DEFAULT_CONFIG", () => {
     assert.equal(DEFAULT_CONFIG.logging.logFilePath, "./.opencode/opencode-rag.log");
   });
 
+  it("defaults the decision model to disabled with tev1:4b", () => {
+    const decision = DEFAULT_CONFIG.decision;
+    assert.ok(decision, "decision config must exist");
+    assert.equal(decision.enabled, false, "tev1 needs Ollama >= 0.35 and a pulled model");
+    assert.equal(decision.provider, "ollama");
+    assert.equal(decision.model, "tev1:4b");
+    assert.equal(decision.timeoutMs, 120000);
+    assert.equal(decision.maxStateChars, 8000);
+    assert.equal(decision.routeBeforeAsking, false);
+  });
+
   it("defaults quirk auto-injection to a high relevance bar", () => {
     // Injected quirks occupy context on every turn, so the default bar must
     // be strict: only strongly relevant quirks qualify, at most one per turn,
@@ -330,5 +350,12 @@ describe("validateConfig", () => {
     const result = validateConfig(cfg);
     assert.equal(result.valid, false);
     assert.ok(result.warnings.some(w => w.includes("description.provider")));
+  });
+
+  it("warns about unsupported decision providers", () => {
+    const cfg = { ...DEFAULT_CONFIG, decision: { ...DEFAULT_CONFIG.decision!, provider: "openai" } };
+    const result = validateConfig(cfg);
+    assert.equal(result.valid, false);
+    assert.ok(result.warnings.some(w => w.includes("decision.provider")));
   });
 });

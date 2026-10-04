@@ -1,5 +1,5 @@
 /**
- * @fileoverview MCP server setup exposing search_semantic, get_file_skeleton, find_usages, and describe_image tools.
+ * @fileoverview MCP server setup exposing search_semantic, get_file_skeleton, find_usages, and describe_image tools (plus make_decision when `decision.enabled`).
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -13,11 +13,14 @@ import {
   handleFileSkeleton,
   handleFindUsages,
   handleDescribeImage,
+  handleMakeDecision,
   type SearchSemanticParams,
   type FileSkeletonParams,
   type FindUsagesParams,
   type DescribeImageParams,
+  type MakeDecisionParams,
 } from "./handlers.js";
+import { SYSTEMONE_MAX_QUESTIONS } from "../decision/systemone.js";
 
 /** Options for creating the MCP server. */
 export interface McpServerOptions {
@@ -141,6 +144,53 @@ export async function createMcpServer(options?: McpServerOptions): Promise<RagMc
       }
     }
   );
+
+  // Decision tool — only when explicitly enabled (tev1 requires Ollama >= 0.35
+  // and a pulled model). The MCP server resolves config at startup.
+  if (ctx.config.decision?.enabled) {
+    server.tool(
+      "make_decision",
+      "Classify, route, or score a short text with a local decision model (tev1 via Ollama /v1/systemone). " +
+        "Provide `state` and 1-64 named questions of type `choice`, `noul`, or `score` and get the chosen option, " +
+        "true/false verdict, or rubric level with probabilities.",
+      {
+        state: z.string().min(1, "A state text is required."),
+        questions: z
+          .array(
+            z.object({
+              id: z.string().min(1, "A question id is required."),
+              type: z.enum(["choice", "noul", "score"]),
+              instructions: z.string().min(1, "Question instructions are required."),
+              criteria: z
+                .union([
+                  z.record(z.string(), z.string()),
+                  z.array(z.string()),
+                  z.object({
+                    true: z.string().optional(),
+                    false: z.string().optional(),
+                  }),
+                ])
+                .optional(),
+            })
+          )
+          .min(1)
+          .max(SYSTEMONE_MAX_QUESTIONS),
+      },
+      async (args: MakeDecisionParams) => {
+        try {
+          const result = await handleMakeDecision(args, ctx.config);
+          return {
+            content: [{ type: "text" as const, text: result.formatted }],
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Decision failed: ${err instanceof Error ? err.message : String(err)}` }],
+            isError: true,
+          };
+        }
+      }
+    );
+  }
 
   const transport = options?.transport ?? new StdioServerTransport();
   await server.connect(transport);

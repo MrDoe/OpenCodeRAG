@@ -317,6 +317,42 @@ Every field of the base section except `enabled` can be overridden (`provider`, 
 - Supported raster image extensions: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, `.bmp`. SVG is handled by the XML chunker, not the vision pipeline.
 - Descriptions are embedded using the standard embedding provider and stored as vector chunks. Re-index after enabling or changing vision settings.
 
+### `decision`
+
+Controls the local decision-model tool (`make_decision`) — fast classification, routing, policy checks, and rubrics over short text via Ollama decision models ([tev1](https://ollama.com/library/tev1)). **Disabled by default:** tev1 requires Ollama ≥ 0.35 and an explicitly pulled model. Only `provider: "ollama"` is supported.
+
+```json
+{
+  "decision": {
+    "enabled": false,
+    "provider": "ollama",
+    "baseUrl": "http://127.0.0.1:11434/api",
+    "model": "tev1:4b",
+    "timeoutMs": 120000,
+    "keepAlive": "30m",
+    "maxStateChars": 8000,
+    "routeBeforeAsking": false
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `false` | Register the `make_decision` tool (plugin + MCP) and expose `opencode-rag decide` |
+| `provider` | `"ollama"` | Decision provider — only `"ollama"` (tev1 via `/v1/systemone`) is supported for now |
+| `baseUrl` | `http://127.0.0.1:11434/api` | Ollama server URL; a trailing `/api` is stripped because decision models are served at `/v1/systemone` |
+| `model` | `"tev1:4b"` | Decision model (`tev1`/`tev1:4b`, or `tev1:0.8b` for tight memory budgets) |
+| `timeoutMs` | `120000` | Request timeout — the first call may load the model into memory |
+| `keepAlive` | `"30m"` | Ollama `keep_alive` value (e.g. `"-1"` to keep the model resident) |
+| `maxStateChars` | `8000` | Reject `state` texts longer than this (the model's effective context is ~2k tokens) |
+| `routeBeforeAsking` | `false` | When true, the injected agent guidance routes option choices through `make_decision` before asking the user — proceed on a confident answer; ask only when the model is undecided or the choice is preference-based |
+| `retryMax` / `retryBaseDelayMs` | `2` / `500` | Retry policy for retryable HTTP statuses and network errors |
+| `proxy` | — | Proxy settings (same shape as `embedding.proxy`) |
+
+**Pre-ask routing (`routeBeforeAsking`):** off by default. When enabled, the runtime system prompt, the `AGENTS.md` directive, and the `make-decision` skill tell the agent to resolve option choices with the decision model first, and to ask the user only when the model reports low `confidence` (treat below ~0.3 as undecided) or the decision depends on personal preference. This reduces interruptions without making the model the authority on high-stakes or preference-based choices.
+
+**Prerequisites:** Ollama ≥ 0.35 and a pulled model: `ollama pull tev1:0.8b` (812 MB) or `ollama pull tev1:4b` (4.4 GB). See [Plugin documentation](plugin.md#make_decision) for the tool contract.
+
 ### `openCode`
 
 Controls the OpenCode plugin integration.

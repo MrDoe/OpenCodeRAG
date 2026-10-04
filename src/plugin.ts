@@ -29,6 +29,7 @@ import {
   createAddQuirkTool,
   createUpdateQuirkTool,
   createDeleteQuirkTool,
+  createMakeDecisionTool,
 } from "./opencode/tools.js";
 import { resolveApiKey } from "./core/resolve-api-key.js";
 import { consumePendingRagInjection, peekPendingRagInjection } from "./core/rag-injection-flag.js";
@@ -873,6 +874,24 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     });
   }
 
+  // Decision tool — only when the decision model is explicitly enabled
+  // (tev1 requires Ollama >= 0.35 and a pulled model). The tool re-checks
+  // `decision.enabled` at execution time.
+  if (effectiveCfg.decision?.enabled) {
+    try {
+      const makeDecisionTool = createMakeDecisionTool({
+        config: effectiveCfg,
+      });
+      tools["make_decision"] = makeDecisionTool;
+    } catch (err) {
+      appendDebugLog(options.logFilePath, {
+        scope: "plugin",
+        message: "Failed to register make_decision tool",
+        error: err,
+      });
+    }
+  }
+
   if (readOverride) {
     const readTool = createRagReadTool({
       worktree: options.worktree,
@@ -1027,7 +1046,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
 
       const cfg = getEffectiveCfg();
       if (cfg.openCode.injectSystemPrompt !== false) {
-        const guidance = buildSystemGuidanceLines({ promptEnforcement: !!cfg.memory?.promptEnforcement });
+        const guidance = buildSystemGuidanceLines({ promptEnforcement: !!cfg.memory?.promptEnforcement, decisionEnabled: !!cfg.decision?.enabled, routeBeforeAsking: !!cfg.decision?.routeBeforeAsking });
         output.system.unshift(guidance.join("\n"));
       }
 

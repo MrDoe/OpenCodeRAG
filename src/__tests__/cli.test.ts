@@ -239,6 +239,15 @@ describe("opencode-rag init AGENTS.md", () => {
     assert.ok(content.includes("quirk capture rules"), "should contain quirk capture rules (default promptEnforcement=true)");
     assert.ok(content.includes("<!-- BEGIN opencode-rag -->"), "should contain begin sentinel");
     assert.ok(content.includes("<!-- END opencode-rag -->"), "should contain end sentinel");
+    assert.ok(!content.includes("### Decision model (`make_decision`)"), "decision section should be hidden while decision.enabled is false");
+
+    const decisionSkillPath = join(tmpDir, ".opencode", "skills", "make-decision", "SKILL.md");
+    assert.ok(existsSync(decisionSkillPath), "make-decision skill should be created");
+    const decisionSkill = readFileSync(decisionSkillPath, "utf-8");
+    assert.ok(decisionSkill.includes("name: make-decision"), "skill frontmatter should name the skill");
+    assert.ok(decisionSkill.includes("`make_decision(state, questions)`"), "skill should document the tool signature");
+    assert.ok(decisionSkill.includes("decision.enabled"), "skill should document the enablement gate");
+    assert.ok(decisionSkill.includes("tev1"), "skill should document the model requirement");
   });
 
   it("preserves existing custom content and appends the directive", async () => {
@@ -324,6 +333,26 @@ describe("mergeAgentsMdContent helper", () => {
   it("includes quirk rules when promptEnforcement is true (default)", () => {
     const out = mergeAgentsMdContent(undefined, { promptEnforcement: true });
     assert.ok(out.includes("quirk capture rules"), "quirk rules should be present");
+  });
+
+  it("includes the decision-model section when decisionEnabled is true", () => {
+    const out = mergeAgentsMdContent(undefined, { decisionEnabled: true });
+    assert.ok(out.includes("### Decision model (`make_decision`)"), "decision section should be present");
+    assert.ok(out.includes("1-64 questions"), "should describe the question limit");
+    assert.ok(out.includes("`choice`"), "should describe the question types");
+    assert.ok(out.includes("high-stakes"), "should warn against sole reliance for high-stakes calls");
+  });
+
+  it("omits the decision-model section by default", () => {
+    const out = mergeAgentsMdContent(undefined);
+    assert.ok(!out.includes("### Decision model (`make_decision`)"), "decision section should be hidden by default");
+  });
+
+  it("adds the route-before-asking rule only when routeBeforeAsking is enabled", () => {
+    const on = mergeAgentsMdContent(undefined, { decisionEnabled: true, routeBeforeAsking: true });
+    assert.ok(on.includes("route option choices through `make_decision`"), "routing rule should be present");
+    const off = mergeAgentsMdContent(undefined, { decisionEnabled: true });
+    assert.ok(!off.includes("route option choices through `make_decision`"), "routing rule should be hidden by default");
   });
 });
 

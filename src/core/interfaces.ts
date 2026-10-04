@@ -67,6 +67,82 @@ export interface DescriptionProvider {
   generateText(system: string, user: string, opts?: { timeoutMs?: number }): Promise<string>;
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Decision model (tev1) — classification/decision making
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Question types supported by the decision model. */
+export type DecisionQuestionType = "choice" | "noul" | "score";
+
+/**
+ * A single question asked of the decision model.
+ *
+ * - `choice`: `criteria` maps option name → description (2-24 options);
+ *   add a `none` option when no listed option may fit.
+ * - `noul`: true/false probability; optional `criteria` describes each side.
+ * - `score`: `criteria` is an ordered array of level descriptions, lowest first.
+ */
+export interface DecisionQuestion {
+  /** Unique name for the question; answers are keyed by it. */
+  id: string;
+  /** Question type. */
+  type: DecisionQuestionType;
+  /** Natural-language instruction describing what to decide. */
+  instructions: string;
+  /** Answer criteria — shape depends on `type` (see interface docs). */
+  criteria?: Record<string, string> | string[] | { true?: string; false?: string };
+}
+
+/** The model's answer to a single question. */
+export interface DecisionAnswer {
+  /** Question id this answer belongs to. */
+  id: string;
+  /** Question type this answer belongs to. */
+  type: DecisionQuestionType;
+  /** Chosen option for `choice` questions. */
+  choice?: string;
+  /** Probability that a `noul` question is true (0-1). */
+  noul?: number;
+  /** Probability-weighted level for `score` questions (0-based). */
+  score?: number;
+  /** Level labels for `score` answers, lowest first. */
+  legend?: string[];
+  /** Probability distribution over options (choice) or levels (score). */
+  probabilities?: Record<string, number> | number[];
+  /**
+   * How concentrated the probability mass is (0-1). This is NOT the chance
+   * the answer is correct — use it to detect an undecided model.
+   */
+  confidence?: number;
+}
+
+/** Request payload for a decision-model call. */
+export interface DecisionRequest {
+  /** Text (or JSON string) the questions are judged against. Keep it short. */
+  state: string;
+  /** 1-64 named questions. */
+  questions: DecisionQuestion[];
+}
+
+/** Result of a decision-model call. */
+export interface DecisionResult {
+  /** One answer per requested question, in request order. */
+  answers: DecisionAnswer[];
+  /** Raw provider response, retained for diagnostics. */
+  raw?: unknown;
+}
+
+/**
+ * Answers classification/decision questions against a text using a decision
+ * model (tev1 via Ollama's `/v1/systemone`).
+ */
+export interface DecisionProvider {
+  /** Provider name (e.g. "ollama"). */
+  readonly name: string;
+  /** Run a decision request; one answer is returned per question. */
+  decide(request: DecisionRequest, abort?: AbortSignal): Promise<DecisionResult>;
+}
+
 /** Explains how a search result score was computed, including vector and keyword contributions. */
 export interface SearchExplanation {
   /** Breakdown of the fused score components. */

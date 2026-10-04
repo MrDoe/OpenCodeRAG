@@ -168,6 +168,52 @@ export interface ImageDescriptionConfig {
   onDemand?: ImageDescriptionOnDemandConfig;
 }
 
+/**
+ * Configuration for decision-model (tev1) calls via Ollama's
+ * `/v1/systemone` endpoint — classification, routing, policy checks, and
+ * rubrics.
+ */
+export interface DecisionConfig {
+  /**
+   * Whether the `make_decision` tool is available. Default false: tev1
+   * requires Ollama >= 0.35 and an explicitly pulled model (`ollama pull tev1`).
+   */
+  enabled: boolean;
+  /** Decision provider name. Only "ollama" is supported for now. */
+  provider: string;
+  /**
+   * Base URL of the Ollama server. Both root URLs (`http://127.0.0.1:11434`)
+   * and the `/api`-suffixed convention used by the other sections are
+   * accepted — `/api` is stripped because decision models are served at
+   * `/v1/systemone`.
+   */
+  baseUrl: string;
+  /** Decision model name (`tev1`/`tev1:4b` or `tev1:0.8b`). */
+  model: string;
+  /** Request timeout in milliseconds. The first call may load the model. */
+  timeoutMs: number;
+  /** Ollama keep_alive value (e.g. "30m", "-1" for keep-in-memory). */
+  keepAlive?: string;
+  /** Proxy configuration. */
+  proxy?: ProxyConfig;
+  /**
+   * When enabled, agent guidance instructs the agent to route choices through
+   * `make_decision` before asking the user (proceed on a confident answer;
+   * ask only when the model is undecided or the choice is preference-based).
+   * Default false — asking the user stays the default behavior.
+   */
+  routeBeforeAsking?: boolean;
+  /**
+   * Maximum characters accepted for `state`. The decision context is small
+   * (~2k tokens), so oversized states are rejected instead of truncated.
+   */
+  maxStateChars?: number;
+  /** Maximum retry attempts on retryable failures. */
+  retryMax?: number;
+  /** Base delay in ms between retries (exponential backoff). */
+  retryBaseDelayMs?: number;
+}
+
 export interface UiConfig {
   /** HTTP port for the UI server. */
   port: number;
@@ -546,6 +592,8 @@ export interface RagConfig {
   description?: DescriptionConfig;
   /** Vision-model-based image description config. */
   imageDescription?: ImageDescriptionConfig;
+  /** Decision-model (tev1) config for the `make_decision` tool. */
+  decision?: DecisionConfig;
   /** Automated documentation mode config. */
   documentationMode?: DocumentationModeConfig;
   /** Wiki mode config that instructs the AI agent to maintain a persistent knowledge wiki. */
@@ -751,6 +799,18 @@ export const DEFAULT_CONFIG: RagConfig = {
     numCtx: 2048,
     resizeMaxDimension: 1024,
   },
+  decision: {
+    enabled: false,
+    provider: "ollama",
+    baseUrl: "http://127.0.0.1:11434/api",
+    model: "tev1:4b",
+    timeoutMs: 120000,
+    keepAlive: "30m",
+    maxStateChars: 8000,
+    routeBeforeAsking: false,
+    retryMax: 2,
+    retryBaseDelayMs: 500,
+  },
   description: {
     enabled: true,
     provider: "ollama",
@@ -936,7 +996,7 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   const KNOWN_TOP_KEYS = new Set([
     "embedding", "indexing", "vectorStore", "retrieval", "reranking",
     "openCode", "chunkers", "chunking", "description",
-    "imageDescription", "documentationMode", "wikiMode", "mcp", "autoUpdate", "memory", "ui", "tui", "logging",
+    "imageDescription", "decision", "documentationMode", "wikiMode", "mcp", "autoUpdate", "memory", "ui", "tui", "logging",
   ]);
   const topKeys = new Set(Object.keys(config as unknown as Record<string, unknown>));
   for (const key of topKeys) {
@@ -1107,6 +1167,21 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     }
   }
 
+  if (config.decision) {
+    if (config.decision.provider !== "ollama") {
+      warnings.push(`decision.provider "${config.decision.provider}" is not supported yet — only "ollama" (tev1 via /v1/systemone)`);
+    }
+    if (config.decision.timeoutMs != null && config.decision.timeoutMs <= 0) {
+      warnings.push("decision.timeoutMs must be > 0");
+    }
+    if (config.decision.maxStateChars != null && config.decision.maxStateChars <= 0) {
+      warnings.push("decision.maxStateChars must be > 0");
+    }
+    try { new URL(config.decision.baseUrl); } catch {
+      warnings.push(`decision.baseUrl "${config.decision.baseUrl}" is not a valid URL`);
+    }
+  }
+
   if (config.reranking?.enabled) {
     const rr = config.reranking;
     if (!rr.baseUrl) warnings.push("reranking.baseUrl must be set when reranking.enabled is true");
@@ -1240,6 +1315,10 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
       ...DEFAULT_CONFIG.imageDescription,
       ...(safeObj<ImageDescriptionConfig>((parsed as { imageDescription?: unknown }).imageDescription) ?? {}),
     } as ImageDescriptionConfig,
+    decision: {
+      ...DEFAULT_CONFIG.decision,
+      ...(safeObj<DecisionConfig>((parsed as { decision?: unknown }).decision) ?? {}),
+    } as DecisionConfig,
     documentationMode: {
       ...DEFAULT_CONFIG.documentationMode,
       ...(safeObj<DocumentationModeConfig>((parsed as { documentationMode?: unknown }).documentationMode) ?? {}),

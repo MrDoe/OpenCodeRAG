@@ -31,6 +31,7 @@ The project follows **interfaces over classes**, **factory pattern**, and **adap
 | `EmbeddingProvider` | Generates vector embeddings | `embed(texts[], purpose?): Promise<number[][]>` |
 | `VectorStore` | Stores/retrieves vectors | `addChunks()`, `search()`, `clear()`, `deleteByFilePath()` |
 | `DescriptionProvider` | Generates NL descriptions for chunks | `generateDescription(chunk)`, `generateBatchDescriptions(chunks)` |
+| `DecisionProvider` | Answers classification/decision questions (tev1) | `decide(request): Promise<DecisionResult>` |
 | `KeywordIndex` | TF×IDF inverted index | `addChunks()`, `search()`, `removeByFilePath()`, `save()`, `load()` |
 
 ### Core Data Types
@@ -110,6 +111,15 @@ See [doc/chunking.md](chunking.md) for the full language matrix.
 | `factory.ts` | `createDescriptionProvider()` dispatch |
 | `anthropic.ts` | Anthropic provider |
 | `gemini.ts` | Gemini provider |
+
+### Decision (`src/decision/`)
+
+| File | Role |
+|---|---|
+| `systemone.ts` | `OllamaDecisionProvider` — tev1 via Ollama `POST /v1/systemone` (URL normalization, parsing, retries) |
+| `factory.ts` | `createDecisionProvider()` dispatch (only `"ollama"` implemented) |
+| `validate.ts` | Shared request validation (ids, 2–24 options/levels, `state` length) |
+| `format.ts` | Shared markdown formatting for decision answers |
 
 ### Retrieval (`src/retriever/`)
 

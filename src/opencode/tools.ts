@@ -16,7 +16,7 @@
 
 import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
 import type { ToolDefinition } from "@opencode-ai/plugin";
-import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult, type DecisionProvider } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { SUPPORTED_IMAGE_EXTENSIONS, createImageVisionProvider, resolveOnDemandImageConfig, getMimeType, type ImageVisionProvider } from "../chunker/image.js";
 import { resizeImage } from "../content/image.js";
@@ -26,6 +26,10 @@ import type { ParserOverrides } from "../core/parser-overrides.js";
 import { readFileSync } from "node:fs";
 import { resolveWorkspacePath } from "./tool-args.js";
 import { addQuirk, updateQuirk, removeQuirk, recallQuirks } from "../quirks/quirk-store.js";
+import { createDecisionProvider } from "../decision/factory.js";
+import { validateDecisionRequest } from "../decision/validate.js";
+import { formatDecisionAnswers } from "../decision/format.js";
+import { SYSTEMONE_MAX_QUESTIONS } from "../decision/systemone.js";
 
 // Skeleton configuration (extension → grammar + node types) and extraction
 // live in ../chunker/skeleton.ts, shared with the MCP server so both surfaces
@@ -830,6 +834,124 @@ export function createDeleteQuirkTool(options: DeleteQuirkToolOptions): ToolDefi
           title: "Quirk delete",
           output: `Failed to delete quirk: ${err instanceof Error ? err.message : String(err)}`,
           metadata: { tool: "delete_quirk", error: String(err) },
+        };
+      }
+    },
+  });
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tool 8: make_decision
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Options for creating the `make_decision` tool. */
+export interface MakeDecisionToolOptions {
+  /** Resolved RAG config; `config.decision` gates and parameterizes the call. */
+  config: RagConfig;
+  /** Injectable provider (tests); defaults to `createDecisionProvider(config.decision)`. */
+  provider?: DecisionProvider;
+}
+
+/**
+ * Create the `make_decision` tool.
+ *
+ * Answers classification/decision questions against a short text using the
+ * configured decision model (tev1 via Ollama's `/v1/systemone`). The model is
+ * NOT a chat model — `state` is scored against named questions of type
+ * `choice`, `noul`, or `score`, and answers carry probabilities.
+ *
+ * Registered by the plugin only when `decision.enabled` is true; the tool
+ * re-checks the flag at execution time so runtime config changes degrade to a
+ * clear error instead of a stale provider call.
+ *
+ * @param options - Resolved config and an optional injected provider.
+ * @returns A tool definition suitable for OpenCode plugin registration.
+ */
+export function createMakeDecisionTool(options: MakeDecisionToolOptions): ToolDefinition {
+  const { config, provider } = options;
+
+  return tool({
+    description:
+      "Classify, route, or score a short text with a local decision model (tev1 via Ollama /v1/systemone). " +
+      "Provide `state` (the text to judge) and 1-64 named `questions`. " +
+      "Question types: `choice` (pick one of 2-24 options — `criteria` maps option → description; include a \"none\" option when no listed option may fit), " +
+      "`noul` (true/false probability; optional criteria {\"true\": \"...\", \"false\": \"...\"}), " +
+      "and `score` (`criteria` is an ordered array of 2-24 level descriptions, lowest first). " +
+      "Returns the chosen option, verdict, or level with probabilities. Keep `state` short — the model's effective context is ~2k tokens. " +
+      "Use for fast classification and policy checks; never as the only check for a high-stakes decision.",
+
+    args: {
+      state: tool.schema.string().min(1, "A state text is required."),
+      questions: tool.schema
+        .array(
+          tool.schema.object({
+            id: tool.schema.string().min(1, "A question id is required."),
+            type: tool.schema.enum(["choice", "noul", "score"]),
+            instructions: tool.schema.string().min(1, "Question instructions are required."),
+            criteria: tool.schema
+              .union([
+                tool.schema.record(tool.schema.string(), tool.schema.string()),
+                tool.schema.array(tool.schema.string()),
+                tool.schema.object({
+                  true: tool.schema.string().optional(),
+                  false: tool.schema.string().optional(),
+                }),
+              ])
+              .optional(),
+          })
+        )
+        .min(1)
+        .max(SYSTEMONE_MAX_QUESTIONS),
+    },
+
+    async execute(args, _context: ToolContext) {
+      try {
+        const decisionConfig = config.decision;
+        if (!decisionConfig?.enabled) {
+          return {
+            title: "Make decision",
+            output: "Decision model is not enabled in config (decision.enabled).",
+            metadata: { tool: "make_decision", error: "disabled" },
+          };
+        }
+
+        const validationError = validateDecisionRequest({
+          state: args.state,
+          questions: args.questions,
+          maxStateChars: decisionConfig.maxStateChars,
+        });
+        if (validationError) {
+          return {
+            title: "Make decision",
+            output: `Invalid decision request: ${validationError}`,
+            metadata: { tool: "make_decision", error: "invalid_request" },
+          };
+        }
+
+        const decisionProvider = provider ?? createDecisionProvider(decisionConfig);
+        const result = await decisionProvider.decide({
+          state: args.state,
+          questions: args.questions,
+        });
+
+        return {
+          title: `Decision (${result.answers.length} question${result.answers.length === 1 ? "" : "s"})`,
+          output: formatDecisionAnswers(result.answers, {
+            provider: decisionProvider.name,
+            model: decisionConfig.model,
+          }),
+          metadata: {
+            tool: "make_decision",
+            provider: decisionProvider.name,
+            model: decisionConfig.model,
+            answers: result.answers,
+          },
+        };
+      } catch (err) {
+        return {
+          title: "Make decision",
+          output: `Decision failed: ${err instanceof Error ? err.message : String(err)}`,
+          metadata: { tool: "make_decision", error: String(err) },
         };
       }
     },

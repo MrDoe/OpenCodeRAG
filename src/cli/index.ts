@@ -33,6 +33,7 @@ import {
   registerEvalAnalyzeCommand,
   registerEvalCompareCommand,
   registerDescribeImageCommand,
+  registerDecideCommand,
   registerQuirkCommand,
 } from "./commands/index.js";
 
@@ -59,6 +60,7 @@ registerListCommand(program);
 registerShowCommand(program);
 registerDumpCommand(program);
 registerDescribeImageCommand(program);
+registerDecideCommand(program);
 registerUiCommand(program);
 registerMcpCommand(program);
 registerSetupCommand(program);

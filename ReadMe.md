@@ -1,6 +1,6 @@
 ﻿# OpenCodeRAG
 
-OpenCodeRAG is a **local-first RAG plugin** for semantic code and image search. It converts your codebase into vector indices and retrieves relevant code chunks on natural language queries. The primary aim is to save tokens by replacing full-file reads with targeted chunk retrieval and to speed-up tool calls for large codebases. Integrates seamlessly with [OpenCode](https://opencode.ai) and works as a standalone MCP server or CLI tool for other AI harnesses.
+OpenCodeRAG is a **local-first RAG plugin** for semantic code and image search, with a built-in **local decision model** for fast classification. It converts your codebase into vector indices and retrieves relevant code chunks on natural language queries. The primary aim is to save tokens by replacing full-file reads with targeted chunk retrieval and to speed-up tool calls for large codebases. Integrates seamlessly with [OpenCode](https://opencode.ai) and works as a standalone MCP server or CLI tool for other AI harnesses.
 
 You don't need a dedicated GPU to run smaller embedding LLMs, as these models can still run performant on modern CPUs.
 
@@ -48,10 +48,11 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 | **Document support** | Markdown, LaTeX, PDF, DOCX, DOC, Excel |
 | **Image indexing** | Describe images via vision LLM and store descriptions as searchable vector chunks |
 | **Hybrid search** | Vector similarity + TF×IDF keyword fusion |
+| **Decision model** | Local [tev1](https://ollama.com/library/tev1) classification — `make_decision` labels, routes, and scores short text with probabilities (40–150 ms warm); optional pre-ask routing so the agent asks fewer questions |
 | **OpenCode plugin** | Auto-inject context, read-tool override, TUI settings, Ctrl+Enter to add RAG context, MCP registration on `init` |
 | **Incremental indexing** | File-hash manifest, background watcher, auto-rebuild on corruption |
 | **Privacy-first** | All processing stays local (when using Ollama) |
-| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `ui`, `mcp`, `setup`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare` |
+| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `decide`, `ui`, `mcp`, `setup`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare` |
 | **Proxy-aware** | Corporate proxy support with raw-socket localhost bypass |
 | **OpenAI / Anthropic / Cohere** | Use alternate embedding providers with API key auto-resolution |
 | **Evaluation** | Session-level token tracking, RAG-on vs RAG-off comparison, tiktoken BPE counting |
@@ -75,7 +76,7 @@ Launch with `opencode-rag ui`. See [Web UI documentation](doc/webui.md) for deta
 |---|---|
 | [Architecture](doc/architecture.md) | Module design, data flow, tech stack |
 | [Installation](doc/installation.md) | Full install guide, global setup, uninstall |
-| [Configuration](doc/configuration.md) | All options: embedding, indexing, retrieval, description, image description, plugin |
+| [Configuration](doc/configuration.md) | All options: embedding, indexing, retrieval, description, image description, decision, plugin |
 | [Chunking](doc/chunking.md) | Language matrix, adding new chunkers, custom chunkers |
 | [Embedding](doc/embedding.md) | Providers, model recommendations, proxy, dimension probing |
 | [Retrieval](doc/retrieval.md) | Pipeline, hybrid search, score fusion, caching |
@@ -86,6 +87,63 @@ Launch with `opencode-rag ui`. See [Web UI documentation](doc/webui.md) for deta
 | [Development](doc/development.md) | Setup, testing, conventions, adding providers |
 | [Troubleshooting](doc/troubleshooting.md) | Common issues, logging, debugging |
 | [Roadmap](doc/roadmap.md) | Completed items, short/mid/long-term plans |
+
+## Decision Model (`make_decision`)
+
+OpenCodeRAG answers fast **classification, routing, policy, and scoring questions** with a local decision model — Together AI's [tev1](https://ollama.com/library/tev1) via Ollama's `/v1/systemone` endpoint. Unlike chat models, tev1 scores a short `state` against 1–64 named questions and returns the chosen option with probabilities — typically in **40–150 ms warm**, without spending agent tokens.
+
+| Question type | Use it for | Example |
+|---|---|---|
+| `choice` | Pick one of 2–24 options | "Which support intent is this?" → duplicate_charge / cancel / none |
+| `noul` | True/false probability | "Does the customer explicitly ask for a refund?" |
+| `score` | Place the input on a rubric | "How severe is this incident?" → cosmetic … critical |
+
+One call, two questions:
+
+```json
+{
+  "state": "Customer: I was charged twice for the October subscription ($19.99 each). Please refund the extra charge.",
+  "questions": [
+    { "id": "intent", "type": "choice", "instructions": "Which support intent matches?",
+      "criteria": { "duplicate_charge": "Charged more than once", "cancel": "Wants to cancel", "none": "None of the above" } },
+    { "id": "refund", "type": "noul", "instructions": "Does the customer explicitly ask for a refund?" }
+  ]
+}
+```
+
+```
+**Decision** — ollama/tev1:0.8b
+
+- **intent** = `duplicate_charge` (confidence 0.97)
+- **refund** = true (p=0.96)
+```
+
+**Prerequisites:** Ollama ≥ 0.35 and a pulled model:
+
+```bash
+ollama pull tev1:0.8b   # 812 MB, fast — good for quick labels and CI
+ollama pull tev1:4b     # 4.4 GB, more accurate — recommended when scoring
+```
+
+**Disabled by default** — opt in via `decision.enabled`:
+
+```json
+{
+  "decision": {
+    "enabled": true,
+    "provider": "ollama",
+    "model": "tev1:0.8b",
+    "keepAlive": "30m",
+    "routeBeforeAsking": false
+  }
+}
+```
+
+**Using it well:** always include a `none` / "cannot be determined" option; keep `state` to the relevant excerpt (the effective context is ~2k tokens); treat `confidence < ~0.3` as undecided; don't use it for factual recall or as the only check for high-stakes decisions.
+
+**Pre-ask routing (optional):** with `decision.routeBeforeAsking: true`, the injected agent guidance tells the agent to resolve option choices through `make_decision` before asking you — proceeding on a confident answer and asking only when the model is undecided or the choice is preference-based. Off by default.
+
+`opencode-rag decide` exposes the same engine from the CLI, and `init` creates a dedicated `make-decision` agent skill. See [Plugin documentation](doc/plugin.md#make_decision) and [Configuration](doc/configuration.md#decision).
 
 ## Image Indexing
 
@@ -190,7 +248,7 @@ OpenCodeRAG ships a CLI-based [MCP (Model Context Protocol)](https://spec.modelc
 opencode-rag mcp
 ```
 
-> **Note:** The MCP server is **optional**. When running as an OpenCode plugin, the four tools are registered **in-process** and work without the MCP server. The `chat.message` hook for hotkey injection also runs in-process. The MCP server is only needed when an **external** MCP client connects to OpenCodeRAG. The plugin auto-starts the server only if `mcp.enabled` is `true` in your config (default: `false`).
+> **Note:** The MCP server is **optional**. When running as an OpenCode plugin, the tools are registered **in-process** and work without the MCP server. The `chat.message` hook for hotkey injection also runs in-process. The MCP server is only needed when an **external** MCP client connects to OpenCodeRAG. The plugin auto-starts the server only if `mcp.enabled` is `true` in your config (default: `false`).
 
 ### MCP Tools
 
@@ -200,19 +258,21 @@ opencode-rag mcp
 | `get_file_skeleton` | AST-based file outline (functions, classes, methods) |
 | `find_usages` | Find all references to a symbol by name |
 | `describe_image` | Describe an image file with the configured vision model (`imageDescription.onDemand` overrides apply) |
+| `make_decision` | Classify/route/score short text with the local tev1 decision model (only when `decision.enabled` is `true`) |
 
 Clients can configure the MCP server manually, or `opencode-rag init` auto-registers it.
 
 ## Agent Discovery
 
-OpenCodeRAG registers tools that agents can invoke directly. Agents discover these tools via the OpenCode **skill system** - when `opencode-rag init` runs, it creates `.opencode/skills/opencode-rag/SKILL.md` which teaches agents the recommended workflow:
+OpenCodeRAG registers tools that agents can invoke directly. Agents discover these tools via the OpenCode **skill system** - `opencode-rag init` creates `.opencode/skills/opencode-rag/SKILL.md` (workflow guidance) and `.opencode/skills/make-decision/SKILL.md` (decision-model guidance):
 
 1. **Skeleton first** - `get_file_skeleton(filePath)` to orient in a file
 2. **Find usages** - `find_usages(symbolName)` before editing any symbol
 3. **Search** - `search_semantic(query)` to find relevant code
 4. **Describe images** - `describe_image(filePath)` when context involves an image
-5. **Read** - use `read` on specific line ranges
-6. **Edit** - make changes with full context
+5. **Decide** - `make_decision(state, questions)` when a task reduces to a choice, true/false check, or rubric score over short text (when `decision.enabled`; with `decision.routeBeforeAsking` the agent resolves such choices before asking you)
+6. **Read** - use `read` on specific line ranges
+7. **Edit** - make changes with full context
 
 ### Available Tools
 
@@ -222,6 +282,7 @@ OpenCodeRAG registers tools that agents can invoke directly. Agents discover the
 | `get_file_skeleton` | Quick file overview via AST | Before reading a large file to decide which sections matter |
 | `find_usages` | Symbol reference search | **Before editing** any function, variable, or class |
 | `describe_image` | Live image description via the configured vision model | When a user asks about a screenshot, diagram, or visual asset |
+| `make_decision` | Live classification/routing/scoring via the local tev1 decision model (when enabled) | When a task reduces to a choice, true/false check, or rubric score over short text |
 | `read` (optional) | RAG-enhanced file read | Full file contents with supplementary context chunks |
 
 ## OpenCode Integration
@@ -229,7 +290,7 @@ OpenCodeRAG registers tools that agents can invoke directly. Agents discover the
 When using OpenCode, the plugin enhances your agent with three discovery mechanisms:
 
 ### 1. Skill-Based Discovery
-`opencode-rag init` creates `.opencode/skills/opencode-rag/SKILL.md` - an OpenCode skill that teaches agents the tool workflow. Agents load it on demand via the `skill` tool, keeping token overhead minimal.
+`opencode-rag init` creates `.opencode/skills/opencode-rag/SKILL.md` (tool workflow) and `.opencode/skills/make-decision/SKILL.md` (decision-model usage). Agents load them on demand via the `skill` tool, keeping token overhead minimal.
 
 ### 2. System Prompt Guidance
 When chunks are indexed, a brief tool list is prepended to the system prompt so agents know the tools exist. This is skipped when no chunks are indexed to save tokens.

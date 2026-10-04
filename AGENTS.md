@@ -17,7 +17,7 @@ If no results, run `opencode-rag index`.
 
 Entry points: `src/index.ts` (library), `src/plugin-entry.ts` (OpenCode plugin), `src/cli.ts` (CLI), `src/tui.ts` (TUI), `src/web/server.ts` (Web UI).
 
-Core modules: `src/core/` (config, interfaces, manifest), `src/chunker/` (AST chunking), `src/embedder/` (Ollama/OpenAI/Cohere), `src/describer/` (LLM descriptions), `src/retriever/` (vector + keyword hybrid), `src/vectorstore/` (LanceDB), `src/opencode/` (plugin integration).
+Core modules: `src/core/` (config, interfaces, manifest), `src/chunker/` (AST chunking), `src/embedder/` (Ollama/OpenAI/Cohere), `src/describer/` (LLM descriptions), `src/decision/` (decision models via Ollama `/v1/systemone`), `src/retriever/` (vector + keyword hybrid), `src/vectorstore/` (LanceDB), `src/opencode/` (plugin integration).
 
 Full architecture: [doc/architecture.md](doc/architecture.md).
 
@@ -47,6 +47,7 @@ Full architecture: [doc/architecture.md](doc/architecture.md).
 - **watch.ts ignores both excludeDirs AND excludeFiles**: `createWatchIgnore` uses both matchers — any excludeFiles pattern applies to file-watch ignore too.
 - **`walkFiles` signature changed**: `excludeDirs`/`excludeFiles` params changed from `Set<string>` to `ExcludeMatcher`; `rootDir` param added. If you import `walkFiles` directly, update the call site or use `scanWorkspaceFiles` instead.
 - **Watcher runs once per workspace**: `createBackgroundIndexer` claims `{storePath}/watcher.lock` (atomic O_EXCL create + PID liveness via `process.kill(pid, 0)`). Only ONE process runs the auto-index watcher per workspace; later claimants go dormant (no chokidar/scheduler/passes) and take over via a 60s unref'd re-check timer after the owner exits. CLI `index --watch` shares the same lock — if a plugin watcher already owns the workspace it warns and exits 0. Only the owner's `close()` releases the lock; stale/corrupt lock files are auto-reclaimed.
+- **`make_decision` / tev1**: requires Ollama >= 0.35 (`/v1/systemone` — root-level, so a trailing `/api` base URL is stripped) and a pulled model (`ollama pull tev1:0.8b` / `tev1:4b`); gated behind `decision.enabled` (default `false`), so the tool is only registered when enabled. Keep `state` short (effective context ~2k tokens; 64 KiB request cap); `choice`/`score` take 2–24 options/levels; `confidence` is probability concentration, NOT the chance the answer is right. 404s are split by cause: route missing (Go's "404 page not found") → Ollama >= 0.35 hint; model missing ("try pulling it first") → `ollama pull <model>` hint.
 
 ## Resource Lifecycle
 
@@ -94,6 +95,14 @@ ALWAYS use OpenCodeRAG tools before reading or editing:
 - **Fix quirks** — `update_quirk(id, ...)` / `delete_quirk(id)` when a stored quirk is outdated or wrong
 
 If no results, run `opencode-rag index`.
+
+### Decision model (`make_decision`)
+
+- Classify, route, or score short text with the local tev1 model (`state` + 1-64 questions).
+- Question types: `choice` (options map to descriptions), `noul` (true/false probability), `score` (ordered rubric levels, lowest first).
+- Keep `state` short (~2k-token context); add a `none` option when no listed option may fit.
+- Never use it as the only check for a high-stakes decision.
+- With `decision.routeBeforeAsking` enabled: route option choices through `make_decision` before asking the user; ask the user only when the model is undecided (low confidence) or the choice is preference-based.
 
 ### Decision tree — ALWAYS follow this order
 1. User mentions code behavior/architecture → `search_semantic(query)`

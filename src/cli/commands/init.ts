@@ -24,6 +24,7 @@ import {
   buildWorkspacePackageJson,
   generateDefaultConfigJson,
   generateSkillFile,
+  generateDecisionSkillFile,
   generateWorkspacePluginFile,
   generateWorkspaceTuiPluginFile,
   installPluginFromGlobal,
@@ -188,21 +189,45 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
         console.log(`  ${c.exists("Exists:")}   .opencode/skills/opencode-rag/SKILL.md`);
       }
 
+      // Separate decision-model skill — loaded on demand when a task needs
+      // classification/routing/scoring via `make_decision`.
+      const decisionSkillDir = path.join(skillsDir, "make-decision");
+      const decisionSkillPath = path.join(decisionSkillDir, "SKILL.md");
+      if (!existsSync(decisionSkillDir)) {
+        mkdirSync(decisionSkillDir, { recursive: true });
+        console.log(`  ${c.created("Created:")}  .opencode/skills/make-decision/`);
+      }
+      const decisionSkillContent = generateDecisionSkillFile();
+      const decisionSkillExists = existsSync(decisionSkillPath);
+      if (!decisionSkillExists || options.force) {
+        writeFileSync(decisionSkillPath, decisionSkillContent, "utf-8");
+        console.log(`  ${decisionSkillExists ? c.updated("Updated:") : c.created("Created:")} .opencode/skills/make-decision/SKILL.md`);
+      } else if (readFileSync(decisionSkillPath, "utf-8") !== decisionSkillContent) {
+        writeFileSync(decisionSkillPath, decisionSkillContent, "utf-8");
+        console.log(`  ${c.updated("Updated:")}  .opencode/skills/make-decision/SKILL.md`);
+      } else {
+        console.log(`  ${c.exists("Exists:")}   .opencode/skills/make-decision/SKILL.md`);
+      }
+
       const agentsMdPath = path.join(cwd, "AGENTS.md");
       const agentsMdExists = existsSync(agentsMdPath);
-      // Read effective promptEnforcement from existing config (if present)
+      // Read effective memory/decision flags from existing config (if present)
       let promptEnforcement = true;
+      let decisionEnabled = false;
+      let routeBeforeAsking = false;
       try {
         if (existsSync(configPath)) {
           const existingCfg = loadConfig(configPath, false);
           promptEnforcement = existingCfg.memory?.promptEnforcement ?? true;
+          decisionEnabled = existingCfg.decision?.enabled ?? false;
+          routeBeforeAsking = existingCfg.decision?.routeBeforeAsking ?? false;
         }
       } catch {
-        // Malformed or missing config — use default
+        // Malformed or missing config — use defaults
       }
       const nextAgentsMd = mergeAgentsMdContent(
         agentsMdExists ? readFileSync(agentsMdPath, "utf-8") : undefined,
-        { promptEnforcement },
+        { promptEnforcement, decisionEnabled, routeBeforeAsking },
       );
       if (!agentsMdExists || options.force) {
         writeFileSync(agentsMdPath, nextAgentsMd, "utf-8");

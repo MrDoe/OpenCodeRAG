@@ -36,6 +36,7 @@ opencode-rag init [options]
 - `opencode-rag.json` — runtime configuration
 - `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`
 - `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
+- `.opencode/skills/make-decision/SKILL.md` — decision-model skill (question types, prerequisites, optional pre-ask routing)
 - `AGENTS.md` — always-loaded tool-usage directive (merged into existing content via sentinel markers; includes mandatory tool guidance, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules)
 - Runs `npm install` to install workspace dependencies
 
@@ -237,6 +238,46 @@ opencode-rag describe-image <filePath> [options]
 
 **Requirements:** `imageDescription.enabled` must be `true` in config. The image is resized (per `resizeMaxDimension`), base64-encoded, and sent to the configured vision provider, which returns a natural-language description. When `imageDescription.onDemand` is set, the command uses those overrides (and logs `Source: imageDescription.onDemand override`) instead of the indexing model.
 
+### `decide`
+
+Answer classification/decision questions with the configured decision model (tev1 via Ollama's `/v1/systemone`). Useful for testing decision settings without going through an agent.
+
+```bash
+opencode-rag decide [question] [options]
+```
+
+**Arguments:**
+| Arg | Description |
+|---|---|
+| `[question]` | Question/instruction to decide (single-question mode) |
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `--state <text>` | — | Text to judge (alternative: `--state-file`, or pipe via stdin) |
+| `--state-file <path>` | — | Read the text to judge from a file (`-` for stdin) |
+| `-t, --type <type>` | `choice` | Question type: `choice`, `noul`, or `score` |
+| `--options <list>` | — | Comma-separated options (choice) or level descriptions, lowest first (score) |
+| `--questions <json>` | — | Full questions array as JSON (advanced, multi-question) |
+| `--questions-file <path>` | — | Read the questions array from a JSON file |
+| `--json` | `false` | Print the raw answers as JSON |
+| `-c, --config <path>` | auto-detected | Path to config file |
+
+**Requirements:** `decision.enabled` must be `true` and `decision` must point at a running Ollama server with a pulled tev1 model. Examples:
+
+```bash
+# choice (single question)
+opencode-rag decide "Which intent is this?" --state-file ticket.txt \
+  --options duplicate_charge,cancel_subscription,none
+
+# true/false probability over piped stdin
+cat message.txt | opencode-rag decide "Does the customer ask for a refund?" --type noul
+
+# full passthrough
+opencode-rag decide --state "Hello World" --questions \
+  '[{"id":"says_hello","type":"noul","instructions":"Does the state contain a greeting?"}]'
+```
+
 ### `ui`
 
 Start the web dashboard UI for exploring the indexed vector database.
@@ -265,7 +306,7 @@ opencode-rag mcp [options]
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
 
-Exposes `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools. Clients can configure the server manually, or `opencode-rag init` auto-registers it. The plugin auto-starts the MCP server only when `mcp.enabled` is `true` (default: `false`). Running `opencode-rag mcp` manually always starts the server regardless of `mcp.enabled`. See the [MCP Server](../ReadMe.md#mcp-server) section in the README.
+Exposes `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools (plus `make_decision` when `decision.enabled` is `true`). Clients can configure the server manually, or `opencode-rag init` auto-registers it. The plugin auto-starts the MCP server only when `mcp.enabled` is `true` (default: `false`). Running `opencode-rag mcp` manually always starts the server regardless of `mcp.enabled`. See the [MCP Server](../ReadMe.md#mcp-server) section in the README.
 
 ### `quirk`
 

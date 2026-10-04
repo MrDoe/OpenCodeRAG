@@ -1,7 +1,7 @@
 /**
  * @fileoverview Handler implementations for all MCP tools: semantic search, file skeleton, symbol usage lookup, and image description.
  */
-import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult, type MetadataFilter } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult, type MetadataFilter, type DecisionProvider, type DecisionQuestion, type DecisionAnswer } from "../core/interfaces.js";
 import { normalizeFileExtensions } from "../core/filters.js";
 import type { RagConfig } from "../core/config.js";
 import { SUPPORTED_IMAGE_EXTENSIONS, type ImageVisionProvider } from "../chunker/image.js";
@@ -10,6 +10,9 @@ import { getRerankerFor } from "../reranker/factory.js";
 import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "../retriever/context-optimizer.js";
 import { extractSkeleton, getExtension } from "../chunker/skeleton.js";
 import type { ParserOverrides } from "../core/parser-overrides.js";
+import { createDecisionProvider } from "../decision/factory.js";
+import { validateDecisionRequest } from "../decision/validate.js";
+import { formatDecisionAnswers } from "../decision/format.js";
 import { readFileSync } from "node:fs";
 import { resolve, isAbsolute, relative, sep as pathSep } from "node:path";
 
@@ -283,6 +286,57 @@ export async function handleDescribeImage(
   ].join("\n");
 
   return { description, formatted };
+}
+
+/** Parameters for the make_decision MCP tool. */
+export interface MakeDecisionParams {
+  /** Text to judge (keep it short — the decision context is ~2k tokens). */
+  state: string;
+  /** 1-64 named questions of type `choice`, `noul`, or `score`. */
+  questions: DecisionQuestion[];
+}
+
+/** Result of a decision-model operation. */
+export interface MakeDecisionResult {
+  /** Typed answers, one per question, in request order. */
+  answers: DecisionAnswer[];
+  /** Human-readable formatted output. */
+  formatted: string;
+}
+
+/** Answer classification/decision questions with the configured decision model (tev1 via Ollama's /v1/systemone). */
+export async function handleMakeDecision(
+  params: MakeDecisionParams,
+  cfg: RagConfig,
+  provider?: DecisionProvider
+): Promise<MakeDecisionResult> {
+  const decisionConfig = cfg.decision;
+  if (!decisionConfig?.enabled) {
+    throw new Error("Decision model is not enabled in config (decision.enabled)");
+  }
+
+  const validationError = validateDecisionRequest({
+    state: params.state,
+    questions: params.questions,
+    maxStateChars: decisionConfig.maxStateChars,
+  });
+  if (validationError) {
+    throw new Error(`Invalid decision request: ${validationError}`);
+  }
+
+  const decisionProvider = provider ?? createDecisionProvider(decisionConfig);
+  const result = await decisionProvider.decide({
+    state: params.state,
+    questions: params.questions,
+  });
+
+  return {
+    answers: result.answers,
+    formatted: formatDecisionAnswers(result.answers, {
+      provider: decisionProvider.name,
+      model: decisionConfig.model,
+    }),
+  };
 }
 
 /** Find usages and references of a symbol across the indexed codebase using hybrid (keyword + vector) search. */

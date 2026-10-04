@@ -10,6 +10,10 @@ export { normalizeParserOverrides } from "./core/parser-overrides.js";
 export type { ParserOverrides } from "./core/parser-overrides.js";
 export { createEmbedder, embedBatch } from "./embedder/factory.js";
 export { createDescriptionProvider } from "./describer/factory.js";
+export { createDecisionProvider } from "./decision/factory.js";
+export { OllamaDecisionProvider, resolveSystemOneUrl, SYSTEMONE_MAX_QUESTIONS, SYSTEMONE_MIN_OPTIONS, SYSTEMONE_MAX_OPTIONS } from "./decision/systemone.js";
+export { validateDecisionRequest } from "./decision/validate.js";
+export { formatDecisionAnswers } from "./decision/format.js";
 export { createVectorStore } from "./vectorstore/factory.js";
 export { LanceDbStore } from "./vectorstore/lancedb.js";
 export { InMemoryVectorStore } from "./vectorstore/memory.js";
@@ -20,8 +24,8 @@ export { createBackgroundIndexer } from "./watcher.js";
 export { createWatchIgnore } from "./indexer.js";
 export { ImageChunker, createImageVisionProvider, resolveOnDemandImageConfig, getMimeType, SUPPORTED_IMAGE_EXTENSIONS } from "./chunker/image.js";
 export { DescriptionCache } from "./core/desc-cache.js";
-export type { RagConfig, DescriptionConfig, ImageDescriptionConfig, ImageDescriptionOnDemandConfig } from "./core/config.js";
-export type { Chunk, SearchResult, OptimizedSearchResult, Chunker, DescriptionProvider, EmbeddingProvider, VectorStore } from "./core/interfaces.js";
+export type { RagConfig, DescriptionConfig, ImageDescriptionConfig, ImageDescriptionOnDemandConfig, DecisionConfig } from "./core/config.js";
+export type { Chunk, SearchResult, OptimizedSearchResult, Chunker, DescriptionProvider, EmbeddingProvider, VectorStore, DecisionProvider, DecisionQuestion, DecisionQuestionType, DecisionAnswer, DecisionRequest, DecisionResult } from "./core/interfaces.js";
 export type { ContextOptimizationConfig, ContextOptimizationOptions } from "./retriever/context-optimizer.js";
 
 /**

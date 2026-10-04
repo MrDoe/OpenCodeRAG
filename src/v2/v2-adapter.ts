@@ -153,17 +153,18 @@ type V2ContextHookEvent = {
 // V1 tool (`@opencode-ai/plugin/tool`, zod-backed) → V2 Tool.Info converter
 // ────────────────────────────────────────────────────────────────────────────
 
-/**
- * Convert a single zod-shaped argument schema into a minimal JSON schema
+/** Convert a single zod-shaped argument schema into a minimal JSON schema
  * object. Duck-types on zod v3/v4 class names (`constructor.name`) — avoids
  * depending on zod internals (`_def.typeName`) which changed between majors.
- */
-function zodArgToJsonSchema(schema: unknown): Record<string, unknown> {
+ * Exported for tests. */
+export function zodArgToJsonSchema(schema: unknown): Record<string, unknown> {
   const candidate = schema as {
     isOptional?: () => boolean;
     unwrap?: () => unknown;
     element?: unknown;
     shape?: Record<string, unknown>;
+    options?: unknown[];
+    valueType?: unknown;
     constructor?: { name?: string };
   };
 
@@ -186,14 +187,29 @@ function zodArgToJsonSchema(schema: unknown): Record<string, unknown> {
     }
     case "ZodObject":
       return zodShapeToJsonSchema(candidate.shape ?? {});
+    case "ZodEnum": {
+      const options = Array.isArray(candidate.options)
+        ? candidate.options.filter((option): option is string => typeof option === "string")
+        : [];
+      return options.length > 0 ? { type: "string", enum: options } : { type: "string" };
+    }
+    case "ZodRecord": {
+      // zod v4 exposes `.valueType`; fall back to an unconstrained value.
+      const valueType = candidate.valueType;
+      return { type: "object", additionalProperties: valueType ? zodArgToJsonSchema(valueType) : {} };
+    }
+    case "ZodUnion": {
+      const options = Array.isArray(candidate.options) ? candidate.options : [];
+      return options.length > 0 ? { anyOf: options.map((option) => zodArgToJsonSchema(option)) } : {};
+    }
     default:
       // Unknown wrapper — expose as unconstrained value rather than failing.
       return {};
   }
 }
 
-/** Convert a V1 `args` record (zod raw shape) to a JSON schema object. */
-function zodShapeToJsonSchema(shape: Record<string, unknown>): Record<string, unknown> {
+/** Convert a V1 `args` record (zod raw shape) to a JSON schema object. Exported for tests. */
+export function zodShapeToJsonSchema(shape: Record<string, unknown>): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
   for (const [key, schema] of Object.entries(shape)) {

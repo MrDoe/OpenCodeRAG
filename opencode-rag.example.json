@@ -91,6 +91,16 @@
     "numCtx": 4096,
     "resizeMaxDimension": 1024
   },
+  "decision": {
+    "enabled": false,
+    "provider": "ollama",
+    "baseUrl": "http://127.0.0.1:11434/api",
+    "model": "tev1:4b",
+    "timeoutMs": 120000,
+    "keepAlive": "30m",
+    "maxStateChars": 8000,
+    "routeBeforeAsking": false
+  },
   "description": {
     "enabled": true,
     "provider": "ollama",
