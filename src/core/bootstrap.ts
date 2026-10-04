@@ -186,6 +186,7 @@ export async function resolveRagContext(
         // healing is routine (addQuirk never persisted the index) and stays silent.
         console.warn(
           `[bootstrap] Quirk reconcile: restored ${rec.restoredToStore} to store, ` +
+          `deduplicated ${rec.deduplicated}, ` +
           `removed ${rec.removedOrphans} orphans (keyword index: +${rec.addedToKeywordIndex})`,
         );
       }

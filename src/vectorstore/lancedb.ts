@@ -317,6 +317,38 @@ export async function swapStoreDirectories(tempPath: string, realPath: string): 
   fs.rm(oldPath, { recursive: true, force: true }).catch(() => {});
 }
 
+/**
+ * Synthetic filePath prefix for quirk chunks — mirrors QUIRK_FILE_PREFIX in
+ * `quirks/quirk-store.ts` (kept local to avoid inverting the module dependency).
+ */
+const QUIRK_FILE_PREFIX = "quirk:";
+
+/**
+ * SQL predicate matching every stored form of `filePath`.
+ *
+ * Workspace files are stored with absolute paths, so `normalizeFilePath`
+ * (= `path.resolve`) is a no-op → exact match, as before.
+ *
+ * Quirk chunks use the synthetic path `quirk:<id>`, which `normalizeFilePath`
+ * historically resolved against the cwd of the WRITING process — the same quirk
+ * could exist as the raw form (stored raw since 2026-09-22) and as one or more
+ * `<cwd>/`-prefixed legacy forms. Match the raw form plus any
+ * directory-prefixed variant via suffix LIKE (quirk ids are uuids — no LIKE
+ * metacharacters).
+ */
+function buildFilePathMatch(filePath: string): string {
+  // Quirk detection by BASENAME so callers may pass the raw synthetic path or
+  // any legacy cwd-prefixed absolute form — both resolve to the same match.
+  const base = path.basename(filePath);
+  if (base.startsWith(QUIRK_FILE_PREFIX)) {
+    const escBase = base.replace(/'/g, "''");
+    // canonical raw form + every directory-prefixed variant (quirk ids are
+    // uuids — no LIKE metacharacters; paths never contain quotes unescaped)
+    return `(filePath = '${escBase}' OR filePath LIKE '%/${escBase}')`;
+  }
+  return `filePath = '${normalizeFilePath(filePath).replace(/'/g, "''")}'`;
+}
+
 /** Internal row shape stored in the LanceDB table. */
 interface ChunkRow {
   id: string;
@@ -692,7 +724,12 @@ export class LanceDbStore implements VectorStore {
       content: c.content,
       description: c.description ?? "",
       embedding: l2Normalize(c.embedding),
-      filePath: normalizeFilePath(c.metadata.filePath),
+      // Synthetic quirk ids stay RAW: resolving them keyed quirk rows by the
+      // cwd of whichever process wrote them (plugin vs CLI), producing
+      // cross-cwd duplicates that a cwd-normalized delete could not remove.
+      filePath: c.metadata.filePath.startsWith(QUIRK_FILE_PREFIX)
+        ? c.metadata.filePath
+        : normalizeFilePath(c.metadata.filePath),
       startLine: c.metadata.startLine,
       endLine: c.metadata.endLine,
       language: c.metadata.language,
@@ -727,6 +764,14 @@ export class LanceDbStore implements VectorStore {
 
     this.assertEmbeddingDimensions(rows);
 
+    // Quirk rows: wipe every stored form of this synthetic path FIRST — raw,
+    // legacy cwd-prefixed variants, and prior same-id rows (the NOT IN dedup
+    // below cannot remove same-id rows). Safe: quirks.jsonl is the source of
+    // truth and reconcileQuirks re-restores if we crash between delete+add.
+    for (const p of new Set(rows.filter((r) => r.filePath.startsWith(QUIRK_FILE_PREFIX)).map((r) => r.filePath))) {
+      await table.delete(buildFilePathMatch(p));
+    }
+
     // INSERT FIRST: data is safely stored before any delete
     await table.add(rows as unknown as Record<string, unknown>[]);
 
@@ -737,8 +782,10 @@ export class LanceDbStore implements VectorStore {
     // NOT IN clause preserves the newly inserted rows (so multiple new IDs
     // sharing a startLine never delete each other).  Insert-first ordering
     // keeps an abort between insert and delete from losing data.
+    // Quirk paths are skipped — they were fully cleaned above.
     const byFile = this.rowsByFilePath(rows);
     for (const [filePath, ids] of byFile) {
+      if (filePath.startsWith(QUIRK_FILE_PREFIX)) continue;
       const escapedPath = filePath.replace(/'/g, "''");
       const idList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
       await table.delete(
@@ -774,10 +821,16 @@ export class LanceDbStore implements VectorStore {
 
     this.assertEmbeddingDimensions(allRows);
 
+    // Quirk rows: wipe every stored form first (see addChunksInternal).
+    for (const p of new Set(allRows.filter((r) => r.filePath.startsWith(QUIRK_FILE_PREFIX)).map((r) => r.filePath))) {
+      await table.delete(buildFilePathMatch(p));
+    }
+
     // INSERT FIRST (single add for the whole batch), then per-file dedup
     await table.add(allRows as unknown as Record<string, unknown>[]);
 
     for (const [filePath, ids] of dedupByFile) {
+      if (filePath.startsWith(QUIRK_FILE_PREFIX)) continue;
       const escapedPath = filePath.replace(/'/g, "''");
       const idList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
       await table.delete(
@@ -901,10 +954,9 @@ export class LanceDbStore implements VectorStore {
   async getChunksByFilePath(filePath: string): Promise<Chunk[]> {
     return this.withCorruptionRecovery(async () => {
       const table = await this.getTable();
-      const normalizedPath = normalizeFilePath(filePath).replace(/'/g, "''");
       const rows = await table.query()
         .select(QUERY_COLUMNS)
-        .where(`filePath = '${normalizedPath}'`)
+        .where(buildFilePathMatch(filePath))
         .toArray();
 
       return rows
@@ -1547,8 +1599,7 @@ export class LanceDbStore implements VectorStore {
     if (!tableNames.includes(TABLE_NAME)) return;
 
     const table = await this.getTable();
-    const normalizedPath = normalizeFilePath(filePath).replace(/'/g, "''");
-    await table.delete(`filePath = '${normalizedPath}'`);
+    await table.delete(buildFilePathMatch(filePath));
   }
 
   /**

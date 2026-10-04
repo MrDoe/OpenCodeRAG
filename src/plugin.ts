@@ -1808,7 +1808,7 @@ export const ragPlugin: Plugin = async (
       if (r.restoredToStore > 0 || r.addedToKeywordIndex > 0 || r.removedOrphans > 0) {
         appendDebugLog(logFilePath, {
           scope: "plugin",
-          message: `Quirk reconcile: restored ${r.restoredToStore} to store, added ${r.addedToKeywordIndex} to keyword index, removed ${r.removedOrphans} orphans`,
+          message: `Quirk reconcile: restored ${r.restoredToStore} to store, deduplicated ${r.deduplicated}, added ${r.addedToKeywordIndex} to keyword index, removed ${r.removedOrphans} orphans`,
         }, logLevel);
       }
     })

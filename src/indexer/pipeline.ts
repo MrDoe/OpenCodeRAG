@@ -1343,6 +1343,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       if (rec.restoredToStore > 0 || rec.addedToKeywordIndex > 0 || rec.removedOrphans > 0) {
         logger.info(
           `Quirk reconcile: restored ${rec.restoredToStore} to store, ` +
+          `deduplicated ${rec.deduplicated}, ` +
           `added ${rec.addedToKeywordIndex} to keyword index, removed ${rec.removedOrphans} orphans`,
         );
       }

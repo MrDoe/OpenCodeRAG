@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { LanceDbStore } from "../../vectorstore/lancedb.js";
 import { KeywordIndex } from "../../retriever/keyword-index.js";
-import { addQuirk, listQuirks, reconcileQuirks, type QuirkReconcileDeps } from "../../quirks/quirk-store.js";
+import { addQuirk, updateQuirk, listQuirks, reconcileQuirks, type QuirkReconcileDeps } from "../../quirks/quirk-store.js";
 import type { EmbeddingProvider, Chunk } from "../../core/interfaces.js";
 import type { RagConfig } from "../../core/config.js";
 import type { QuirkStoreDeps } from "../../quirks/quirk-store.js";
@@ -58,15 +58,17 @@ async function makeEnv(): Promise<Env> {
 }
 
 /** A raw quirk chunk written straight to the store — simulates rows whose
- *  jsonl entry situation we control (in-flight add, legacy backup, wipe). */
-function rawQuirkChunk(id: string, lastObserved: string): Chunk {
+ *  jsonl entry situation we control (in-flight add, legacy backup, wipe).
+ *  `filePath` defaults to the raw synthetic path; pass an absolute path to
+ *  fabricate a legacy cwd-keyed variant. */
+function rawQuirkChunk(id: string, lastObserved: string, filePath = `quirk:${id}`): Chunk {
   return {
     id,
     content: `raw quirk ${id} for reconcile tests`,
     description: "",
     embedding: new Array(DIM).fill(0).map(() => Math.random() * 2 - 1),
     metadata: {
-      filePath: `quirk:${id}`,
+      filePath,
       startLine: 0,
       endLine: 0,
       language: "quirk",
@@ -125,7 +127,7 @@ describe("reconcileQuirks", () => {
 
     // Idempotent: a second run finds nothing to do.
     const again = await reconcileQuirks(env.reconcileDeps);
-    assert.deepEqual(again, { restoredToStore: 0, addedToKeywordIndex: 0, removedOrphans: 0 });
+    assert.deepEqual(again, { restoredToStore: 0, addedToKeywordIndex: 0, removedOrphans: 0, deduplicated: 0 });
     await env.store.close();
   });
 
@@ -200,7 +202,85 @@ describe("reconcileQuirks", () => {
       cfg: MINIMAL_CFG,
       storePath: "memory://",
     });
-    assert.deepEqual(rec, { restoredToStore: 0, addedToKeywordIndex: 0, removedOrphans: 0 });
+    assert.deepEqual(rec, { restoredToStore: 0, addedToKeywordIndex: 0, removedOrphans: 0, deduplicated: 0 });
     await store.clear({ noBackup: true });
+  });
+
+  it("stores quirk filePaths raw and matches every cwd-keyed legacy variant", async () => {
+    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "raw storage: variant matching probe" });
+    const raw = `quirk:${q.id}`;
+
+    // chunkToRow must NOT resolve the synthetic path (that keyed rows by the
+    // writing process's cwd).
+    const paths = await env.store.getFilePaths();
+    assert.ok(paths.includes(raw), `row stored raw, got: ${paths.filter((p) => p.includes("quirk")).join(", ")}`);
+
+    // Fabricate a legacy cwd-prefixed copy of the same id (as written pre-fix).
+    await env.store.addChunks([rawQuirkChunk(q.id, new Date().toISOString(), join(env.dir, raw))]);
+    assert.equal((await env.store.getChunksByFilePath(raw)).length, 2, "raw lookup matches raw + legacy variant");
+    assert.equal((await env.store.getChunksByFilePath(join(env.dir, raw))).length, 2, "legacy lookup matches both forms too");
+
+    // A cross-cwd delete (raw arg) must remove every variant.
+    await env.store.deleteByFilePath(raw);
+    assert.equal((await env.store.getChunksByFilePath(raw)).length, 0, "raw delete removes every variant");
+    await env.store.close();
+  });
+
+  it("collapses cross-cwd duplicate rows into one jsonl-authoritative row", async () => {
+    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "dup collapse: authoritative content" });
+    const raw = `quirk:${q.id}`;
+    const stale = rawQuirkChunk(q.id, new Date().toISOString(), join(env.dir, raw));
+    stale.content = "STALE legacy cross-cwd copy";
+    await env.store.addChunks([stale]);
+    assert.equal((await env.store.getChunksByFilePath(raw)).length, 2, "setup: raw + legacy row");
+
+    const rec = await reconcileQuirks(env.reconcileDeps);
+
+    assert.equal(rec.deduplicated, 1, "duplicate detected and collapsed");
+    assert.equal(rec.restoredToStore, 1, "re-embedded from the jsonl after collapse");
+    const rows = await env.store.getChunksByFilePath(raw);
+    assert.equal(rows.length, 1, "exactly one row remains");
+    assert.equal(rows[0]?.content, "dup collapse: authoritative content", "jsonl content wins over the stale copy");
+    await env.store.close();
+  });
+
+  it("collapses same-path duplicate rows (invisible to getFilePaths)", async () => {
+    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "same-path dup: authoritative" });
+    const raw = `quirk:${q.id}`;
+    const legacyPath = join(env.dir, raw);
+    const iso = new Date().toISOString();
+    const a = rawQuirkChunk(q.id, iso, legacyPath);
+    a.content = "copy A";
+    const b = rawQuirkChunk(q.id, iso, legacyPath);
+    b.content = "copy B";
+    await env.store.addChunks([a, b]);
+    assert.equal((await env.store.getChunksByFilePath(raw)).length, 3, "setup: raw + 2 same-path legacy rows");
+
+    const rec = await reconcileQuirks(env.reconcileDeps);
+
+    assert.equal(rec.deduplicated, 1);
+    assert.equal(rec.restoredToStore, 1);
+    const rows = await env.store.getChunksByFilePath(raw);
+    assert.equal(rows.length, 1, "all three rows collapsed to one");
+    assert.equal(rows[0]?.content, "same-path dup: authoritative");
+    await env.store.close();
+  });
+
+  it("updateQuirk removes legacy cross-cwd copies (variant-aware delete)", async () => {
+    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "update cleans legacy: v1" });
+    const raw = `quirk:${q.id}`;
+    await env.store.addChunks([rawQuirkChunk(q.id, new Date().toISOString(), join(env.dir, raw))]);
+    assert.equal((await env.store.getChunksByFilePath(raw)).length, 2, "setup: raw + legacy row");
+
+    await updateQuirk(env.deps, q.id, { content: "update cleans legacy: v2 final" });
+
+    const rows = await env.store.getChunksByFilePath(raw);
+    assert.equal(rows.length, 1, "update's delete collapsed the legacy copy");
+    assert.equal(rows[0]?.content, "update cleans legacy: v2 final");
+    await env.store.close();
   });
 });

@@ -303,14 +303,18 @@ export async function listQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
       all.sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
       return all;
     }
-    // Fallback: scan the store. Stored filePaths are workspace-absolute
-    // (chunkToRow normalizes), so match quirks on basename, not prefix.
+    // Fallback: scan the store. Quirk rows may be stored raw or as legacy
+    // workspace-absolute paths (match on basename), and the variant-aware
+    // lookup can return the same quirk once per stored form (dedup by id).
     const filePaths = await deps.store.getFilePaths();
     const quirkPaths = filePaths.filter((fp) => path.basename(fp).startsWith(QUIRK_FILE_PREFIX));
     const result: Quirk[] = [];
+    const seen = new Set<string>();
     for (const fp of quirkPaths) {
       const chunks = await deps.store.getChunksByFilePath(fp);
       for (const c of chunks) {
+        if (seen.has(c.id)) continue;
+        seen.add(c.id);
         result.push({
           id: c.id,
           content: c.content,
@@ -344,6 +348,8 @@ export interface QuirkReconcileResult {
   addedToKeywordIndex: number;
   /** Store quirk chunks deleted because their quirks.jsonl entry is gone (past the grace window). */
   removedOrphans: number;
+  /** Quirks that had MULTIPLE rows (cross-cwd and/or same-path duplicates), collapsed to one row re-embedded from the jsonl. */
+  deduplicated: number;
 }
 
 /**
@@ -392,7 +398,7 @@ const QUIRK_ORPHAN_GRACE_MS = 60 * 60 * 1000;
  * @returns Counts of what changed (all zero when already consistent).
  */
 export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkReconcileResult> {
-  const result: QuirkReconcileResult = { restoredToStore: 0, addedToKeywordIndex: 0, removedOrphans: 0 };
+  const result: QuirkReconcileResult = { restoredToStore: 0, addedToKeywordIndex: 0, removedOrphans: 0, deduplicated: 0 };
   if (isMemoryStore(deps.storePath)) return result;
 
   const jsonlFile = jsonlPath(deps.storePath);
@@ -415,8 +421,29 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
   }
   const storeIds = new Set(quirkRows.map((r) => r.id));
 
+  // 0. Collapse duplicate rows for the same quirk. Legacy rows were keyed by
+  //    the writing process's cwd (normalizeFilePath = path.resolve), so a quirk
+  //    touched from two cwds has one row per cwd — and insert-then-NOT-IN dedup
+  //    cannot remove same-id rows at all. Raw-vs-legacy variants AND same-path
+  //    double-rows are both hard to see via getFilePaths alone, so count rows
+  //    per id with the variant-aware lookup. The jsonl content is authoritative:
+  //    delete every row, re-embed one raw row below.
+  const dupIds: string[] = [];
+  for (const q of quirks) {
+    if (!storeIds.has(q.id)) continue; // absent → the restore path below covers it
+    const rows = await deps.store.getChunksByFilePath(QUIRK_FILE_PREFIX + q.id);
+    if (rows.length > 1) dupIds.push(q.id);
+  }
+  for (const id of dupIds) {
+    // Variant-aware: removes the raw row plus every cwd-prefixed legacy copy.
+    await deps.store.deleteByFilePath(QUIRK_FILE_PREFIX + id);
+    storeIds.delete(id); // → picked up by the restore path below
+    result.deduplicated++;
+  }
+
   // 1. Restore jsonl quirks the table is missing (the rebuild-wipe direction).
   const missing = quirks.filter((q) => !storeIds.has(q.id));
+  const restoredIds = new Set(missing.map((q) => q.id));
   if (missing.length > 0) {
     const prefix = deps.cfg.embedding.documentPrefix ?? "";
     const embeddings = await deps.embedder.embed(missing.map((q) => prefix + q.content), "document");
@@ -432,10 +459,12 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
 
   // 2. Ensure every jsonl quirk is in the keyword index. Lexical only — the
   //    keyword index never looks at embeddings, so this needs no provider.
+  //    Restored/deduplicated ids are re-added even when present: their cached
+  //    content may predate the collapse.
   let kiDirty = false;
   if (deps.keywordIndex) {
     for (const q of quirks) {
-      if (deps.keywordIndex.hasChunk(q.id)) continue;
+      if (deps.keywordIndex.hasChunk(q.id) && !restoredIds.has(q.id)) continue;
       deps.keywordIndex.addChunks([quirkChunk(q, [])]);
       result.addedToKeywordIndex++;
       kiDirty = true;
