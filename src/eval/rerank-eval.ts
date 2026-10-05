@@ -43,7 +43,7 @@
  *   exact RetrieveOptions type.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { DEFAULT_CONFIG, loadConfig } from "../core/config.js";
 import type { RagConfig } from "../core/config.js";
@@ -55,6 +55,14 @@ import { KeywordIndex } from "../retriever/keyword-index.js";
 import { applyRuntimeOverrides, loadRuntimeOverrides } from "../core/runtime-overrides.js";
 import { resolveApiKey } from "../core/resolve-api-key.js";
 import type { EmbeddingProvider, SearchResult, VectorStore } from "../core/interfaces.js";
+import {
+  evaluateGoldenResults,
+  loadGoldenLabels,
+  summarizeGoldenOutcomes,
+  type GoldenLabel as Label,
+  type GoldenOutcome as Outcome,
+  type GoldenSummary as ArmSummary,
+} from "./golden-set.js";
 
 const WORKTREE = process.cwd();
 const CONFIG_PATH = path.join(WORKTREE, "opencode-rag.json");
@@ -76,19 +84,11 @@ const retrieveFn = retrieve as unknown as RetrieveFn;
 // Labels
 // ────────────────────────────────────────────────────────────────────────────
 
-interface Label {
-  id: string;
-  category: string;
-  query: string;
-  files: string[];
-  symbol?: string;
-  note?: string;
-}
-
-interface LabelFile {
-  version: number;
-  labels: Label[];
-}
+// Thin adapters over the shared golden-set module so this harness and the
+// `eval:gate` command always compute identical metrics for the same labels.
+const evaluateResults = (label: Label, results: SearchResult[]): Omit<Outcome, "label" | "latencyMs"> =>
+  evaluateGoldenResults(WORKTREE, label, results);
+const summarize = summarizeGoldenOutcomes;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Arms
@@ -158,22 +158,6 @@ function parseOptions(argv: string[]): Options {
     embeddingModel: kv.get("embedding-model"),
     embeddingBaseUrl: kv.get("embedding-base-url"),
   };
-}
-
-function loadLabels(labelsPath: string): Label[] {
-  if (!existsSync(labelsPath)) {
-    throw new Error(`Label file not found: ${labelsPath}`);
-  }
-  const parsed = JSON.parse(readFileSync(labelsPath, "utf-8")) as LabelFile;
-  if (!Array.isArray(parsed.labels) || parsed.labels.length === 0) {
-    throw new Error(`Label file has no labels: ${labelsPath}`);
-  }
-  for (const label of parsed.labels) {
-    if (!label.id || !label.query || !Array.isArray(label.files) || label.files.length === 0) {
-      throw new Error(`Malformed label (needs id, query, files[]): ${JSON.stringify(label)}`);
-    }
-  }
-  return parsed.labels;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -253,117 +237,6 @@ async function resolveRerankProvider(section?: Record<string, unknown>): Promise
 // Metrics
 // ────────────────────────────────────────────────────────────────────────────
 
-interface Outcome {
-  label: Label;
-  latencyMs: number;
-  firstHitRank: number | null;
-  hitAt1: number;
-  hitAt3: number;
-  hitAt5: number;
-  hitAt10: number;
-  precision5: number;
-  recall10: number;
-  rr: number;
-  ndcg10: number;
-  symbolHitRank: number | null;
-  topFiles: string[];
-  /** True when the rerank stage actually reordered (explanation.scoreBreakdown.rerankScore present). */
-  rerankRan: boolean;
-}
-
-function toRepoRelative(filePath: string): string {
-  let p = filePath.replace(/\\/g, "/");
-  const root = WORKTREE.replace(/\\/g, "/").toLowerCase();
-  const idx = p.toLowerCase().indexOf(root);
-  if (idx >= 0) p = p.slice(idx + root.length);
-  return p.replace(/^\/+/, "").toLowerCase();
-}
-
-function evaluateResults(label: Label, results: SearchResult[]): Omit<Outcome, "label" | "latencyMs"> {
-  const expected = new Set(label.files.map((f) => f.toLowerCase()));
-  const fileRank = new Map<string, number>();
-  for (const [i, r] of results.entries()) {
-    const file = toRepoRelative(r.chunk.metadata.filePath);
-    if (!fileRank.has(file)) fileRank.set(file, i + 1);
-  }
-
-  let firstHitRank: number | null = null;
-  for (const [file, rank] of fileRank) {
-    if (!expected.has(file)) continue;
-    firstHitRank = firstHitRank === null ? rank : Math.min(firstHitRank, rank);
-  }
-
-  const foundInK = (k: number): number => {
-    let found = 0;
-    for (const file of expected) {
-      const rank = fileRank.get(file);
-      if (rank !== undefined && rank <= k) found += 1;
-    }
-    return found;
-  };
-  const hitAt = (k: number): number => (foundInK(k) > 0 ? 1 : 0);
-
-  // nDCG@10 with binary gains, deduplicated per expected file.
-  let dcg = 0;
-  const gained = new Set<string>();
-  for (const [i, r] of results.slice(0, 10).entries()) {
-    const file = toRepoRelative(r.chunk.metadata.filePath);
-    if (expected.has(file) && !gained.has(file)) {
-      gained.add(file);
-      dcg += 1 / Math.log2(i + 2);
-    }
-  }
-  const idealCount = Math.min(expected.size, 10);
-  let idcg = 0;
-  for (let i = 0; i < idealCount; i++) idcg += 1 / Math.log2(i + 2);
-  const ndcg10 = idcg > 0 ? dcg / idcg : 0;
-
-  let symbolHitRank: number | null = null;
-  if (label.symbol) {
-    for (const [i, r] of results.entries()) {
-      const file = toRepoRelative(r.chunk.metadata.filePath);
-      if (expected.has(file) && r.chunk.content.includes(label.symbol)) {
-        symbolHitRank = i + 1;
-        break;
-      }
-    }
-  }
-
-  // Did the rerank stage actually reorder this query? The stage sets
-  // explanation.scoreBreakdown.rerankScore only on a successful rerank; when it
-  // degrades (timeout/error/cooldown) the fusion order is kept and the field is absent.
-  const rerankRan = results.some((r) => {
-    const breakdown = r.explanation?.scoreBreakdown as Record<string, unknown> | undefined;
-    return typeof breakdown?.rerankScore === "number";
-  });
-
-  return {
-    firstHitRank,
-    hitAt1: hitAt(1),
-    hitAt3: hitAt(3),
-    hitAt5: hitAt(5),
-    hitAt10: hitAt(10),
-    precision5: foundInK(5) / 5,
-    recall10: foundInK(10) / Math.max(expected.size, 1),
-    rr: firstHitRank !== null ? 1 / firstHitRank : 0,
-    ndcg10,
-    symbolHitRank,
-    topFiles: results.slice(0, 5).map((r) => toRepoRelative(r.chunk.metadata.filePath)),
-    rerankRan,
-  };
-}
-
-function percentile(sorted: number[], q: number): number {
-  if (sorted.length === 0) return 0;
-  const idx = Math.min(sorted.length - 1, Math.floor(q * (sorted.length - 1)));
-  return sorted[idx] ?? 0;
-}
-
-function mean(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((s, v) => s + v, 0) / values.length;
-}
-
 interface ArmResult {
   spec: ArmSpec;
   status: "ok" | "skipped";
@@ -371,40 +244,6 @@ interface ArmResult {
   outcomes: Outcome[];
   /** Queries where the rerank stage actually reordered (0 for baseline). */
   rerankRanCount: number;
-}
-
-interface ArmSummary {
-  hit1: number;
-  hit3: number;
-  hit5: number;
-  hit10: number;
-  precision5: number;
-  recall10: number;
-  mrr: number;
-  ndcg10: number;
-  symbolRate: number;
-  latencyAvg: number;
-  latencyP50: number;
-  latencyP95: number;
-}
-
-function summarize(outcomes: Outcome[]): ArmSummary {
-  const latencies = outcomes.map((o) => o.latencyMs).sort((a, b) => a - b);
-  const withSymbol = outcomes.filter((o) => o.label.symbol);
-  return {
-    hit1: mean(outcomes.map((o) => o.hitAt1)),
-    hit3: mean(outcomes.map((o) => o.hitAt3)),
-    hit5: mean(outcomes.map((o) => o.hitAt5)),
-    hit10: mean(outcomes.map((o) => o.hitAt10)),
-    precision5: mean(outcomes.map((o) => o.precision5)),
-    recall10: mean(outcomes.map((o) => o.recall10)),
-    mrr: mean(outcomes.map((o) => o.rr)),
-    ndcg10: mean(outcomes.map((o) => o.ndcg10)),
-    symbolRate: withSymbol.length > 0 ? mean(withSymbol.map((o) => (o.symbolHitRank !== null ? 1 : 0))) : 0,
-    latencyAvg: mean(latencies),
-    latencyP50: percentile(latencies, 0.5),
-    latencyP95: percentile(latencies, 0.95),
-  };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -483,7 +322,7 @@ function top5Overlap(baseline: Outcome, other: Outcome): number {
 
 async function main(): Promise<void> {
   const opts = parseOptions(process.argv.slice(2));
-  const labels = loadLabels(opts.labelsPath)
+  const labels = loadGoldenLabels(opts.labelsPath)
     .filter((l) => (opts.category ? l.category === opts.category : true))
     .slice(0, opts.limit ?? Number.MAX_SAFE_INTEGER);
   if (labels.length === 0) {

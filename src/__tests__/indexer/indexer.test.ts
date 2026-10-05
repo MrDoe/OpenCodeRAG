@@ -221,7 +221,7 @@ describe("indexer", () => {
       embedder,
     });
 
-    // Modify the file that sits at index 0 of window 1 (filterPaths order).
+    // Modify the file that sits at index 0 of window 1.
     await writeFile(path.join(workspaceDir, relPaths[0]!), "function fn00() { return 999; }\n");
 
     const before = await loadManifest(storeDir);
@@ -240,7 +240,6 @@ describe("indexer", () => {
       config: testConfig(),
       store: slowStore,
       embedder,
-      filterPaths: relPaths,
     });
 
     assert.equal(stats.modifiedFiles, 1, "modified file must be counted as modified");

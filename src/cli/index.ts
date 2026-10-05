@@ -32,6 +32,8 @@ import {
   registerEvalSessionsCommand,
   registerEvalAnalyzeCommand,
   registerEvalCompareCommand,
+  registerEvalGateCommand,
+  registerEvalDecideCommand,
   registerDescribeImageCommand,
   registerDecideCommand,
   registerQuirkCommand,
@@ -68,6 +70,8 @@ registerUpdateCommand(program);
 registerEvalSessionsCommand(program);
 registerEvalAnalyzeCommand(program);
 registerEvalCompareCommand(program);
+registerEvalGateCommand(program);
+registerEvalDecideCommand(program);
 registerInitCommand(program);
 registerQuirkCommand(program);
 

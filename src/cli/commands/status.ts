@@ -9,8 +9,9 @@ import type { Command } from "commander";
 import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
-import { c, resolveCliContext, logCliError, logCliInfo, formatTimestamp } from "../format.js";
+import { c, resolveCliContext, logCliError, logCliInfo, formatTimestamp, formatRelativeAge } from "../format.js";
 import { getIndexStatusSummary } from "../../indexer.js";
+import { deriveWatcherHealth, type WatcherStatus } from "../../watcher.js";
 import { getPackageMetadata } from "../helpers.js";
 import { checkForUpdate } from "../../core/version-check.js";
 import type { CliOptions } from "../types.js";
@@ -131,18 +132,19 @@ export function registerStatusCommand(program: Command): void {
         // Read watcher status from the background auto-indexer
         const watcherStatusPath = path.join(storePath, "watcher-status.json");
         let watchModeDisplay: string;
+        let watcherWarning: string | undefined;
         if (fs.existsSync(watcherStatusPath)) {
           try {
-            const raw = fs.readFileSync(watcherStatusPath, "utf-8");
-            const ws = JSON.parse(raw) as { running?: boolean; lastRunAt?: number };
-            if (ws.lastRunAt) {
-              const lastRun = formatTimestamp(ws.lastRunAt);
-              watchModeDisplay = ws.running
-                ? c.enabled("active") + c.dim(" (last run: " + lastRun + ")")
-                : c.enabled("on") + c.dim(" (last run: " + lastRun + ")");
+            const ws = JSON.parse(fs.readFileSync(watcherStatusPath, "utf-8")) as WatcherStatus;
+            const lastRun = ws.lastSuccessAt ?? ws.lastRunAt;
+            if (lastRun) {
+              const runLabel = ws.lastSuccessAt ? "last successful run" : "last run";
+              watchModeDisplay = `${ws.running ? c.enabled("active") : c.enabled("on")} ${c.dim(`(${runLabel}: ${formatTimestamp(lastRun)}, ${formatRelativeAge(lastRun)})`)}`;
             } else {
               watchModeDisplay = c.enabled("on");
             }
+            const health = deriveWatcherHealth(ws);
+            if (health.stale) watcherWarning = health.reason;
           } catch {
             watchModeDisplay = c.enabled("on") + c.dim(" (status unknown)");
           }
@@ -152,6 +154,13 @@ export function registerStatusCommand(program: Command): void {
           watchModeDisplay = c.dim("off");
         }
         logCliInfo(logFilePath, "status", `${c.label("Watch mode:")}        ${watchModeDisplay}`);
+        if (watcherWarning) {
+          logCliInfo(
+            logFilePath,
+            "status",
+            `${c.label("Watcher health:")}   ${c.warn(`stale — ${watcherWarning}`)} ${c.dim("(run 'opencode-rag index' or check .opencode/opencode-rag.log)")}`,
+          );
+        }
         const kiCount = config.retrieval.hybridSearch?.enabled
           ? keywordIndex?.count() ?? 0
           : 0;

@@ -7,6 +7,7 @@
  */
 
 import pc from "picocolors";
+import path from "node:path";
 import { resolveRagContext, type BootstrapOptions, type RagContext } from "../core/bootstrap.js";
 import { destroyAllPooledConnections } from "../embedder/http.js";
 import { appendDebugLog } from "../core/fileLogger.js";
@@ -169,6 +170,138 @@ export function formatTimestamp(timestamp?: number): string {
 }
 
 /**
+ * Format a Unix timestamp as a compact "time since" label (e.g. `"5m ago"`).
+ *
+ * @param timestamp - Unix timestamp in milliseconds, or `undefined` for "never".
+ * @param now - Reference time in ms (defaults to `Date.now()`, injectable for tests).
+ * @returns A human-readable age such as `"just now"`, `"2h ago"`, or `"3d ago"`.
+ */
+export function formatRelativeAge(timestamp?: number, now: number = Date.now()): string {
+  if (!timestamp) return "never";
+  const diffMinutes = Math.floor(Math.max(0, now - timestamp) / 60_000);
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 48) return `${diffHours}h ago`;
+  return `${Math.floor(diffHours / 24)}d ago`;
+}
+
+/**
+ * Overall outcome of an index pass — drives the CLI exit code and the machine-readable
+ * summary. `"ok"` = everything that was found got indexed; `"partial"` = the pass did real
+ * work but some files/chunks failed and will be retried; `"incomplete"` = nothing usable
+ * was stored (embedding provider down or zero chunks).
+ */
+export type IndexRunStatus = "ok" | "partial" | "incomplete";
+
+/**
+ * Classify an index pass from its stats. Mirrors the messages printed by the `index`
+ * command and the exit-code mapping: 0 = ok, 3 = partial, 1 = incomplete/interrupted.
+ *
+ * @param stats - Statistics from a single indexing pass.
+ * @returns The pass status.
+ */
+export function classifyIndexRun(stats: IndexRunStats): IndexRunStatus {
+  if (stats.embeddingUnavailable) return "incomplete";
+  if (stats.totalChunks === 0 && stats.newFiles + stats.modifiedFiles > 0) return "incomplete";
+  if (stats.extractionFailures > 0 || stats.descriptionFailedFiles > 0 || stats.embeddingFailures > 0) {
+    return "partial";
+  }
+  return "ok";
+}
+
+/**
+ * Build short human-readable descriptions of a partial pass's problems.
+ *
+ * @param stats - Statistics from a single indexing pass.
+ * @returns One string per problem category; empty when the pass was clean.
+ */
+export function describeIndexProblems(stats: IndexRunStats): string[] {
+  const parts: string[] = [];
+  if (stats.extractionFailures > 0) parts.push(`${stats.extractionFailures} file(s) failed content extraction`);
+  if (stats.descriptionFailedFiles > 0) parts.push(`${stats.descriptionFailedFiles} file(s) had description failures`);
+  if (stats.embeddingFailures > 0) parts.push(`${stats.embeddingFailures} chunk(s) had no vectors`);
+  return parts;
+}
+
+/** Extraction error paths shown in the human summary before truncating. */
+const MAX_SHOWN_EXTRACTION_ERRORS = 5;
+/** Extraction errors included in the JSON summary before truncating. */
+const MAX_JSON_EXTRACTION_ERRORS = 20;
+/** Longest error text rendered before truncation. */
+const MAX_ERROR_CHARS = 160;
+
+/** Collapse whitespace and truncate an error message for one-line display. */
+function truncateError(error: string): string {
+  const oneLine = error.replace(/\s+/g, " ").trim();
+  return oneLine.length > MAX_ERROR_CHARS ? `${oneLine.slice(0, MAX_ERROR_CHARS - 1)}…` : oneLine;
+}
+
+/** Make a path workspace-relative when it is inside the workspace; keep it otherwise. */
+function toWorkspaceRelative(cwd: string, filePath: string): string {
+  try {
+    const rel = path.relative(cwd, filePath);
+    return rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : filePath;
+  } catch {
+    return filePath;
+  }
+}
+
+/** Options for {@link buildIndexSummaryJson}. */
+export interface IndexSummaryJsonOptions {
+  /** Workspace root used to relativize extraction error paths. */
+  cwd: string;
+  /** Pass start time (ms since epoch). */
+  startedAt: number;
+  /** Pass duration in milliseconds. */
+  durationMs: number;
+  /** True when the run was interrupted (Ctrl+C) — reported instead of the pass status. */
+  interrupted?: boolean;
+}
+
+/**
+ * Build the machine-readable `index --json` summary. The CLI prints this object as a
+ * single line of JSON so agents can parse the outcome without scraping log text.
+ *
+ * @param stats - Statistics from a single indexing pass.
+ * @param opts - Workspace, timing, and interrupt information.
+ * @returns A plain JSON-serializable object (schema version 1).
+ */
+export function buildIndexSummaryJson(
+  stats: IndexRunStats,
+  opts: IndexSummaryJsonOptions,
+): Record<string, unknown> {
+  const extractionErrors = stats.extractionErrors
+    .slice(0, MAX_JSON_EXTRACTION_ERRORS)
+    .map((entry) => ({
+      file: toWorkspaceRelative(opts.cwd, entry.filePath),
+      error: truncateError(entry.error),
+    }));
+  return {
+    schema: 1,
+    status: opts.interrupted ? "interrupted" : classifyIndexRun(stats),
+    startedAt: new Date(opts.startedAt).toISOString(),
+    durationMs: opts.durationMs,
+    totalFiles: stats.totalFiles,
+    newFiles: stats.newFiles,
+    modifiedFiles: stats.modifiedFiles,
+    unchangedFiles: stats.unchangedFiles,
+    deletedFiles: stats.deletedFiles,
+    removedFiles: stats.removedFiles,
+    skippedEmptyFiles: stats.skippedEmptyFiles,
+    skippedSmallFiles: stats.skippedSmallFiles,
+    totalChunks: stats.totalChunks,
+    finalCount: stats.finalCount,
+    extractionFailures: stats.extractionFailures,
+    descriptionFailedFiles: stats.descriptionFailedFiles,
+    embeddingFailures: stats.embeddingFailures,
+    embeddingUnavailable: stats.embeddingUnavailable,
+    extractionErrors,
+    extractionErrorsTruncated: stats.extractionErrors.length > extractionErrors.length,
+  };
+}
+
+/**
  * Print an indexing pass summary to stdout.
  *
  * @param logFilePath - Path to the debug log file.
@@ -182,6 +315,19 @@ export function logIndexSummary(logFilePath: string, stats: IndexRunStats): void
   logCliInfo(logFilePath, "index", `  ${c.label("Removed:")}          ${c.num(stats.removedFiles)}`);
   logCliInfo(logFilePath, "index", `  ${c.label("Empty skipped:")}    ${c.num(stats.skippedEmptyFiles)}`);
   logCliInfo(logFilePath, "index", `  ${c.label("Small skipped:")}    ${c.num(stats.skippedSmallFiles)}`);
+  if (stats.extractionFailures > 0) {
+    logCliInfo(logFilePath, "index", `  ${c.label("Extract failed:")}   ${c.num(stats.extractionFailures)} file(s)`);
+    for (const entry of stats.extractionErrors.slice(0, MAX_SHOWN_EXTRACTION_ERRORS)) {
+      logCliInfo(logFilePath, "index", `    ${c.file(entry.filePath)} — ${c.dim(truncateError(entry.error))}`);
+    }
+    if (stats.extractionErrors.length > MAX_SHOWN_EXTRACTION_ERRORS) {
+      logCliInfo(
+        logFilePath,
+        "index",
+        `    ${c.dim(`… and ${stats.extractionErrors.length - MAX_SHOWN_EXTRACTION_ERRORS} more (see log)`)}`,
+      );
+    }
+  }
   if (stats.descriptionFailedFiles > 0) {
     logCliInfo(logFilePath, "index", `  ${c.label("Desc failed:")}     ${c.num(stats.descriptionFailedFiles)}`);
   }

@@ -29,6 +29,9 @@ import {
   logCliInfo,
   logIndexSummary,
   formatDuration,
+  classifyIndexRun,
+  describeIndexProblems,
+  buildIndexSummaryJson,
 } from "../format.js";
 import type { CliOptions } from "../types.js";
 
@@ -68,6 +71,7 @@ export function registerIndexCommand(program: Command): void {
     .option("-f, --force", "force full re-index")
     .option("-y, --yes", "skip confirmation prompt for full rebuild")
     .option("-w, --watch", "watch workspace and incrementally re-index on changes")
+    .option("--json", "print a machine-readable JSON summary as the last stdout line of the initial pass")
     .action(async (options: CliOptions) => {
       const started = Date.now();
 
@@ -121,10 +125,10 @@ export function registerIndexCommand(program: Command): void {
 
         logCliInfo(logFilePath, "index", `${c.label("Scanning:")} ${c.file(cwd)}`);
         let incomplete = false;
+        let partial = false;
         const runPass = async (
           watchTriggered: boolean = false,
           abortSignal?: AbortSignal,
-          filterPaths?: string[],
         ): Promise<IndexRunStats> => {
           const passStarted = Date.now();
           const stats = await runIndexPass({
@@ -138,25 +142,33 @@ export function registerIndexCommand(program: Command): void {
             force: !!(options.force && !watchTriggered),
             abortSignal,
             dimension,
-            filterPaths,
             logger: watchAwareLogger(logFilePath, watchTriggered ? "watch" : "index", watchTriggered),
           });
 
           if (!watchTriggered) {
             logIndexSummary(logFilePath, stats);
-            if (stats.embeddingUnavailable) {
+            const status = classifyIndexRun(stats);
+            if (status === "incomplete") {
               incomplete = true;
+              if (stats.embeddingUnavailable) {
+                logCliInfo(
+                  logFilePath,
+                  "index",
+                  `\n${c.error("Indexing incomplete:")} the embedding provider was unavailable — nothing was stored. Fix the provider and run the index again.`,
+                );
+              } else {
+                logCliInfo(
+                  logFilePath,
+                  "index",
+                  `\n${c.warn("Indexing incomplete:")} files were processed but no chunks were stored. Check the log for details.`,
+                );
+              }
+            } else if (status === "partial") {
+              partial = true;
               logCliInfo(
                 logFilePath,
                 "index",
-                `\n${c.error("Indexing incomplete:")} the embedding provider was unavailable — nothing was stored. Fix the provider and run the index again.`,
-              );
-            } else if (stats.totalChunks === 0 && stats.newFiles + stats.modifiedFiles > 0) {
-              incomplete = true;
-              logCliInfo(
-                logFilePath,
-                "index",
-                `\n${c.warn("Indexing incomplete:")} files were processed but no chunks were stored. Check the log for details.`,
+                `\n${c.warn("Indexing completed with problems:")} ${describeIndexProblems(stats).join("; ")} — see .opencode/opencode-rag.log.`,
               );
             }
             logCliInfo(
@@ -164,6 +176,15 @@ export function registerIndexCommand(program: Command): void {
               "index",
               `\n${c.success("Indexing complete.")} ${c.num(stats.finalCount)} chunks stored (${formatDuration(Date.now() - passStarted)}).`
             );
+            if (options.json) {
+              // Machine-readable summary: exactly one JSON object on the last line.
+              console.log(JSON.stringify(buildIndexSummaryJson(stats, {
+                cwd,
+                startedAt: started,
+                durationMs: Date.now() - passStarted,
+                interrupted: sigReceived,
+              })));
+            }
           }
 
           if (sigReceived && !watchTriggered) {
@@ -180,7 +201,9 @@ export function registerIndexCommand(program: Command): void {
 
         if (!options.watch) {
           await cleanupContext(ctx);
-          process.exit(sigReceived ? 130 : incomplete ? 1 : 0);
+          // Exit contract: 0 = complete, 3 = completed with problems (retried next pass),
+          // 1 = incomplete (nothing stored / hard failure), 130 = interrupted.
+          process.exit(sigReceived ? 130 : incomplete ? 1 : partial ? 3 : 0);
         }
 
         // Only one watcher may run per workspace — a background auto-indexer
@@ -199,7 +222,7 @@ export function registerIndexCommand(program: Command): void {
 
         logCliInfo(logFilePath, "index", `\n${c.heading("Watching for changes...")}`);
         const scheduler = createWatchPassScheduler(
-          async (changedPaths?: string[]): Promise<void> => { await runPass(true, undefined, changedPaths); },
+          async (): Promise<void> => { await runPass(true); },
           (error) => {
             const message = (error as Error).message || String(error);
             logCliError(logFilePath, "watch", `\nWatch reindex failed: ${message}`, error);

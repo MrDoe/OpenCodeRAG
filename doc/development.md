@@ -154,6 +154,11 @@ does nothing). CI runs `npm ci`, build, and tests before `npm publish`.
 Requirements: `gh` CLI on PATH and authenticated; run `npm run build && npm test` locally
 first — the script does not build or test. Dry-run via `--dry` / `DRY_RUN=1`.
 
+**Release gate (retrieval quality):** before tagging, run `npm run eval:gate` against an
+indexed workspace with the configured embedder. It exits `1` when the golden-set metrics
+drop below the documented floors, so a ranking regression cannot ship unnoticed. The
+decision model's calibration (`npm run eval:decide`) is a measurement, not a gate.
+
 For a **major** release (no script exists), perform the same steps manually:
 `npm version major`, push the tag, and create the GitHub Release with `gh release create`.
 

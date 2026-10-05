@@ -5,7 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod/v4";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
-import { resolveRagContext } from "../core/bootstrap.js";
+import { resolveRagContext, type RagContext } from "../core/bootstrap.js";
 import { retrieve } from "../retriever/retriever.js";
 import process from "node:process";
 import {
@@ -30,6 +30,13 @@ export interface McpServerOptions {
   cwd?: string;
   /** Custom transport (defaults to stdio). */
   transport?: Transport;
+  /**
+   * Pre-resolved pipeline context. When provided, the caller owns its lifecycle —
+   * the server will not close the store or HTTP pools. Used by tests (and any
+   * embedder that boots the server in-process) so `tools/list` can be verified
+   * against the real registrations without resolving config or probing providers.
+   */
+  context?: RagContext;
 }
 
 /** A running MCP server instance with a close method. */
@@ -43,7 +50,8 @@ export interface RagMcpInstance {
 /** Create and start an MCP server exposing search_semantic, get_file_skeleton, find_usages, and describe_image tools. */
 export async function createMcpServer(options?: McpServerOptions): Promise<RagMcpInstance> {
   const cwd = options?.cwd ?? process.cwd();
-  const ctx = await resolveRagContext({
+  const ownedContext = options?.context === undefined;
+  const ctx = options?.context ?? await resolveRagContext({
     cwd,
     configPath: options?.configPath,
   });
@@ -199,6 +207,7 @@ export async function createMcpServer(options?: McpServerOptions): Promise<RagMc
     server,
     close: async () => {
       await server.close();
+      if (!ownedContext) return;
       await ctx.store.close();
       ctx.keywordIndex.close();
       // Release keep-alive sockets held by the embedder/description providers

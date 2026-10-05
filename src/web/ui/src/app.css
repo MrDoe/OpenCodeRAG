@@ -1,6 +1,19 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* ── Tailwind v4 CSS-first config (replaces the former tailwind.config.js) ── */
+/* Class-based dark mode: the app toggles `.dark` on <html> (index.html starts dark). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Brand palette (was theme.extend.colors.brand in tailwind.config.js). */
+@theme {
+  --color-brand-400: #22d3ee;
+  --color-brand-500: #06b6d4;
+  --color-brand-600: #0891b2;
+}
+
+/* Explicit sources — mirrors the old content globs so the build scans only the UI. */
+@source "../index.html";
+@source "./**/*.{tsx,ts}";
 
 /* ── Theme Variables ─────────────────────────────────────────────── */
 

@@ -21,6 +21,8 @@ export interface CliOptions {
   explain?: boolean;
   /** Skip confirmation prompts for destructive operations. */
   yes?: boolean;
+  /** Print a machine-readable JSON summary as the last line of the `index` command. */
+  json?: boolean;
   /** Optional system prompt to steer an image description toward specific features. */
   systemPrompt?: string;
 }

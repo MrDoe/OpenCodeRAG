@@ -441,7 +441,7 @@ The plugin spawns one `BackgroundIndexer` per workspace directory (via `src/watc
 - **Debounced scheduler**: Waits `autoIndex.debounceMs` (2000ms) after changes before re-indexing (disabled by default; enable via `autoIndex.enabled`)
 - **Periodic timer**: Only for `git` backend — runs a full pass every `autoIndex.intervalMs` (default 5 min). Not used with `chokidar` (real FS events are sufficient)
 - **Error recovery**: Detects LanceDB corruption and triggers auto-rebuild
-- **Status file**: Writes `watcher-status.json` to the store path for observability
+- **Status file**: Writes `watcher-status.json` to the store path for observability — running state, last successful/failed pass, consecutive failures, pending-change timestamp, and the last error. `status` and the TUI show a stale warning when passes fail or changes arrived after the last successful pass.
 
 **One watcher per workspace:** the plugin claims a cross-process lock at
 `{storePath}/watcher.lock` before starting a watcher. If another process

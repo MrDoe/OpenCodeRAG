@@ -57,6 +57,8 @@
     "test": "node -e \"const {spawnSync}=require('node:child_process');const {globSync}=require('node:fs');const testFiles=globSync('src/**/*.test.ts').filter(f=>!f.includes('integration.test.ts')&&f!=='src/__tests__/plugin.test.ts'&&f!=='src/__tests__/watcher/integration.test.ts');if(testFiles.length===0){console.log('No test files found under src; skipping npm test.');process.exit(0);}const result=spawnSync(process.execPath,['--import','tsx','--test',...testFiles],{stdio:'inherit'});process.exit(typeof result.status==='number'?result.status:1);\"",
     "test:integration": "node -e \"const {spawnSync}=require('node:child_process');const testFiles=['src/__tests__/integration.test.ts','src/__tests__/plugin.test.ts','src/__tests__/watcher/integration.test.ts'];const result=spawnSync(process.execPath,['--import','tsx','--test',...testFiles],{stdio:'inherit'});process.exit(typeof result.status==='number'?result.status:1);\"",
     "cli": "tsx src/cli/index.ts",
+    "eval:gate": "tsx src/cli/index.ts eval:gate",
+    "eval:decide": "tsx src/cli/index.ts eval:decide",
     "release:patch": "node ./scripts/release-patch.js",
     "release:minor": "node ./scripts/release-minor.js"
   },
@@ -113,6 +115,7 @@
     "@opentui/keymap": "^0.5.11",
     "@opentui/solid": "^0.5.11",
     "@preact/preset-vite": "^2.10.6",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.20.0",
     "@types/react": "^19.2.17",
     "@types/three": "^0.185.4",

@@ -1,0 +1,308 @@
+{
+  "version": 1,
+  "labels": [
+    {
+      "id": "cls-intent-01",
+      "category": "classify",
+      "state": "Customer: I was charged twice for the October subscription ($19.99 each). Please refund the extra charge.",
+      "question": {
+        "type": "choice",
+        "instructions": "Which support intent best matches the message?",
+        "criteria": {
+          "duplicate_charge": "Charged more than once for the same item.",
+          "cancel": "Wants to end the subscription.",
+          "none": "None of the listed intents matches."
+        }
+      },
+      "expected": "duplicate_charge"
+    },
+    {
+      "id": "cls-lang-01",
+      "category": "classify",
+      "state": "def add(a, b):\n    return a + b",
+      "question": {
+        "type": "choice",
+        "instructions": "Which programming language is the snippet written in?",
+        "criteria": {
+          "python": "Python.",
+          "javascript": "JavaScript.",
+          "ruby": "Ruby.",
+          "none": "None of the listed languages."
+        }
+      },
+      "expected": "python"
+    },
+    {
+      "id": "cls-change-01",
+      "category": "classify",
+      "state": "The diff replaces a linear scan with a hash map lookup. Behavior and results are unchanged and all tests stay green.",
+      "question": {
+        "type": "choice",
+        "instructions": "What kind of change is this?",
+        "criteria": {
+          "bugfix": "Fixes incorrect behavior.",
+          "feature": "Adds new behavior.",
+          "refactor": "Changes implementation without changing behavior.",
+          "none": "None of the listed kinds."
+        }
+      },
+      "expected": "refactor"
+    },
+    {
+      "id": "cls-layer-01",
+      "category": "classify",
+      "state": "POST /orders returns 500. The server log says 'deadlock detected' while writing to the orders table.",
+      "question": {
+        "type": "choice",
+        "instructions": "Which layer is most likely the cause?",
+        "criteria": {
+          "database": "The database or a query.",
+          "api": "The HTTP/API layer.",
+          "ui": "The user interface.",
+          "none": "None of the listed layers."
+        }
+      },
+      "expected": "database"
+    },
+    {
+      "id": "cls-pm-01",
+      "category": "classify",
+      "state": "The repository contains pnpm-lock.yaml and no package-lock.json or yarn.lock.",
+      "question": {
+        "type": "choice",
+        "instructions": "Which package manager owns this repository?",
+        "criteria": {
+          "npm": "npm (package-lock.json).",
+          "pnpm": "pnpm (pnpm-lock.yaml).",
+          "yarn": "Yarn (yarn.lock).",
+          "bun": "Bun (bun.lock/bun.lockb).",
+          "none": "Cannot be determined."
+        }
+      },
+      "expected": "pnpm"
+    },
+    {
+      "id": "cls-test-01",
+      "category": "classify",
+      "state": "The test starts the real MCP server over stdio, sends JSON-RPC requests, and asserts the responses.",
+      "question": {
+        "type": "choice",
+        "instructions": "What kind of test is described?",
+        "criteria": {
+          "unit": "Tests one function or class in isolation with mocks.",
+          "integration": "Runs real components together without the full app.",
+          "e2e": "Drives the complete application end to end.",
+          "none": "None of the listed kinds."
+        }
+      },
+      "expected": "integration"
+    },
+    {
+      "id": "cls-topic-01",
+      "category": "classify",
+      "state": "Which model answers noul and choice questions over the /v1/systemone endpoint?",
+      "question": {
+        "type": "choice",
+        "instructions": "Which OpenCodeRAG subsystem does the question belong to?",
+        "criteria": {
+          "retrieval": "Vector/keyword search and ranking.",
+          "embeddings": "Embedding providers and dimensions.",
+          "decision": "Typed decisions (tev1, make_decision).",
+          "none": "None of the listed subsystems."
+        }
+      },
+      "expected": "decision"
+    },
+    {
+      "id": "cls-review-01",
+      "category": "classify",
+      "state": "The pull request adds an unused import and a typo in a log message; there are no logic changes.",
+      "question": {
+        "type": "choice",
+        "instructions": "What should the review outcome be?",
+        "criteria": {
+          "approve": "Merge as is.",
+          "request_changes": "Changes are required before merging.",
+          "none": "None of the listed outcomes."
+        }
+      },
+      "expected": "request_changes"
+    },
+    {
+      "id": "chk-refund-01",
+      "category": "check",
+      "state": "Customer: I was charged twice for the October subscription ($19.99 each). Please refund the extra charge.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the message explicitly ask for a refund?",
+        "criteria": { "true": "The text asks for a refund.", "false": "The text does not ask for a refund." }
+      },
+      "expected": "true"
+    },
+    {
+      "id": "chk-refund-02",
+      "category": "check",
+      "state": "Customer: My invoice shows two charges for October. Can you check what happened?",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the message explicitly ask for a refund?",
+        "criteria": { "true": "The text asks for a refund.", "false": "The text does not ask for a refund." }
+      },
+      "expected": "false"
+    },
+    {
+      "id": "chk-version-01",
+      "category": "check",
+      "state": "The issue was reproduced on v2.4.0 and v2.4.1.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the text name at least one specific version?",
+        "criteria": { "true": "A specific version is named.", "false": "No specific version is named." }
+      },
+      "expected": "true"
+    },
+    {
+      "id": "chk-url-01",
+      "category": "check",
+      "state": "The build fails on the CI runner with exit code 1.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the text contain a URL?",
+        "criteria": { "true": "The text contains a URL.", "false": "The text contains no URL." }
+      },
+      "expected": "false"
+    },
+    {
+      "id": "chk-errorcode-01",
+      "category": "check",
+      "state": "The API returns HTTP 503 during deploys.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the text contain an HTTP status code?",
+        "criteria": { "true": "An HTTP status code appears.", "false": "No HTTP status code appears." }
+      },
+      "expected": "true"
+    },
+    {
+      "id": "chk-loop-01",
+      "category": "check",
+      "state": "while (true) { process(items); }",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the snippet contain a loop that never terminates by itself?",
+        "criteria": { "true": "The loop cannot terminate by itself.", "false": "The loop can terminate by itself." }
+      },
+      "expected": "true"
+    },
+    {
+      "id": "chk-windows-01",
+      "category": "check",
+      "state": "The path C:\\Users\\dev\\project cannot be opened.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the text reference an absolute Windows path?",
+        "criteria": { "true": "A Windows path is referenced.", "false": "No Windows path is referenced." }
+      },
+      "expected": "true"
+    },
+    {
+      "id": "chk-breaking-01",
+      "category": "check",
+      "state": "The diff removes the exported function `oldApi()` and updates all internal callers.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the change remove a public API symbol?",
+        "criteria": { "true": "A public API symbol is removed.", "false": "No public API symbol is removed." }
+      },
+      "expected": "true"
+    },
+    {
+      "id": "chk-quirk-01",
+      "category": "check",
+      "state": "Please run the indexer again after changing the configuration file.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the text mention the word 'quirk'?",
+        "criteria": { "true": "The word appears.", "false": "The word does not appear." }
+      },
+      "expected": "false"
+    },
+    {
+      "id": "chk-async-01",
+      "category": "check",
+      "state": "function sum(a, b) { return a + b; }",
+      "question": {
+        "type": "noul",
+        "instructions": "Is the snippet asynchronous?",
+        "criteria": { "true": "The snippet is async (async/await/Promise).", "false": "The snippet is synchronous." }
+      },
+      "expected": "false"
+    },
+    {
+      "id": "chk-network-01",
+      "category": "check",
+      "state": "The command runs npm install and downloads packages from the registry.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the described command require network access?",
+        "criteria": { "true": "Network access is required.", "false": "No network access is required." }
+      },
+      "expected": "true"
+    },
+    {
+      "id": "chk-tsfile-01",
+      "category": "check",
+      "state": "The change touches src/core/config.ts and src/cli/index.ts.",
+      "question": {
+        "type": "noul",
+        "instructions": "Does the text reference at least one TypeScript file?",
+        "criteria": { "true": "A .ts file is referenced.", "false": "No .ts file is referenced." }
+      },
+      "expected": "true"
+    },
+    {
+      "id": "scr-severity-01",
+      "category": "score",
+      "state": "An indexing run overwrites the vector store and deletes every previously indexed chunk; there is no backup.",
+      "question": {
+        "type": "score",
+        "instructions": "How severe is the incident?",
+        "criteria": ["cosmetic", "minor", "major", "critical"]
+      },
+      "expected": "critical"
+    },
+    {
+      "id": "scr-quality-01",
+      "category": "score",
+      "state": "The module has small functions, clear names, and tests that cover the edge cases.",
+      "question": {
+        "type": "score",
+        "instructions": "How would you rate the code quality?",
+        "criteria": ["poor", "fair", "good", "excellent"]
+      },
+      "expected": "excellent"
+    },
+    {
+      "id": "scr-risk-01",
+      "category": "score",
+      "state": "The change rewrites the public retrieval API used by all plugins and replaces the ranking algorithm.",
+      "question": {
+        "type": "score",
+        "instructions": "How risky is the change?",
+        "criteria": ["none", "low", "medium", "high"]
+      },
+      "expected": "high"
+    },
+    {
+      "id": "scr-urgency-01",
+      "category": "score",
+      "state": "CI on main is red and every merge is blocked.",
+      "question": {
+        "type": "score",
+        "instructions": "How urgent is fixing this?",
+        "criteria": ["later", "normal", "soon", "now"]
+      },
+      "expected": "now"
+    }
+  ]
+}

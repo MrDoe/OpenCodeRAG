@@ -89,6 +89,34 @@ opencode-rag eval:compare abc123 def456
 
 Produces a formatted table comparing all metrics with deltas and percentage changes.
 
+## Retrieval Golden-Set Gate (`eval:gate`)
+
+`opencode-rag eval:gate` runs the 48 labelled queries in `src/eval/rerank-labels.json`
+through the real retrieval pipeline (fusion only — the rerank stage stays off) and exits
+non-zero when Hit@5, MRR, or nDCG@10 drop below the documented floors (defaults 0.35 /
+0.25 / 0.32, override with `--min-*`). It is a **release gate with a live embedder and an
+indexed workspace**, not a CI unit test.
+
+- Metrics come from `src/eval/golden-set.ts` — the same module the rerank A/B harness
+  uses, so both tools cannot report different numbers for the same labels.
+- Reference baseline (2026-10-05, `Qwen3-Embedding:8B`, 48 labels, topK 20):
+  Hit@1 25.0%, Hit@3 50.0%, Hit@5 54.2%, Hit@10 72.9%, MRR 0.405, nDCG@10 0.461.
+- Exit codes: `0` = passed, `1` = failed, `2` = could not run.
+
+## Decision-Model Calibration (`eval:decide`)
+
+`opencode-rag eval:decide` answers the labelled `noul`/`choice`/`score` tasks in
+`src/eval/decide-labels.json` with tev1 and reports **accuracy, ECE (10 bins) and Brier
+score** over the predicted answer's confidence. It exists because our own guidance says
+plainly that `confidence` is probability concentration, not the chance the answer is
+correct — this command measures the gap.
+
+- Requires Ollama ≥ 0.35 with a pulled tev1 model and `decision.enabled` (or
+  `--base-url/--model` for a one-off run).
+- `--report <path>` writes a markdown report (metrics, reliability table, per-item list);
+  suggested path: `doc/decide-calibration-report.md`.
+- Exit codes: `0` = run completed, `2` = could not run.
+
 ## Web UI Evaluate Tab
 
 The Web UI provides the same data in a browser interface with interactive token analysis:

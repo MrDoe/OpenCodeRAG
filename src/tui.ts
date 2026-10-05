@@ -47,6 +47,14 @@ type WatcherState = {
   lastRunAt: number | undefined;
   /** Whether the watcher is disabled (no status file — not started). */
   disabled?: boolean;
+  /** Timestamp of the last pass that finished without an error, if any. */
+  lastSuccessAt?: number;
+  /** Timestamp of the last filesystem change that triggered a pass, if any. */
+  lastChangeAt?: number;
+  /** Consecutive failed passes since the last success. */
+  consecutiveFailures?: number;
+  /** Truncated error message from the last failed pass. */
+  lastError?: string;
 };
 
 /** Aggregate status of the RAG index displayed in the sidebar. */
@@ -84,10 +92,21 @@ function loadWatcherStatus(storePath: string): WatcherState {
     return {
       running: raw.running === true,
       lastRunAt: typeof raw.lastRunAt === "number" ? raw.lastRunAt : undefined,
+      lastSuccessAt: typeof raw.lastSuccessAt === "number" ? raw.lastSuccessAt : undefined,
+      lastChangeAt: typeof raw.lastChangeAt === "number" ? raw.lastChangeAt : undefined,
+      consecutiveFailures:
+        typeof raw.consecutiveFailures === "number" ? raw.consecutiveFailures : undefined,
+      lastError: typeof raw.lastError === "string" ? raw.lastError : undefined,
     };
   } catch {
     return { running: false, lastRunAt: undefined, disabled: true };
   }
+}
+
+/** True when the watched index may be stale (failed passes or pending changes). */
+function watcherIsStale(w: WatcherState): boolean {
+  if ((w.consecutiveFailures ?? 0) > 0) return true;
+  return !!(w.lastChangeAt && (!w.lastSuccessAt || w.lastChangeAt > w.lastSuccessAt));
 }
 
 /**
@@ -214,11 +233,19 @@ function renderSidebar(
   const timeLine = `Indexed ${formatRelativeTime(status.lastIndexedAt)}`;
 
   const { watcher } = status;
+  const watcherStale = watcherIsStale(watcher);
   const watcherLine = watcher.disabled
     ? "Watcher disabled"
     : watcher.running
     ? "Watcher running\u2026"
-    : `Watcher idle \u00B7 last ${formatRelativeTime(watcher.lastRunAt)}`;
+    : watcherStale
+    ? "Watcher: index may be stale"
+    : `Watcher idle \u00B7 last ${formatRelativeTime(watcher.lastSuccessAt ?? watcher.lastRunAt)}`;
+  const watcherDetail = watcherStale
+    ? (watcher.consecutiveFailures ?? 0) > 0
+      ? `  ${watcher.consecutiveFailures}\u00D7 failed: ${(watcher.lastError ?? "unknown error").slice(0, 60)}`
+      : "  changes after last successful reindex"
+    : undefined;
 
   const fileListKey = tuiConfig?.fileListKeybinding ?? "ctrl+enter";
   const chunksKey = tuiConfig?.chunksKeybinding ?? "ctrl+alt+enter";
@@ -252,7 +279,8 @@ function renderSidebar(
       ),
       text({ fg: theme.text }, [statusLine]),
       text({ fg: theme.textMuted }, [timeLine]),
-      text({ fg: watcher.running ? theme.accent : theme.textMuted }, [watcherLine]),
+      text({ fg: watcher.running ? theme.accent : watcherStale ? theme.text : theme.textMuted }, [watcherLine]),
+      ...(watcherDetail ? [text({ fg: theme.textMuted }, [watcherDetail])] : []),
       text({ fg: theme.textMuted }, [`${formatKeybinding(settingsKey)} → Settings`]),
       text({ fg: theme.textMuted }, [`${formatKeybinding(fileListKey)} → Add File List`]),
       text({ fg: theme.textMuted }, [`${formatKeybinding(chunksKey)} → Add Chunks`]),

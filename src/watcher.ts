@@ -51,8 +51,20 @@ export interface CreateBackgroundIndexerOptions {
 export type WatcherStatus = {
   /** Whether an index pass is currently running. */
   running: boolean;
-  /** Timestamp (ms since epoch) of the last completed run, or undefined. */
+  /** Timestamp (ms since epoch) of the last finished pass (success or failure), or undefined. */
   lastRunAt: number | undefined;
+  /** Timestamp (ms since epoch) of the last pass that finished without an error. */
+  lastSuccessAt?: number;
+  /** Timestamp (ms since epoch) of the last failed pass. */
+  lastErrorAt?: number;
+  /** Truncated error message from the last failed pass. */
+  lastError?: string;
+  /** Consecutive failed passes since the last success (0 after a clean pass). */
+  consecutiveFailures?: number;
+  /** Timestamp (ms since epoch) of the last filesystem change that triggered a pass. */
+  lastChangeAt?: number;
+  /** Files/chunks that failed inside the last pass without failing the pass itself. */
+  lastPassProblems?: number;
 };
 
 /** Persist the current watcher status to disk as JSON. */
@@ -66,6 +78,27 @@ function writeWatcherStatus(storePath: string, status: WatcherStatus): void {
   } catch {
     // silently ignore write errors
   }
+}
+
+/**
+ * Derive whether the watched index may be stale from the persisted status.
+ * Stale when a reindex pass failed (or the embedding provider was unavailable and
+ * stored nothing), or when filesystem changes arrived after the last successful pass.
+ * Pure function — used by `status` and the TUI so both tell the same story.
+ *
+ * @param status - The persisted watcher status.
+ * @returns `stale` plus a human-readable reason when stale.
+ */
+export function deriveWatcherHealth(status: WatcherStatus): { stale: boolean; reason?: string } {
+  const failures = status.consecutiveFailures ?? 0;
+  if (failures > 0) {
+    const lastError = status.lastError ? `: ${status.lastError}` : "";
+    return { stale: true, reason: `${failures} consecutive reindex failure(s)${lastError}` };
+  }
+  if (status.lastChangeAt && (!status.lastSuccessAt || status.lastChangeAt > status.lastSuccessAt)) {
+    return { stale: true, reason: "changes detected after the last successful reindex" };
+  }
+  return { stale: false };
 }
 
 // ── Cross-process watcher claim lock ────────────────────────────────────────
@@ -163,15 +196,31 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
     if (active) return;
     active = true;
 
-    writeWatcherStatus(storePath, { running: false, lastRunAt: undefined });
+    let status: WatcherStatus = { running: false, lastRunAt: undefined };
+    writeWatcherStatus(storePath, status);
 
     const ac = new AbortController();
 
-    const updateStatus = (partial: Partial<WatcherStatus>) => {
-      writeWatcherStatus(storePath, { running: false, lastRunAt: undefined, ...partial });
+    // Merge partial updates into the persisted status so fields written by other
+    // code paths (lastSuccessAt, error info) survive every write.
+    const updateStatus = (patch: Partial<WatcherStatus>) => {
+      status = { ...status, ...patch };
+      writeWatcherStatus(storePath, status);
     };
 
-    const runPass = async (filterPaths?: string[]): Promise<void> => {
+    /** Files/chunks that failed inside a pass without failing the pass itself. */
+    const passProblems = (stats: {
+      extractionFailures: number;
+      descriptionFailedFiles: number;
+      embeddingFailures: number;
+    }): number =>
+      stats.extractionFailures + stats.descriptionFailedFiles + stats.embeddingFailures;
+
+    // Watched passes are full scans + manifest diffs by design: the scheduler's
+    // coalesced paths are change *hints* only. A filtered scan cannot detect
+    // deletions, and missed fs events would silently stale the index — the
+    // manifest hash diff is what makes every pass authoritative.
+    const runPass = async (): Promise<void> => {
       updateStatus({ running: true, lastRunAt: Date.now() });
       try {
         const stats = await runIndexPass({
@@ -183,7 +232,6 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
           keywordIndex,
           descriptionProvider,
           dimension,
-          filterPaths,
           abortSignal: ac.signal,
           logger: {
             info: (message) => appendDebugLog(logFilePath, { scope: "autoIndex", message }, logLevel),
@@ -200,11 +248,32 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
           }, logLevel);
           if (!ac.signal.aborted) {
             setTimeout(() => {
-              if (!ac.signal.aborted) scheduler.notifyChange(filterPaths);
+              if (!ac.signal.aborted) scheduler.notifyChange();
             }, 30_000).unref();
           }
+          updateStatus({ running: false, lastRunAt: Date.now() });
+        } else if (stats.embeddingUnavailable) {
+          // The pass "completed" but stored nothing — treat it as a failed pass so
+          // `status` and the TUI show a stale index instead of silent success.
+          const message = "embedding provider unavailable — nothing was stored";
+          appendDebugLog(logFilePath, { scope: "autoIndex", message }, logLevel);
+          updateStatus({
+            running: false,
+            lastRunAt: Date.now(),
+            lastErrorAt: Date.now(),
+            lastError: message,
+            consecutiveFailures: (status.consecutiveFailures ?? 0) + 1,
+            lastPassProblems: passProblems(stats),
+          });
+        } else {
+          updateStatus({
+            running: false,
+            lastRunAt: Date.now(),
+            lastSuccessAt: Date.now(),
+            consecutiveFailures: 0,
+            lastPassProblems: passProblems(stats),
+          });
         }
-        updateStatus({ running: false, lastRunAt: Date.now() });
       } catch (err) {
         appendDebugLog(logFilePath, {
           scope: "autoIndex",
@@ -217,7 +286,14 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
             message: "Corruption detected — run 'opencode-rag index --force' to rebuild manually",
           }, logLevel);
         }
-        updateStatus({ running: false, lastRunAt: Date.now() });
+        const message = err instanceof Error ? err.message : String(err);
+        updateStatus({
+          running: false,
+          lastRunAt: Date.now(),
+          lastErrorAt: Date.now(),
+          lastError: message.length > 300 ? `${message.slice(0, 299)}…` : message,
+          consecutiveFailures: (status.consecutiveFailures ?? 0) + 1,
+        });
       }
     };
 
@@ -249,7 +325,10 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
       persistent: true,
     });
 
-    const handleChange = (filePath?: string) => scheduler.notifyChange(filePath ? [filePath] : undefined);
+    const handleChange = (filePath?: string) => {
+      updateStatus({ lastChangeAt: Date.now() });
+      scheduler.notifyChange(filePath ? [filePath] : undefined);
+    };
     watcher.on("add", handleChange);
     watcher.on("change", handleChange);
     watcher.on("unlink", handleChange);

@@ -67,6 +67,7 @@ opencode-rag index [options]
 |---|---|---|
 | `-f, --force` | `false` | Force full rebuild (clears existing index) |
 | `-w, --watch` | `false` | Watch for file changes and re-index automatically |
+| `--json` | `false` | Print a machine-readable JSON summary as the last stdout line of the initial pass |
 | `-c, --config <path>` | auto-detected | Path to config file |
 
 **How it works:**
@@ -92,6 +93,15 @@ wrote for them are swept at the end of any pass that changed the index
 `Orphan chunks`.
 
 **Watch mode (`--watch`):** Uses chokidar to monitor file changes. Re-indexes debounced changes automatically.
+
+**Exit codes:** `0` = complete; `3` = completed with problems (some files failed
+extraction, description, or embedding and are retried on the next pass); `1` = incomplete
+(nothing stored — e.g. the embedding provider was unavailable) or a hard error; `130` =
+interrupted (Ctrl+C). Treat `3` as success-with-warnings, not as failure.
+
+**Machine-readable summary (`--json`):** prints one JSON object as the last stdout line
+(`schema: 1`, `status`, all counters, and up to 20 `extractionErrors` with relative
+paths). The human output above it is unchanged.
 
 ### `query`
 
@@ -586,6 +596,56 @@ opencode-rag eval:compare <sessionA> <sessionB> [options]
 | `-c, --config <path>` | auto-detected | Path to config file |
 
 **Output:** Formatted comparison table with delta and percentage change for each metric.
+
+### `eval:gate`
+
+Run the labelled retrieval golden set against the current index and fail when quality
+drops below the thresholds.
+
+```bash
+opencode-rag eval:gate [options]
+```
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `--labels <path>` | `src/eval/rerank-labels.json` | Golden-set label file |
+| `--topk <n>` | `retrieval.topK` | Top-K retrieved per query |
+| `--category <name>` | all | Only run labels of this category |
+| `--limit <n>` | all | Only run the first N labels |
+| `--min-hit5 <ratio>` | `0.35` | Minimum mean Hit@5 (0-1) |
+| `--min-mrr <ratio>` | `0.25` | Minimum mean MRR (0-1) |
+| `--min-ndcg10 <ratio>` | `0.32` | Minimum mean nDCG@10 (0-1) |
+| `--json` | `false` | Print a machine-readable result as the last stdout line |
+
+Measures the fusion pipeline only — the rerank stage stays off. Requires a live embedder
+and an indexed workspace (`0` = passed, `1` = regression below the floors, `2` = could not
+run). Reference run (2026-10-05, 48 labels, Qwen3-Embedding:8B): Hit@5 54.2%, MRR 0.405,
+nDCG@10 0.461.
+
+### `eval:decide`
+
+Measure accuracy, ECE (10 bins) and Brier score of the tev1 decision model on the labelled
+calibration set.
+
+```bash
+opencode-rag eval:decide [options]
+```
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `--labels <path>` | `src/eval/decide-labels.json` | Calibration label file |
+| `--model <name>` | `decision.model` | Decision model override (synthesizes an enabled config) |
+| `--base-url <url>` | `decision.baseUrl` | Ollama base URL override |
+| `--category <name>` | all | Only run items of this category |
+| `--limit <n>` | all | Only run the first N items |
+| `--report <path>` | – | Write a markdown calibration report |
+| `--json` | `false` | Print a machine-readable result as the last stdout line |
+
+Requires `decision.enabled` or `--base-url/--model`; exits `2` when Ollama/tev1 is
+unavailable. `confidence` is probability concentration — this command measures how close
+it is to correctness, and documents the gap.
 
 See [Evaluation documentation](evaluation.md) for interpretation and configuration guidance.
 
