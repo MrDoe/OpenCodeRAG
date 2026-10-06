@@ -1103,7 +1103,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               const budgetMs = memCfg.autoInjectLatencyBudgetMs ?? 2000;
               let timer: ReturnType<typeof setTimeout> | undefined;
               let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 1, minScore: memCfg.autoInjectMinScore })
+                recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 1, minScore: memCfg.autoInjectMinScore ?? 0.75 })
                   .then((r) => {
                     if (timer) clearTimeout(timer);
                     return r;

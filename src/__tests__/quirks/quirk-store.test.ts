@@ -4,7 +4,7 @@ import { LanceDbStore } from "../../vectorstore/lancedb.js";
 import { KeywordIndex } from "../../retriever/keyword-index.js";
 import { addQuirk, updateQuirk, recallQuirks, removeQuirk, listQuirks, lintQuirks, sharedWords } from "../../quirks/quirk-store.js";
 import { isQuirkAllowed } from "../../quirks/monitor.js";
-import type { EmbeddingProvider } from "../../core/interfaces.js";
+import type { EmbeddingProvider, SearchResult, VectorStore } from "../../core/interfaces.js";
 import type { RagConfig } from "../../core/config.js";
 import type { QuirkStoreDeps } from "../../quirks/quirk-store.js";
 
@@ -80,6 +80,57 @@ describe("quirk-store", () => {
       assert.equal(r.chunk.metadata.kind, "quirk", "all results should be quirks");
       assert.notEqual(r.chunk.metadata.language, "typescript", "should not return code chunks");
     }
+  });
+
+  it("gates recall on raw vector similarity, not the hybrid rank score", async () => {
+    const fixedEmbedder: EmbeddingProvider = {
+      name: "mock",
+      async embed(texts: string[]): Promise<number[][]> {
+        return texts.map(() => [1, 0, 0, 0, 0, 0, 0, 0]);
+      },
+    };
+
+    const chunk = (id: string, content: string) => ({
+      id,
+      content,
+      metadata: { filePath: `quirk:${id}`, startLine: 0, endLine: 0, language: "quirk", kind: "quirk" },
+    });
+    // highSim: the semantically closest quirk (no keyword boost needed).
+    // lowSim: weaker similarity, but it dominates the hybrid rank fusion.
+    const highSim = { score: 0.92, chunk: chunk("quirk:high", "semantically very close note") };
+    const lowSim = { score: 0.55, chunk: chunk("quirk:low", "lexically matching topk ranking note") };
+    const keywordOnly = { score: 0.4, chunk: chunk("quirk:kwonly", "topk ranking note without a vector hit") };
+
+    const mockStore: VectorStore = {
+      async addChunks(): Promise<void> {},
+      async search(): Promise<SearchResult[]> { return []; },
+      async searchWithFilter(_embedding: number[], topK: number): Promise<SearchResult[]> {
+        return [highSim, lowSim].slice(0, topK) as SearchResult[];
+      },
+      async count(): Promise<number> { return 2; },
+      async clear(): Promise<void> {},
+      async deleteByFilePath(): Promise<void> {},
+      async close(): Promise<void> {},
+      async getFilePaths(): Promise<string[]> { return []; },
+      async getChunks(): Promise<[]> { return []; },
+      async listFiles(): Promise<[]> { return []; },
+      async getChunksByFilePath(): Promise<[]> { return []; },
+    };
+
+    const ki2 = new KeywordIndex();
+    ki2.addChunks([lowSim.chunk, keywordOnly.chunk]);
+    const localDeps = { embedder: fixedEmbedder, store: mockStore, keywordIndex: ki2, cfg: MINIMAL_CFG, storePath: "memory://" };
+
+    // Strict bar: the keyword-favored low-similarity quirk must NOT be recalled
+    // (the old rank-fusion gate let it through with a higher score than highSim).
+    const strict = await recallQuirks(localDeps, "topk ranking note", { minScore: 0.8 });
+    assert.equal(strict.length, 1);
+    assert.equal(strict[0]!.chunk.id, "quirk:high");
+
+    // Lenient bar: both vector hits pass, keyword-only stays excluded, and
+    // ordering follows semantic similarity instead of keyword rank.
+    const lenient = await recallQuirks(localDeps, "topk ranking note", { minScore: 0.5 });
+    assert.deepEqual(lenient.map((r) => r.chunk.id), ["quirk:high", "quirk:low"]);
   });
 
   it("removes a quirk", async () => {

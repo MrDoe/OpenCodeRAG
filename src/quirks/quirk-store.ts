@@ -539,7 +539,15 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
   return result;
 }
 
-/** Recall quirks matching a query, with confidence re-weighting. */
+/**
+ * Recall quirks matching a query, gated on raw vector similarity and ranked by
+ * confidence-weighted similarity.
+ *
+ * The threshold is compared against the quirk's raw vector similarity
+ * (`(cosine + 1) / 2`, the stores' native 0-1 domain) — never against the
+ * hybrid rank-fusion score, whose top candidate of a small list always scores
+ * ~0.6+ regardless of relevance.
+ */
 export async function recallQuirks(
   deps: QuirkStoreDeps,
   query: string,
@@ -547,7 +555,9 @@ export async function recallQuirks(
     topK?: number;
     quirkType?: string;
     tags?: string[];
-    /** Override recallMinScore from config. Used by auto-inject for a lower threshold. */
+    /** Override recallMinScore from config. Semantic similarity threshold (0-1,
+     *  cosine mapped to [0,1] the same way the vector stores report raw scores).
+     *  Auto-inject passes its own (usually higher) bar. */
     minScore?: number;
   },
 ): Promise<SearchResult[]> {
@@ -560,9 +570,17 @@ export async function recallQuirks(
   const filter: { kinds: string[] } = { kinds: ["quirk"] };
 
   const recallMinScore = options?.minScore ?? deps.cfg.memory?.recallMinScore ?? 0.72;
+
+  // Fetch with the hybrid `minScore` gate disabled: the relevance decision is
+  // taken below against the RAW VECTOR SIMILARITY, not the rank-fusion score.
+  // The fused score is rank-based — the top quirk of a small candidate list
+  // always scores ~0.6+ no matter how unrelated it is — so a high threshold on
+  // it never filtered non-relevant quirks. `explain: true` exposes
+  // `rawVectorScore` for every fused candidate.
   const raw = await retrieve(query, deps.embedder, deps.store, {
     topK: topK * 3,
-    minScore: recallMinScore,
+    minScore: 0,
+    explain: true,
     keywordIndex: deps.keywordIndex,
     keywordWeight: deps.cfg.retrieval.hybridSearch?.keywordWeight,
     hybridEnabled: true,
@@ -570,10 +588,14 @@ export async function recallQuirks(
     filter,
   });
 
-  // Confidence re-weighting + type/tag filtering
+  // Confidence + semantic-similarity + type/tag filtering. The similarity gate
+  // is `(cosine + 1) / 2` in [0,1] — the same domain the vector stores report.
+  // A keyword-only candidate has rawVectorScore 0 and never passes minScore > 0.
   const filtered = raw.filter((r) => {
     const conf = r.chunk.metadata.confidence ?? 1;
     if (conf < minConfidence) return false;
+    const similarity = r.explanation?.scoreBreakdown?.rawVectorScore ?? 0;
+    if (similarity < recallMinScore) return false;
     if (options?.quirkType && r.chunk.metadata.quirkType !== options.quirkType) return false;
     if (options?.tags?.length) {
       const chunkTags = r.chunk.metadata.tags ?? [];
@@ -582,10 +604,14 @@ export async function recallQuirks(
     return true;
   });
 
-  // Re-weight score by confidence, re-sort
+  // Rank by semantic similarity (confidence-weighted) and report that same
+  // signal as `score`, so top-K selection is relevance-ordered and callers
+  // display a meaningful number instead of the rank-fusion artifact.
   for (const r of filtered) {
     const conf = r.chunk.metadata.confidence ?? 1;
-    r.score = r.score * Math.min(1, Math.max(0.01, conf));
+    const similarity = r.explanation?.scoreBreakdown?.rawVectorScore ?? 0;
+    r.score = similarity * Math.min(1, Math.max(0.01, conf));
+    delete r.explanation;
   }
   filtered.sort((a, b) => b.score - a.score);
   return filtered.slice(0, topK);

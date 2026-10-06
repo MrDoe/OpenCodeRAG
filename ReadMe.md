@@ -196,7 +196,7 @@ See [Plugin documentation](doc/plugin.md#6-wiki-mode--slash-command-wiki) for th
 
 ## Quirk Memory
 
-OpenCodeRAG gives your agent **persistent, cross-session memory** of non-obvious facts — gotchas, preferences, decisions, and environment constraints — that it can recall and extend over time. Quirks are embedded and stored in the same vector store as your code, then **automatically injected into the agent's context on every user message** when their relevance score exceeds the configured threshold. Injection uses two thresholds: the stricter `recallMinScore` (0.72) for the user message context, and the more permissive `autoInjectMinScore` (0.45) for the system prompt. This lets the agent avoid repeating mistakes and accumulate project knowledge across sessions without manual recall.
+OpenCodeRAG gives your agent **persistent, cross-session memory** of non-obvious facts - gotchas, preferences, decisions, and environment constraints - that it can recall and extend over time. Quirks are embedded and stored in the same vector store as your code, then **automatically injected into the agent's context on every user message** when their relevance score exceeds the configured threshold. Recall is gated by raw vector similarity (0-1, cosine mapped to [0,1]): `recallMinScore` (default 0.72) for manual `recall_quirks` calls, and the stricter `autoInjectMinScore` (default 0.75) for automatic injection - set it high (e.g. 0.85) to keep only strongly related quirks out of unrelated tasks. This lets the agent avoid repeating mistakes and accumulate project knowledge across sessions without manual recall.
 
 **Enabled by default.** Turn it on/off in `opencode-rag.json`:
 
@@ -206,9 +206,9 @@ OpenCodeRAG gives your agent **persistent, cross-session memory** of non-obvious
     "enabled": true,
     "autoInject": true,
     "minConfidence": 0.5,
-    "recallMinScore": 0.8,
-    "autoInjectMinScore": 0.6,
-    "autoInjectTopK": 2,
+    "recallMinScore": 0.72,
+    "autoInjectMinScore": 0.75,
+    "autoInjectTopK": 1,
     "autoInjectLatencyBudgetMs": 2000,
     "decay": { "enabled": false, "halfLifeDays": 30 }
   }
@@ -238,7 +238,7 @@ opencode-rag quirk test "npm needs --legacy-peer-deps"
 #   99% confidence
 ```
 
-When `memory.autoInject` is `true`, the plugin checks for relevant quirks on every user message using the combined agent-response + user-query as the search query. Quirks are only injected when their relevance score exceeds the threshold — `recallMinScore` (default 0.72) for the user message, `autoInjectMinScore` (default 0.45) for the system prompt. A latency budget (`autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections. Every `add_quirk` and every content-changing `update_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Outdated or fixed quirks should be corrected with `update_quirk` / `delete_quirk` rather than left to contradict newer memory. See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
+When `memory.autoInject` is `true`, the plugin checks for relevant quirks on every user message using the combined agent-response + user-query as the search query. Quirks are only injected when their raw vector similarity to that query clears `autoInjectMinScore` (default 0.75) - the same threshold for the user-message and system-prompt injections; `recallMinScore` (default 0.72) is the bar for manual `recall_quirks` calls. A latency budget (`autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections. Every `add_quirk` and every content-changing `update_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Outdated or fixed quirks should be corrected with `update_quirk` / `delete_quirk` rather than left to contradict newer memory. See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
 
 ## MCP Server (Optional)
 

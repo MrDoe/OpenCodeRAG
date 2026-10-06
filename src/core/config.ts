@@ -249,13 +249,14 @@ export interface MemoryConfig {
   autoInject: boolean;
   /** Minimum confidence (0-1) for a quirk to be returned. */
   minConfidence: number;
-  /** Minimum query-relevance score (0-1) for a quirk to be recalled. */
+  /** Minimum raw vector similarity (0-1, cosine mapped to [0,1]) for a quirk to be recalled by manual `recall_quirks` calls. */
   recallMinScore: number;
-  /** Minimum relevance score for quirks to be AUTO-injected into the prompt
-   *  (both the system-prompt transform and the user message). Deliberately a
-   *  high bar: injected quirks occupy context on every turn, so only strongly
-   *  relevant ones should reach the prompt. Manual `recall_quirks` calls use
-   *  the lower `recallMinScore`. */
+  /** Minimum raw vector similarity (0-1, cosine mapped to [0,1]) for quirks to
+   *  be AUTO-injected into the prompt (both the system-prompt transform and the
+   *  user message). Deliberately a high bar: injected quirks occupy context on
+   *  every turn, so only strongly related ones should reach the prompt - e.g.
+   *  0.85 admits only strongly related notes. Manual `recall_quirks` calls use
+   *  `recallMinScore` instead. */
   autoInjectMinScore: number;
   /** Maximum latency budget (ms) for auto-inject quirk recall. If exceeded, injection is skipped. */
   autoInjectLatencyBudgetMs: number;
@@ -284,7 +285,7 @@ export interface MemoryConfig {
    * so recurring errors can become quirks.
    */
   injectOnToolError: boolean;
-  /** Minimum relevance score (0-1) for a quirk to be injected after a tool error (default 0.7). */
+  /** Minimum raw vector similarity (0-1, cosine mapped to [0,1]) for a quirk to be injected after a tool error (default 0.7). */
   toolErrorMinScore: number;
   /** Max quirks injected per tool error (default 2). */
   toolErrorTopK: number;
