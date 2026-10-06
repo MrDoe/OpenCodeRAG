@@ -42,7 +42,7 @@ export const SKELETON_CONFIGS: Record<string, SkeletonConfig> = {
   ".cxx":   { grammarName: "cpp", nodeTypes: ["function_definition", "class_specifier", "struct_specifier", "enum_specifier"] },
   ".h":     { grammarName: "cpp", nodeTypes: ["function_definition", "class_specifier", "struct_specifier", "enum_specifier"] },
   ".hpp":   { grammarName: "cpp", nodeTypes: ["function_definition", "class_specifier", "struct_specifier", "enum_specifier"] },
-  ".cs":    { grammarName: "c-sharp", nodeTypes: ["class_declaration", "method_declaration", "interface_declaration", "enum_declaration", "struct_declaration"] },
+  ".cs":    { grammarName: "c_sharp", nodeTypes: ["class_declaration", "method_declaration", "interface_declaration", "enum_declaration", "struct_declaration"] },
   ".rb":    { grammarName: "ruby", nodeTypes: ["method", "class", "module"] },
   ".swift": { grammarName: "swift", nodeTypes: ["function_declaration", "class_declaration", "struct_declaration", "enum_declaration", "protocol_declaration"] },
   ".kt":    { grammarName: "kotlin", nodeTypes: ["function_declaration", "class_declaration", "interface_declaration", "object_declaration"] },
