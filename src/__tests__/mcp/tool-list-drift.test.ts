@@ -114,7 +114,7 @@ describe("tool list drift", () => {
 
   it("documents every plugin-registered tool in README, guidance, and skill files", () => {
     const pluginTools = [...EXPECTED_MCP_TOOLS, ...EXPECTED_PLUGIN_ONLY_TOOLS].sort();
-    const readme = readRepoFile("README.md");
+    const readme = readRepoFile("ReadMe.md");
 
     // The README MCP table must match the live MCP set exactly — no stale names.
     assert.deepEqual(
