@@ -188,4 +188,93 @@ describe("embedBatch failure handling", () => {
     assert.equal(calls, 1, "permanent auth errors must not be retried or split");
     assert.deepStrictEqual(result, [[], [], [], []]);
   });
+
+  it("retries a gateway error at the top level but never splits it", async () => {
+    let calls = 0;
+    const embedder: EmbeddingProvider = {
+      name: "mock",
+      async embed(): Promise<number[][]> {
+        calls++;
+        throw new Error("OpenAI embedding failed (502): Bad Gateway");
+      },
+    };
+
+    // retryMax 2 → 3 attempts on the single top-level batch. A 502 is not a
+    // per-text problem, so splitting must NOT happen — before this fix the batch
+    // split 4→2→1 with retries at every node and looked like a hang.
+    const result = await embedBatch(embedder, ["a", "b", "c", "d"], 4, "document", 1, undefined, 2, 0);
+
+    assert.equal(calls, 3, "gateway errors retry at depth 0 but must not split into a tree");
+    assert.deepStrictEqual(result, [[], [], [], []]);
+  });
+
+  it("recovers from a transient gateway error via top-level retry", async () => {
+    let calls = 0;
+    const embedder: EmbeddingProvider = {
+      name: "mock",
+      async embed(texts: string[]): Promise<number[][]> {
+        calls++;
+        if (calls === 1) throw new Error("OpenAI embedding failed (502): Bad Gateway");
+        return texts.map((t) => [t.length]);
+      },
+    };
+
+    const result = await embedBatch(embedder, ["ab", "cd"], 2, "document", 1, undefined, 2, 0);
+
+    assert.equal(calls, 2, "the second attempt must succeed — gateway errors are not permanent");
+    assert.deepStrictEqual(result, [[2], [2]]);
+  });
+
+  it("trips a circuit breaker after consecutive failed batches and short-circuits the rest", async () => {
+    let calls = 0;
+    const embedder: EmbeddingProvider = {
+      name: "mock",
+      async embed(): Promise<number[][]> {
+        calls++;
+        throw new Error("OpenAI embedding failed (502): Bad Gateway");
+      },
+    };
+
+    // 10 single-text batches against a dead backend; breaker threshold 3. After
+    // 3 failures the provider is not touched again, yet caller index→vector
+    // alignment is preserved (one empty slot per text).
+    const texts = Array.from({ length: 10 }, (_, i) => `t${i}`);
+    const result = await embedBatch(embedder, texts, 1, "document", 1, undefined, 0, 0, 3);
+
+    assert.equal(calls, 3, "provider must not be hammered after the breaker trips");
+    assert.equal(result.length, 10, "one (empty) vector slot per text keeps caller alignment");
+    assert.ok(result.every((v) => v.length === 0));
+  });
+
+  it("resets the breaker on any success so scattered failures never trip it", async () => {
+    let calls = 0;
+    const embedder: EmbeddingProvider = {
+      name: "mock",
+      async embed(texts: string[]): Promise<number[][]> {
+        calls++;
+        if (texts.some((t) => t.includes("bad"))) {
+          throw new Error("OpenAI embedding failed (502): Bad Gateway");
+        }
+        return texts.map((t) => [t.length]);
+      },
+    };
+
+    // Alternating success/failure → never 3 CONSECUTIVE failures, so all 6
+    // batches are attempted despite the threshold of 3.
+    const result = await embedBatch(
+      embedder,
+      ["ok", "bad", "ok2", "bad2", "ok3", "bad3"],
+      1,
+      "document",
+      1,
+      undefined,
+      0,
+      0,
+      3,
+    );
+
+    assert.equal(calls, 6, "a healthy backend with scattered failures must never short-circuit");
+    assert.deepStrictEqual(result[0], [2]);
+    assert.deepStrictEqual(result[1], []);
+  });
 });

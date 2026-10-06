@@ -121,6 +121,32 @@ function isTimeoutError(err: unknown): boolean {
   return TIMEOUT_RE.test(err instanceof Error ? err.message : String(err));
 }
 
+/**
+ * HTTP 502/503/504 — the request never got a usable answer from the model
+ * backend. A reverse proxy or model router (llama-swap, nginx, …) returns these
+ * when the backend is down, over capacity, or crashing on the input — most
+ * commonly an embedding server whose context window is smaller than the chunk
+ * we send (it accepts a short probe, so preflight passes, then 502s on every
+ * real chunk). Unlike a per-text context rejection, shrinking the batch cannot
+ * help: the server itself is the problem. So gateway errors are retried at the
+ * top level (a brief blip recovers) but never split — splitting only multiplies
+ * load on an unhealthy backend — and repeated ones trip the circuit breaker.
+ */
+const GATEWAY_STATUS_RE = /\(?(502|503|504)\)?/;
+
+function isGatewayError(err: unknown): boolean {
+  return GATEWAY_STATUS_RE.test(err instanceof Error ? err.message : String(err));
+}
+
+/**
+ * How many CONSECUTIVELY failed batches stop all further embedding requests in a
+ * single `embedBatch` call (the counter is reset by any batch that succeeds).
+ * Bounds the damage when the provider is down or undersized so a run fails fast
+ * and reports the provider as unavailable, instead of silently grinding through
+ * every batch for minutes — which reads as a hang. `0` disables the breaker.
+ */
+const DEFAULT_MAX_CONSECUTIVE_BATCH_FAILURES = 6;
+
 /** Resolve the workspace debug log file used for batch failure diagnostics. */
 function getBatchLogFilePath(): string {
   return path.resolve(process.cwd(), ".opencode", "opencode-rag.log");
@@ -164,6 +190,7 @@ export async function embedBatch(
   onProgress?: (completed: number, total: number) => void,
   retryMax: number = 3,
   retryBaseDelayMs: number = 1000,
+  maxConsecutiveFailures: number = DEFAULT_MAX_CONSECUTIVE_BATCH_FAILURES,
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
 
@@ -227,9 +254,17 @@ export async function embedBatch(
     // counted by the caller. A context-limit rejection carries a permanent 400
     // status, so it needs its own predicate; timeouts are already non-permanent
     // (belt and braces). Genuine permanent errors never split — halving the
-    // batch would fail the same way, only slower.
+    // batch would fail the same way, only slower. Neither do gateway errors
+    // (502/503/504): they come from the SERVER (down, overloaded, or a context
+    // smaller than our chunks), not a bad text, so a smaller batch fails
+    // identically. Top-level retry already handles a transient one; a persistent
+    // one is left to the circuit breaker below rather than split into an
+    // exponential retry tree that looks exactly like a hang.
     const splittable =
-      !isPermanentError(lastError) || isContextLimitError(lastError) || isTimeoutError(lastError);
+      (!isPermanentError(lastError) ||
+        isContextLimitError(lastError) ||
+        isTimeoutError(lastError)) &&
+      !isGatewayError(lastError);
     if (batchTexts.length > 1 && splittable) {
       const mid = Math.ceil(batchTexts.length / 2);
       appendDebugLog(getBatchLogFilePath(), {
@@ -250,10 +285,54 @@ export async function embedBatch(
     return null;
   }
 
+  // ── Circuit breaker ────────────────────────────────────────────────────
+  // A down / overloaded / undersized embedding server fails EVERY batch. Without
+  // a break we keep firing batch after batch at it for the whole run — a silent,
+  // minutes-long grind indistinguishable from a hang. After this many
+  // CONSECUTIVELY failed batches (reset by any success) we stop calling the
+  // provider entirely and short-circuit the rest to empty vectors, so the pass
+  // fails fast and the pipeline reports the provider as unavailable.
+  let consecutiveFailedBatches = 0;
+  let circuitTripped = false;
+  function recordBatchResult(succeeded: boolean): void {
+    if (succeeded) {
+      consecutiveFailedBatches = 0;
+      return;
+    }
+    consecutiveFailedBatches++;
+    if (
+      !circuitTripped &&
+      maxConsecutiveFailures > 0 &&
+      consecutiveFailedBatches >= maxConsecutiveFailures
+    ) {
+      circuitTripped = true;
+      appendDebugLog(getBatchLogFilePath(), {
+        scope: "embedder.batch",
+        severity: "warn",
+        message:
+          `Embedding circuit breaker tripped after ${consecutiveFailedBatches} consecutive failed ` +
+          "batches — the embedding server is unavailable, overloaded, or rejecting the input (an " +
+          "over-large / too-small context is the usual cause). Stopping further requests; un-embedded " +
+          "chunks are kept for the next pass. Fix the provider (e.g. raise its context window) and " +
+          "run the index again.",
+      });
+    }
+  }
+
   if (concurrency <= 1 || batches.length <= 1) {
     const results: number[][] = [];
     for (const batch of batches) {
+      if (circuitTripped) {
+        // Breaker open: emit empty vectors so caller index→vector alignment is
+        // preserved, advance progress, and never touch the provider again.
+        for (let i = 0; i < batch.texts.length; i++) {
+          results.push([]);
+        }
+        onProgress?.(results.length, texts.length);
+        continue;
+      }
       const embeddings = await embedWithRetry(batch.texts);
+      recordBatchResult(embeddings !== null);
       if (embeddings) {
         results.push(...embeddings);
       } else {
@@ -271,7 +350,13 @@ export async function embedBatch(
   const batchResults = await Promise.all(
     batches.map((batch) =>
       limit(async () => {
+        if (circuitTripped) {
+          completedCount += batch.texts.length;
+          onProgress?.(completedCount, texts.length);
+          return { index: batch.index, embeddings: batch.texts.map(() => []) };
+        }
         const embeddings = await embedWithRetry(batch.texts);
+        recordBatchResult(embeddings !== null);
         const flatResult = embeddings ?? batch.texts.map(() => []);
         // Count processed TEXTS (not returned vectors) so failed batches
         // still advance progress towards the total.
