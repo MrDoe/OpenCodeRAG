@@ -565,6 +565,128 @@ describe("ragPlugin", () => {
     assert.match(guidance, /find_usages.*before editing/i);
   });
 
+  it("skips the system guidance when the session tool catalog has no RAG tools", async () => {
+    const { dependencies } = makeDependencies([], 1);
+    const hooks = createRagHooks({
+      cfg: makeConfig(),
+      storePath: "memory://",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store: populatedStore,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    const systemHook = hooks["experimental.chat.system.transform"];
+    assert.ok(systemHook);
+
+    const output = { system: [] as string[] };
+    // Mirrors the shipped `explore` agent: read/glob/grep are allowed, every
+    // plugin tool is filtered out of the session catalog.
+    await systemHook?.(
+      {
+        model: { providerID: "test", modelID: "test" },
+        agent: "explore",
+        tools: {
+          read: { description: "read", input: {} },
+          glob: { description: "glob", input: {} },
+          grep: { description: "grep", input: {} },
+        },
+      } as never,
+      output as never,
+    );
+
+    assert.equal(
+      output.system.find((s) => s.includes("MANDATORY: OpenCodeRAG tools")),
+      undefined,
+      "no guidance may be injected when the RAG tools are not exposed",
+    );
+  });
+
+  it("injects the guidance for explore when the tool grant is active and no catalog is sent", async () => {
+    const { dependencies } = makeDependencies([], 1);
+    const hooks = createRagHooks({
+      cfg: makeConfig(),
+      storePath: "memory://",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store: populatedStore,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    const systemHook = hooks["experimental.chat.system.transform"];
+    assert.ok(systemHook);
+
+    const output = { system: [] as string[] };
+    await systemHook?.(
+      { model: { providerID: "test", modelID: "test" }, agent: "explore" } as never,
+      output as never,
+    );
+
+    const guidance = output.system.find((s) => s.includes("MANDATORY: OpenCodeRAG tools"));
+    assert.ok(guidance, "explore is granted the RAG tools by default");
+  });
+
+  it("skips the guidance for explore when the tool grant is disabled and no catalog is sent", async () => {
+    const { dependencies } = makeDependencies([], 1);
+    const hooks = createRagHooks({
+      cfg: makeConfig({
+        openCode: { enabled: true, maxContextChunks: 10, injectSystemPrompt: true, exploreAgentTools: false },
+      }),
+      storePath: "memory://",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store: populatedStore,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    const systemHook = hooks["experimental.chat.system.transform"];
+    assert.ok(systemHook);
+
+    const output = { system: [] as string[] };
+    await systemHook?.(
+      { model: { providerID: "test", modelID: "test" }, agent: "explore" } as never,
+      output as never,
+    );
+
+    assert.equal(
+      output.system.find((s) => s.includes("MANDATORY: OpenCodeRAG tools")),
+      undefined,
+      "explore must not receive the guidance when the grant is disabled",
+    );
+  });
+
+  it("injects the system guidance when the tool catalog exposes RAG tools", async () => {
+    const { dependencies } = makeDependencies([], 1);
+    const hooks = createRagHooks({
+      cfg: makeConfig(),
+      storePath: "memory://",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store: populatedStore,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    const systemHook = hooks["experimental.chat.system.transform"];
+    assert.ok(systemHook);
+
+    const output = { system: [] as string[] };
+    await systemHook?.(
+      {
+        model: { providerID: "test", modelID: "test" },
+        agent: "build",
+        tools: {
+          read: { description: "read", input: {} },
+          search_semantic: { description: "semantic search", input: {} },
+        },
+      } as never,
+      output as never,
+    );
+
+    const guidance = output.system.find((s) => s.includes("MANDATORY: OpenCodeRAG tools"));
+    assert.ok(guidance, "guidance should be injected when search_semantic is exposed");
+    assert.match(guidance!, /search_semantic/);
+  });
+
   it("uses combined assistant+user query for hotkey injection", async () => {
     const tmpDir = mkdtempSync(path.join(tmpdir(), "opencode-rag-test-"));
     try {

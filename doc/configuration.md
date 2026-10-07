@@ -388,7 +388,8 @@ Controls the OpenCode plugin integration.
 | `autoIndex.intervalMs` | `300000` | Periodic full-index interval, only used by git backend (ignored with chokidar) |
 | `autoIndex.watcher` | `"chokidar"` | File-change detection backend: `"chokidar"` (real-time FS events) or `"git"` (poll-based diff) |
 | `readNoResultsBehavior` | `"hint"` | Behavior when read returns no results: `"hint"` (suggest related files), `"empty"`, or `"error"` |
-| `injectSystemPrompt` | `true` | Inject RAG tool guidance into the system prompt (disable to save tokens once agents know the tools) |
+| `injectSystemPrompt` | `true` | Inject RAG tool guidance into the system prompt when the session's tool catalog exposes the RAG tools (skipped automatically for tool-less agents such as `explore`; disable to save tokens once agents know the tools) |
+| `exploreAgentTools` | `true` | Grant the read-only RAG tools to the built-in `explore` agent (disable to keep explore limited to read/glob/grep) |
 
 ### `documentationMode`
 

@@ -478,6 +478,54 @@ type CreateRagHooksOptions = {
 };
 
 /**
+ * Plugin tool names advertised by the mandatory guidance and granted to the
+ * built-in `explore` agent. `read` is deliberately absent — the read override
+ * shadows a built-in tool name and is ambiguous.
+ */
+export const RAG_TOOL_NAMES = [
+  "search_semantic",
+  "get_file_skeleton",
+  "find_usages",
+  "describe_image",
+  "make_decision",
+  "recall_quirks",
+  "add_quirk",
+  "update_quirk",
+  "delete_quirk",
+] as const;
+
+/**
+ * Built-in agents that ship with a permission policy denying every RAG tool
+ * (e.g. `explore`: deny all except read/glob/grep and the web tools). When the
+ * host sends no tool catalog, the guidance gate assumes they lack the tools —
+ * unless the explore tool grant (openCode.exploreAgentTools) is active.
+ */
+const TOOLLESS_BUILTIN_AGENTS = new Set(["explore"]);
+
+/**
+ * Decide whether the mandatory RAG guidance should be injected into the
+ * session's system prompt. OpenCode V2 passes the session's tool catalog to
+ * the context hook: advertise the tools only when at least one RAG tool is
+ * actually exposed. Restricted agents (`explore`) and custom permission
+ * overrides would otherwise receive an inert mandate referencing tools they
+ * cannot call. Hosts that do not send a catalog assume the legacy state —
+ * tool-less built-in agents stay skipped unless the explore tool grant is on.
+ */
+function shouldInjectSystemGuidance(
+  tools: Record<string, unknown> | undefined,
+  agent: string | undefined,
+  exploreToolsGranted: boolean,
+): boolean {
+  if (tools) {
+    return RAG_TOOL_NAMES.some((name) => name in tools);
+  }
+  if (agent !== undefined && TOOLLESS_BUILTIN_AGENTS.has(agent)) {
+    return exploreToolsGranted;
+  }
+  return true;
+}
+
+/**
  * Format a list of relevant files (aggregated from chunks) for display.
  * Groups chunks by file path and sorts by maximum relevance score.
  * Includes an AGENTS.md-style tool usage reminder at the end.
@@ -1038,14 +1086,21 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         // Non-critical — must never throw
       }
     },
-    async "experimental.chat.system.transform"(_input, output) {
+    async "experimental.chat.system.transform"(input, output) {
+      const cfg = getEffectiveCfg();
+      const guidanceEnabled = cfg.openCode.injectSystemPrompt !== false;
+      const exploreToolsGranted = cfg.openCode.exploreAgentTools !== false;
+      const injectGuidance =
+        guidanceEnabled && shouldInjectSystemGuidance(input?.tools, input?.agent, exploreToolsGranted);
+
       appendDebugLog(options.logFilePath, {
         scope: "experimental.chat.system.transform",
-        message: "system guidance injected",
+        message: injectGuidance
+          ? "system guidance injected"
+          : `system guidance skipped (${guidanceEnabled ? `no RAG tools in session; agent=${input?.agent ?? "unknown"}` : "injectSystemPrompt=false"})`,
       });
 
-      const cfg = getEffectiveCfg();
-      if (cfg.openCode.injectSystemPrompt !== false) {
+      if (injectGuidance) {
         const guidance = buildSystemGuidanceLines({ promptEnforcement: !!cfg.memory?.promptEnforcement, decisionEnabled: !!cfg.decision?.enabled, routeBeforeAsking: !!cfg.decision?.routeBeforeAsking });
         output.system.unshift(guidance.join("\n"));
       }
@@ -1091,7 +1146,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
 
       // Inject relevant quirks into system prompt when memory.autoInject is enabled
       try {
-        const sessionId = (_input as { sessionID?: string })?.sessionID;
+        const sessionId = (input as { sessionID?: string })?.sessionID;
         if (sessionId) {
           const memCfg = getEffectiveCfg().memory;
           if (memCfg?.enabled && memCfg?.autoInject) {
@@ -1139,7 +1194,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         // Tool-error quirks: flush the pending block captured in tool.execute.after.
         // Freshness-bounded — a stale error must not leak into a later turn.
         try {
-          const sessionId = (_input as { sessionID?: string })?.sessionID;
+          const sessionId = (input as { sessionID?: string })?.sessionID;
           if (sessionId) {
             const pending = sessionPendingToolErrorQuirk.get(sessionId);
             if (pending) {

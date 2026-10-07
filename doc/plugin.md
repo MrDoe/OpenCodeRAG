@@ -156,6 +156,22 @@ tool snapshot until the plugin is reloaded or OpenCode is restarted. MCP servers
 use the same flag (`codemode` on the server config) if you want their tools
 direct as well.
 
+### Explore agent tool grant
+
+By default the plugin grants its read-only RAG tools (`search_semantic`,
+`get_file_skeleton`, `find_usages`, `describe_image`, the quirk tools, and —
+when `decision.enabled` — `make_decision`) to the built-in **`explore`** agent,
+so delegated codebase exploration can use semantic search instead of
+grep/glob only. OpenCode ships `explore` with a deny-all policy (everything
+except `read`, `glob`, `grep`, and the web tools); the plugin appends `allow`
+rules for its tool actions via the V2 agent transform, after the shipped rules
+(last match wins). An explicit user rule for a tool action — allow, ask, or
+deny — is respected and never overridden.
+
+Disable with `openCode.exploreAgentTools: false`. The grant is read at plugin
+load and applies after an OpenCode restart; when disabled, runtime guidance is
+also skipped for `explore` (see section 4).
+
 ### 2. `chat.message` Hook — Hotkey-Activated Injection
 
 The plugin captures `message.part.updated` events to accumulate the **last assistant message's text**. When you trigger injection via hotkey, the search query combines:
@@ -185,9 +201,9 @@ The skill teaches the workflow: skeleton → find_usages → search → read →
 
 `opencode-rag init` also creates `.opencode/skills/make-decision/SKILL.md` — a dedicated skill for the decision-model tool covering when to use `make_decision`, the three question types, prerequisites, and limits. It is generated regardless of `decision.enabled` and is loaded on demand like any other skill.
 
-### 4. System Prompt Guidance (Always)
+### 4. System Prompt Guidance (when the tools are exposed)
 
-The `experimental.chat.system.transform` hook prepends a tool list to the system prompt on every message, ensuring agents always know the tools are available — even before the index is built.
+The `experimental.chat.system.transform` hook prepends a tool list to the system prompt on every message, ensuring agents know the tools are available — even before the index is built. OpenCode V2 passes the session's tool catalog and agent ID to the context hook, so the plugin injects the guidance **only when at least one RAG tool is present in that catalog**. Restricted built-in agents such as `explore` (which deny everything except `read`, `glob`, `grep`, and the web tools) and custom permission overrides that hide the plugin tools no longer receive an inert mandate referencing tools they cannot call. When the host sends no catalog, injection stays unconditional except for known tool-less built-in agents. `openCode.injectSystemPrompt: false` disables the guidance entirely.
 
 The guidance text (mandatory tools, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules) is defined in a single source at `src/opencode/system-guidance.ts`. The same text is used at `init` time to populate the `AGENTS.md` directive, ensuring consistency between the runtime system prompt and the always-loaded workspace directive.
 

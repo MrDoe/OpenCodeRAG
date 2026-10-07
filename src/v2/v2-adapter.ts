@@ -16,6 +16,10 @@
  * | `tool.execute.after`         | `ctx.tool.hook("execute.after", ...)`    |
  * | `event`                      | `ctx.event.subscribe({ signal })`        |
  *
+ * Additional V2-only registration (no V1 equivalent): the read-only RAG tools
+ * are granted to the built-in `explore` agent via `ctx.agent.transform`
+ * (config `openCode.exploreAgentTools`, default on).
+ *
  * The V2 prompt hook exposes the user's text as a mutable `event.prompt.text`
  * instead of V1's parts-mutation contract; the adapter shims a V1-shaped
  * `output.parts` view around it and writes the mutated text back.
@@ -27,7 +31,8 @@
  * - The read-tool override keeps its V1 execute contract (args + sessionID).
  */
 
-import { ragPlugin } from "../plugin.js";
+import { findConfigFile, loadConfig } from "../core/config.js";
+import { ragPlugin, RAG_TOOL_NAMES } from "../plugin.js";
 import type { Hooks } from "@opencode-ai/plugin";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -62,6 +67,26 @@ type V2EventDomain = {
   subscribe(options: { signal: AbortSignal }): AsyncIterable<unknown>;
 };
 
+/** Permission rule shape inside an agent definition (OpenCode V2 schema). */
+type V2PermissionRule = {
+  action: string;
+  resource: string;
+  effect: "allow" | "deny" | "ask";
+};
+
+/** Mutable agent definition subset used by the explore tool grant. */
+type V2AgentInfo = { permissions?: V2PermissionRule[] };
+
+type V2AgentEditor = {
+  get(id: string): V2AgentInfo | undefined;
+  update(id: string, update: (agent: V2AgentInfo) => void): void;
+};
+
+type V2AgentDomain = {
+  transform(callback: (editor: V2AgentEditor) => void): Promise<V2Registration>;
+  reload(): Promise<void>;
+};
+
 /** Structural subset of the OpenCode V2 plugin context. */
 export type V2Context = {
   location: { directory: string };
@@ -69,6 +94,7 @@ export type V2Context = {
   tool: V2ToolDomain;
   session: V2SessionDomain;
   event: V2EventDomain;
+  agent?: V2AgentDomain;
 };
 
 /** A registered V2 tool definition (structural subset of Tool.Info). */
@@ -143,9 +169,16 @@ type V2PromptHookEvent = {
   prompt: { text: string };
 };
 
-/** V2 `context` hook event. */
+/**
+ * V2 `context` hook event. `agent` and `tools` mirror the host's
+ * `SessionContext` (session agent ID and the tool catalog actually exposed to
+ * it); both stay optional so hosts that don't send them keep the legacy
+ * unconditional guidance injection.
+ */
 type V2ContextHookEvent = {
   sessionID: string;
+  agent?: string;
+  tools?: Record<string, { description?: string; input?: unknown }>;
   system: Array<{ type: "text"; text: string }>;
 };
 
@@ -267,6 +300,24 @@ function v1ToolToV2(name: string, def: {
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Grant the read-only RAG tools to the built-in `explore` agent. Appends an
+ * `allow` rule per tool action AFTER the shipped deny-all policy (OpenCode
+ * resolves permissions with "last matching rule wins"); an existing explicit
+ * rule for a tool action — user-configured allow, ask, or deny — is respected
+ * and left untouched. No-op when the agent is absent. Exported for tests.
+ */
+export function grantExploreToolPermissions(editor: V2AgentEditor): void {
+  if (!editor.get("explore")) return;
+  editor.update("explore", (agent) => {
+    const rules = (agent.permissions ??= []);
+    for (const name of RAG_TOOL_NAMES) {
+      if (rules.some((rule) => rule.action === name)) continue;
+      rules.push({ action: name, resource: "*", effect: "allow" });
+    }
+  });
+}
+
+/**
  * Run the V1 `ragPlugin` factory for the V2 context's location and register
  * all returned hooks as V2 transforms/hooks. Returns a cleanup function that
  * disposes every registration and aborts the event subscription.
@@ -288,6 +339,18 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
 
   const registrations: V2Registration[] = [];
 
+  // Explore keeps its RAG tool grant across reloads; opt out via
+  // `openCode.exploreAgentTools: false` in opencode-rag.json.
+  let exploreToolsEnabled = true;
+  try {
+    const cfgPath = findConfigFile(ctx.location.directory);
+    if (cfgPath) {
+      exploreToolsEnabled = loadConfig(cfgPath, false).openCode.exploreAgentTools !== false;
+    }
+  } catch {
+    // Malformed config — the V1 factory reports it; fall back to the default
+  }
+
   // ── Tools ────────────────────────────────────────────────────────────────
   const toolDefs = (hooks.tool ?? {}) as Record<string, {
     description?: string;
@@ -302,6 +365,20 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
       }
     });
     registrations.push(registration);
+  }
+
+  // Explore agent tool grant: hand the read-only RAG tools to the built-in
+  // search agent. The grant appends allow rules after the shipped deny-all
+  // policy (last matching rule wins) and respects explicit user rules.
+  if (ctx.agent && exploreToolsEnabled) {
+    try {
+      const registration = await ctx.agent.transform((editor) => {
+        grantExploreToolPermissions(editor);
+      });
+      registrations.push(registration);
+    } catch {
+      // Non-critical — the guidance gate falls back on the tool catalog
+    }
   }
 
   // ── prompt hook (V1 `chat.message`) ─────────────────────────────────────
@@ -333,7 +410,10 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
     const registration = await ctx.session.hook("context", async (event) => {
       const output: { system: string[] } = { system: [] };
       try {
-        await systemTransformHook({ sessionID: event.sessionID } as never, output as never);
+        await systemTransformHook(
+          { sessionID: event.sessionID, agent: event.agent, tools: event.tools } as never,
+          output as never,
+        );
       } catch {
         // Non-critical — must never throw
       }

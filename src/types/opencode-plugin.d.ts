@@ -47,7 +47,14 @@ declare module "@opencode-ai/plugin" {
       output: { messages: { info: Message; parts: Part[] }[] }
     ) => Promise<void>;
     "experimental.chat.system.transform"?: (
-      input: { sessionID?: string; model: Model },
+      input: {
+        sessionID?: string;
+        model: Model;
+        /** Session agent ID (OpenCode V2); absent when the host does not send it. */
+        agent?: string;
+        /** Tool catalog exposed to the session (OpenCode V2); absent when the host does not send it. */
+        tools?: Record<string, { description?: string; input?: unknown }>;
+      },
       output: { system: string[] }
     ) => Promise<void>;
   }
