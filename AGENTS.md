@@ -96,14 +96,6 @@ ALWAYS use OpenCodeRAG tools before reading or editing:
 
 If no results, run `opencode-rag index`.
 
-### Decision model (`make_decision`)
-
-- Classify, route, or score short text with the local tev1 model (`state` + 1-64 questions).
-- Question types: `choice` (options map to descriptions), `noul` (true/false probability), `score` (ordered rubric levels, lowest first).
-- Keep `state` short (~2k-token context); add a `none` option when no listed option may fit.
-- Never use it as the only check for a high-stakes decision.
-- With `decision.routeBeforeAsking` enabled: route option choices through `make_decision` before asking the user; ask the user only when the model is undecided (low confidence) or the choice is preference-based.
-
 ### Decision tree — ALWAYS follow this order
 1. User mentions code behavior/architecture → `search_semantic(query)`
 2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines
