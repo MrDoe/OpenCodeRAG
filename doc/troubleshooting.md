@@ -169,6 +169,19 @@ node --import tsx --test --test-force-exit "src/**/*.test.ts"
 
 The ReadMe is generated and edited by the workflow manager. If you're editing files manually, use the Read tool first to ensure you have the current content.
 
+## Windows: Terminal Windows Flash Repeatedly
+
+On Windows, short-lived terminal windows open and close during indexing. With Windows
+Terminal as the default terminal app each flash is a WT window/tab titled `Terminal`
+and then the spawned exe path (e.g. `C:\Program Files\Git\cmd\git.exe`). Cause: OpenCode
+runs the plugin inside its console-less background service (`opencode serve --service`);
+a child process spawned without `windowsHide: true` gets a freshly allocated visible
+console. All OpenCodeRAG spawn sites (git detection in `git-diff.ts`, package-manager
+probes, update installs, browser opener) pass `windowsHide: true` since 2026-10-07. If
+flashes persist, another plugin/tool is spawning without it — check the timestamps
+against `.opencode/rag_db/watcher-status.json` (each index pass triggers the git calls)
+and see `.opencode/wiki/concepts/windows-console-flashes.md` for the diagnostic recipe.
+
 ## Logging
 
 Enable debug logging to diagnose issues:

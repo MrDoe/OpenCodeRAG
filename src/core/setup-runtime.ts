@@ -212,6 +212,7 @@ export async function setupRuntime(options?: {
       execSync(sdkInstallCommand, {
         stdio: "pipe",
         timeout: 60_000,
+        windowsHide: true,
       });
     } catch (cause) {
       errors.push(`Failed to install @opencode-ai/plugin SDK globally (${sdkInstallCommand}): ${(cause as Error).message}`);

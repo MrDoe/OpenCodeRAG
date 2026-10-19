@@ -53,7 +53,7 @@ function tryRun(command: string, deps: PackageManagerDeps): string | null {
   try {
     const out = deps.exec
       ? deps.exec(command, EXEC_TIMEOUT_MS)
-      : execSync(command, { encoding: "utf-8", timeout: EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"] });
+      : execSync(command, { encoding: "utf-8", timeout: EXEC_TIMEOUT_MS, stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
     const trimmed = out.trim();
     return trimmed || null;
   } catch {

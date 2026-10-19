@@ -1,5 +1,11 @@
 /**
  * @fileoverview Uses git to detect changed, deleted, and untracked files for incremental indexing.
+ *
+ * Every git invocation sets `windowsHide: true`. The plugin runs inside
+ * OpenCode's console-less service process (`opencode serve --service`); without
+ * this option Windows allocates a new visible console (a Windows Terminal
+ * window/tab on systems where WT is the default terminal) for each spawn,
+ * which shows up as a flickering terminal window per index pass.
  */
 import { execFileSync } from "node:child_process";
 
@@ -23,6 +29,7 @@ export function getRepoRoot(cwd: string): string | null {
       encoding: "utf-8",
       timeout: 5000,
       stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
     }).trim();
   } catch {
     return null;
@@ -42,6 +49,7 @@ export function getCurrentCommit(cwd: string): string | null {
       encoding: "utf-8",
       timeout: 5000,
       stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
     }).trim();
   } catch {
     return null;
@@ -64,11 +72,11 @@ export function getChangedFilesSince(
   if (!/^[0-9a-f]{7,40}$/i.test(fromCommit)) return null;
   try {
     const changedRaw = execFileSync("git", ["diff", "--name-only", "--diff-filter=ACMRT", fromCommit, "HEAD"], {
-      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
+      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
     }).trim();
 
     const deletedRaw = execFileSync("git", ["diff", "--name-only", "--diff-filter=D", fromCommit, "HEAD"], {
-      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
+      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
     }).trim();
 
     const changedFiles = changedRaw.length > 0 ? changedRaw.split("\n") : [];
@@ -92,7 +100,7 @@ export function getChangedFilesSince(
 export function getUntrackedFiles(cwd: string): string[] {
   try {
     const raw = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
-      cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"],
+      cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
     }).trim();
     return raw.length > 0 ? raw.split("\n") : [];
   } catch {
@@ -121,15 +129,15 @@ export interface WorkingTreeChanges {
 export function getWorkingTreeChanges(cwd: string): WorkingTreeChanges | null {
   try {
     const modifiedRaw = execFileSync("git", ["diff-index", "--name-only", "-M", "HEAD"], {
-      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
+      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
     }).trim();
 
     const deletedRaw = execFileSync("git", ["diff", "--name-only", "--diff-filter=D", "HEAD"], {
-      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"],
+      cwd, encoding: "utf-8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
     }).trim();
 
     const untrackedRaw = execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
-      cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"],
+      cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
     }).trim();
 
     const changedFiles = modifiedRaw.length > 0 ? modifiedRaw.split("\n") : [];

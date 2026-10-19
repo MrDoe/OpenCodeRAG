@@ -61,7 +61,7 @@ export function registerUiCommand(program: Command): void {
           const { spawn } = await import("node:child_process");
           try {
             if (process.platform === "win32") {
-              spawn("cmd.exe", ["/c", "start", url], { detached: true, stdio: "ignore" }).unref();
+              spawn("cmd.exe", ["/c", "start", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
             } else {
               const cmd = process.platform === "darwin" ? "open" : "xdg-open";
               spawn(cmd, [url], { detached: true, stdio: "ignore" }).unref();

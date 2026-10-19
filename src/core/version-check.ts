@@ -177,7 +177,10 @@ export async function installLatestUpdate(options?: {
 }): Promise<InstallUpdateResult> {
   const verbose = options?.verbose ?? false;
   const stdio: "inherit" | "pipe" = verbose ? "inherit" : "pipe";
-  const run: NpmRunner = options?._execSync ?? execSync;
+  // Default runner hides the console window on Windows — the plugin runs in
+  // OpenCode's console-less service process, so any un-hidden spawn would
+  // flash a terminal window.
+  const run: NpmRunner = options?._execSync ?? ((command, opts) => execSync(command, { ...opts, windowsHide: true }));
   const syncRuntime = options?._setupRuntime ?? setupRuntime;
   const readVersion = options?._getCurrentVersion ?? getCurrentVersion;
   const fromVersion = readVersion();

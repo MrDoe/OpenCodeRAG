@@ -34,12 +34,14 @@ function checkOpenCodeRunning(): void {
       execSync('tasklist /FI "IMAGENAME eq opencode.exe" 2>nul | find /I "opencode.exe" >nul', {
         timeout: 3_000,
         stdio: "ignore",
+        windowsHide: true,
       });
       console.log(`\n  ${c.warn("OpenCode is currently running.")} Restart it to load the updated plugin.`);
     } else {
       const pids = execSync("pgrep -x opencode 2>/dev/null", {
         encoding: "utf-8",
         timeout: 3_000,
+        windowsHide: true,
       }).trim();
       if (pids) {
         console.log(`\n  ${c.warn("OpenCode is currently running.")} Restart it to load the updated plugin.`);

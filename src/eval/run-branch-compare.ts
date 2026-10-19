@@ -118,9 +118,11 @@ function getGitInfo(): { branch: string; commit: string } {
   try {
     const branch = execSync("git rev-parse --abbrev-ref HEAD", {
       encoding: "utf-8",
+      windowsHide: true,
     }).trim();
     const commit = execSync("git rev-parse --short HEAD", {
       encoding: "utf-8",
+      windowsHide: true,
     }).trim();
     return { branch, commit };
   } catch {
