@@ -28,10 +28,10 @@ opencode-rag init [options]
 
 **Creates:**
 - `.opencode/` directory structure
-- `.opencode/plugins/rag-plugin.js` — workspace-local plugin fallback
-- `.opencode/plugins/rag-tui.js` — TUI plugin module
+- `.opencode/plugins/opencode-rag/` — workspace-local plugin directory (OpenCode 2 discovers plugin directories for both roles)
+- `.opencode/plugins/opencode-rag/index.js` — server entrypoint (re-exports `dist/plugin-entry.js`)
+- `.opencode/plugins/opencode-rag/tui.js` — TUI entrypoint beside it (re-exports `dist/tui.js`)
 - `.opencode/opencode.json` — OpenCode workspace config
-- `.opencode/tui.json` — TUI plugin settings
 - `.opencode/package.json` — workspace dependencies
 - `opencode-rag.json` — runtime configuration
 - `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`

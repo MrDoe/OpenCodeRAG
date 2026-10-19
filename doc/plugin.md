@@ -423,8 +423,8 @@ export default plugin;
 Key requirements:
 - The `default` export MUST be an object with `id` **and** `setup` (or `effect`) — V2 rejects
   bare functions and V1-era `{ id, server }` / `{ id, tui }` shapes
-- `setup` must be safe under the **server role**: the server loads every
-  `.opencode/plugins/*.js` file and calls `setup` with a server context that has no `ui`/`keymap`;
+- `setup` must be safe under the **server role**: the server loads the entrypoints it
+  discovers under `.opencode/plugins/` and calls `setup` with a server context that has no `ui`/`keymap`;
   the TUI-only module detects this and returns without registering anything
 
 > **Migration note:** OpenCode 1.x (`{ id, server }` / `{ id, tui }` entrypoints) is no longer
@@ -432,20 +432,34 @@ Key requirements:
 
 ## Plugin Registration
 
-Do NOT register the plugin via `"plugin": ["opencode-rag-plugin"]` in OpenCode config. Instead, rely on `.opencode/plugins/*.js` auto-discovery:
+Do NOT register the plugin via `"plugin": ["opencode-rag-plugin"]` in OpenCode config. Instead, rely on plugin-directory auto-discovery:
 
-1. Run `opencode-rag init` to create `.opencode/plugins/rag-plugin.js` and `.opencode/skills/opencode-rag/SKILL.md`
-2. The generated plugin file re-exports the default export from `node_modules/`:
+1. Run `opencode-rag init` to create the plugin directory `.opencode/plugins/opencode-rag/` and `.opencode/skills/opencode-rag/SKILL.md`
+2. The directory holds two entrypoints, each a bare re-export from the workspace `node_modules/`:
 
 ```javascript
-import plugin from "../node_modules/opencode-rag-plugin/dist/plugin-entry.js";
+// .opencode/plugins/opencode-rag/index.js — server (business) entrypoint
+import plugin from "../../node_modules/opencode-rag-plugin/dist/plugin-entry.js";
 export default plugin;
 ```
 
-   The TUI counterpart (`.opencode/plugins/rag-tui.js`) does the same with `dist/tui.js`
-   (plus an env-registry shim for the `@opentui/core` singleton — see
-   [Troubleshooting](troubleshooting.md)). A bare default re-export satisfies both loaders
-   because the shape (`{ id, setup, server | tui }`) lives in the built module.
+```javascript
+// .opencode/plugins/opencode-rag/tui.js — CLI (TUI) entrypoint
+import plugin from "../../node_modules/opencode-rag-plugin/dist/tui.js";
+export default plugin;
+```
+
+OpenCode 2 resolves a plugin *directory* as `index.*` (server entrypoint) + `tui.*` (CLI
+entrypoint beside it), and the terminal UI only discovers directories — a flat
+`.opencode/plugins/rag-tui.js` would only ever load in the server role, which is why the
+sidebar disappeared on V2. `init` therefore also removes the V1-era flat files
+(`rag-plugin.js`, `rag-tui.js`, `.opencode/tui.json`) when their content is exactly what an
+earlier `init` generated; hand-written files and custom configs are left untouched.
+
+A bare default re-export satisfies both loaders because the shape (`{ id, setup }`) lives in
+the built module. `dist/tui.js` imports `@opentui/solid` lazily, **only** when the TUI role
+calls `setup()` — a plain registry install without the (optional) OpenTUI peers still loads
+the module fine in the server role.
 
 ## Background Auto-Indexing
 
@@ -506,7 +520,7 @@ Both shortcuts read the current prompt text combined with the previous assistant
 This occurs when OpenCode's Bun runtime tries to load the plugin via the `"plugin"` key in OpenCode config, causing module resolution issues.
 
 **Fix:**
-1. Ensure the plugin is loaded via `.opencode/plugins/*.js` auto-discovery, NOT via `"plugin"` config key
+1. Ensure the plugin is loaded via `.opencode/plugins/opencode-rag/` auto-discovery, NOT via `"plugin"` config key
 2. Run `opencode-rag init` to regenerate the workspace-local plugin files
 3. Remove stale `"plugin"` entries from all OpenCode config files
 
@@ -518,7 +532,7 @@ node --input-type=module -e \
 ```
 
 `function`. For the TUI module substitute
-`.opencode/plugins/rag-tui.js`; its default must expose `id` and `setup`.
+`.opencode/plugins/opencode-rag/tui.js`; its default must expose `id` and `setup`.
 
 Plugin load failures (with a `ref=err_…` reference) are logged to
 `~/.local/share/opencode/log/opencode.log` — grep for `failed to load plugin` and read the

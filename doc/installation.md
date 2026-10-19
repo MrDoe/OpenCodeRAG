@@ -109,10 +109,9 @@ opencode-rag init
 
 This creates:
 - `opencode-rag.json` — Workspace-specific RAG configuration (never overwritten without interactive confirmation). Embedding batch settings are **auto-tuned to your Ollama backend** (see below)
-- `.opencode/plugins/rag-plugin.js` — Plugin entry (re-exports from workspace `node_modules/`)
-- `.opencode/plugins/rag-tui.js` — TUI plugin module
+- `.opencode/plugins/opencode-rag/index.js` — Server entrypoint (re-exports `dist/plugin-entry.js` from the workspace `node_modules/`)
+- `.opencode/plugins/opencode-rag/tui.js` — TUI entrypoint beside it (re-exports `dist/tui.js`); OpenCode 2 only discovers plugin *directories*, so both roles live in this folder
 - `.opencode/opencode.json` — OpenCode workspace config
-- `.opencode/tui.json` — TUI plugin settings
 - `.opencode/package.json` — Workspace dependencies (links to the globally-installed plugin)
 - `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
 - `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`

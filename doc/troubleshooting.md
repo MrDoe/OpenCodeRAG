@@ -8,7 +8,7 @@
 
 **Fix:**
 1. Do NOT register via `"plugin": ["opencode-rag-plugin"]` in OpenCode config
-2. Rely on `.opencode/plugins/*.js` auto-discovery instead
+2. Rely on `.opencode/plugins/opencode-rag/` auto-discovery instead
 3. Run `opencode-rag init` to regenerate workspace-local plugin files
 4. Remove stale `"plugin"` entries from all OpenCode config files
 
@@ -37,9 +37,12 @@ the logged `cause=` is authoritative; do not infer the cause from the `ref=` alo
 1. Rebuild: `npm run build` (`dist/` is gitignored — a `git pull` updates `src/` but never the loaded `dist/`)
 2. Verify the export shape (see *Debugging Plugin Loading* below): the default must expose
    `id` and `setup` (both the server and the TUI plugin)
-3. If the TUI plugin still fails with `Environment variable "OPENTUI_FORCE_WCWIDTH" is
-   already registered with different configuration`, keep the env-registry normalization
-   shim in `.opencode/plugins/rag-tui.js` (it must run after the `dist/tui.js` import)
+3. If the TUI sidebar or keybindings never appear, check the plugin **directory** layout:
+   `.opencode/plugins/opencode-rag/index.js` (server) + `tui.js` (CLI) must both exist.
+   OpenCode 2 only discovers plugin directories (`index.*`/`tui.*`) for the terminal UI —
+   a V1-era flat `.opencode/plugins/rag-tui.js` is never loaded there, only in the server
+   role. Re-run `opencode-rag init` to migrate the flat layout (it removes only the files
+   it generated itself).
 
 ### No Context Returned by OpenCode
 
@@ -345,7 +348,7 @@ node -e \
 
 # TUI module: must expose id + setup
 node --input-type=module -e \
-  "const m = await import('./.opencode/plugins/rag-tui.js'); console.log(Object.keys(m.default), typeof m.default.setup)"
+  "const m = await import('./.opencode/plugins/opencode-rag/tui.js'); console.log(Object.keys(m.default), typeof m.default.setup)"
 ```
 
 Plugin load failures are logged to `~/.local/share/opencode/log/opencode.log`:

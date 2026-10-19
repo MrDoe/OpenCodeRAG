@@ -4,7 +4,6 @@
  */
 
 import type { JSX } from "@opentui/solid";
-import { createElement, insert, setProp } from "@opentui/solid";
 import { readFileSync, existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -22,6 +21,38 @@ import { setPendingRagInjection } from "./core/rag-injection-flag.js";
  * `src/eval/token-counter.ts`).
  */
 const _require = createRequire(import.meta.url);
+
+/**
+ * The slice of `@opentui/solid` this module uses to build the sidebar tree.
+ *
+ * Declared structurally because the module itself is loaded lazily — see
+ * {@link loadOpenTui}.
+ */
+type OpenTuiRuntime = {
+  createElement: (tag: string) => unknown;
+  insert: (parent: unknown, child: unknown) => void;
+  setProp: (node: unknown, key: string, value: unknown) => void;
+};
+
+/** Loaded by {@link loadOpenTui}; `undefined` until the TUI role activates. */
+let openTui: OpenTuiRuntime | undefined;
+
+/**
+ * Load `@opentui/solid` on demand.
+ *
+ * The package is only resolvable inside OpenCode's CLI (TUI) process, which
+ * rewrites the bare specifier to its own bundled copy: plain registry installs
+ * have no OpenTUI dependency (it lives in `peerDependencies`, optional) and
+ * the server role loads this module too. A static import here therefore breaks
+ * every non-TUI load ("Cannot find package '@opentui/solid'"), so it must stay
+ * a dynamic import reached only from the TUI branch of `setup()`.
+ */
+async function loadOpenTui(): Promise<OpenTuiRuntime> {
+  if (!openTui) {
+    openTui = (await import("@opentui/solid")) as unknown as OpenTuiRuntime;
+  }
+  return openTui;
+}
 
 /** Cached plugin version string from package.json. */
 let _version: string | undefined;
@@ -188,20 +219,23 @@ const PLUGIN_NAME = "opencode-rag-plugin";
 
 /**
  * Create a TUI element node with the given tag, props, and children.
- * Wraps the low-level @opentui/solid createElement/insert/setProp functions.
+ * Wraps the low-level @opentui/solid createElement/insert/setProp functions
+ * (loaded lazily by {@link loadOpenTui} — see {@link setup}).
  */
 function element(
   tag: string,
   props: Record<string, unknown>,
   children: Child[] = [],
 ): JSX.Element {
-  const node = createElement(tag);
+  const solid = openTui;
+  if (!solid) throw new Error("@opentui/solid is not loaded (TUI setup has not run)");
+  const node = solid.createElement(tag);
   for (const [key, value] of Object.entries(props)) {
-    if (value !== undefined) setProp(node, key, value);
+    if (value !== undefined) solid.setProp(node, key, value);
   }
   for (const child of children) {
     if (child === null || child === undefined || child === false) continue;
-    insert(node, child);
+    solid.insert(node, child);
   }
   return node as unknown as JSX.Element;
 }
@@ -775,10 +809,17 @@ function buildSettingCategories(
  */
 type V2TuiContext = {
   location?: { directory?: string } | undefined;
-  app?: { version?: string } | undefined;
+  /** OpenCode's own version/channel — NOT the plugin version (use {@link getVersion}). */
+  app?: { version?: string; channel?: string } | undefined;
   theme?: unknown;
   renderer?: unknown;
   data?: {
+    /** V2 data domain: `data.location.provider.list(location)`. */
+    location?: {
+      provider?: { list?: (location?: { directory?: string } | undefined) => readonly unknown[] | undefined };
+      model?: { list?: (location?: { directory?: string } | undefined) => readonly unknown[] | undefined };
+    } | undefined;
+    /** Pre-`location` context shapes; kept as a fallback. */
     provider?: { list?: () => readonly unknown[] | undefined };
     model?: { list?: () => readonly unknown[] | undefined };
   } | undefined;
@@ -863,13 +904,15 @@ function readTokenStats(
 /** Rebuild legacy sdk `Provider` shapes (model picker / base URL / API key) from V2 data domains. */
 function v2LegacyProviders(context: V2TuiContext): readonly Provider[] {
   try {
-    const providers = (context.data?.provider?.list?.() ?? []) as {
+    const location = context.location;
+    const data = context.data;
+    const providers = (data?.location?.provider?.list?.(location) ?? data?.provider?.list?.() ?? []) as {
       id?: string;
       name?: string;
-      settings?: { baseURL?: string };
+      settings?: { baseURL?: string; apiKey?: string; [key: string]: unknown };
       options?: { baseURL?: string; apiKey?: string };
     }[];
-    const models = (context.data?.model?.list?.() ?? []) as {
+    const models = (data?.location?.model?.list?.(location) ?? data?.model?.list?.() ?? []) as {
       providerID?: string;
       modelID?: string;
       id?: string;
@@ -887,7 +930,10 @@ function v2LegacyProviders(context: V2TuiContext): readonly Provider[] {
         id,
         name: p.name ?? id,
         models: modelMap,
-        options: { baseURL: p.settings?.baseURL ?? p.options?.baseURL, apiKey: p.options?.apiKey },
+        options: {
+          baseURL: p.settings?.baseURL ?? p.options?.baseURL,
+          apiKey: (p.settings?.apiKey as string | undefined) ?? p.options?.apiKey,
+        },
       } as unknown as Provider;
     });
   } catch {
@@ -1072,7 +1118,11 @@ async function setup(context: V2TuiContext): Promise<(() => void) | undefined> {
   const keymap = context.keymap;
   if (!ui?.slot || !keymap) return undefined; // server-role load: nothing to register
 
-  const version = context.app?.version ?? getVersion();
+  // TUI role confirmed — pull in the OpenTUI renderer primitives. This is the
+  // only place `@opentui/solid` may be imported (see {@link loadOpenTui}).
+  await loadOpenTui();
+
+  const version = getVersion();
   const worktree = context.location?.directory;
   let cachedStatus: RagStatus = DEFAULT_STATUS;
   let lastRefresh = 0;

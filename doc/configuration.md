@@ -538,7 +538,7 @@ Controls the terminal UI (TUI) keybindings for RAG context injection.
 
 All keybindings read the current prompt text combined with the previous assistant response (if any) as the search query. Configurable in the TUI settings menu under "Keybindings" (open with the configured `settingsKeybinding`).
 
-**Terminal caveat:** Legacy terminal encodings cannot represent `ctrl+shift+<letter>` distinctly — e.g. gnome-terminal/VTE sends `ctrl+shift+r` as plain `ctrl+r` (`0x12`), so the default `settingsKeybinding` never fires there. Terminals implementing the Kitty keyboard protocol (kitty, WezTerm, foot, Ghostty, Alacritty) deliver it correctly. On other terminals, bind `settingsKeybinding` to something distinguishable, e.g. `ctrl+alt+s` (sent as `ESC` + control byte, which OpenCode parses as `ctrl+alt+<key>`). Avoid `ctrl+alt+r` if you also use it for `session_rename` in `tui.json`.
+**Terminal caveat:** Legacy terminal encodings cannot represent `ctrl+shift+<letter>` distinctly — e.g. gnome-terminal/VTE sends `ctrl+shift+r` as plain `ctrl+r` (`0x12`), so the default `settingsKeybinding` never fires there. Terminals implementing the Kitty keyboard protocol (kitty, WezTerm, foot, Ghostty, Alacritty) deliver it correctly. On other terminals, bind `settingsKeybinding` to something distinguishable, e.g. `ctrl+alt+s` (sent as `ESC` + control byte, which OpenCode parses as `ctrl+alt+<key>`). Avoid `ctrl+alt+r` if you also use it for `session_rename` in OpenCode's CLI config (`cli.json`).
 
 ### `autoUpdate`
 

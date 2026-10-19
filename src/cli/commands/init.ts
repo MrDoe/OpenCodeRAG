@@ -12,7 +12,7 @@
 
 import type { Command } from "commander";
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, copyFileSync } from "node:fs";
 import { loadConfig, findConfigFile } from "../../core/config.js";
 import { checkProviderHealth, pullOllamaModels } from "../../embedder/health.js";
 import { destroyAllPooledConnections } from "../../embedder/http.js";
@@ -20,16 +20,25 @@ import { c } from "../format.js";
 import { getPackageMetadata, readJsonObject, writeJsonFile } from "../helpers.js";
 import type { InitOptions } from "../types.js";
 import {
+  buildLegacyTuiConfig,
   buildOpencodeConfig,
   buildWorkspacePackageJson,
   generateDefaultConfigJson,
   generateSkillFile,
   generateDecisionSkillFile,
+  generateLegacyWorkspacePluginFile,
+  generateLegacyWorkspaceTuiPluginFile,
   generateWorkspacePluginFile,
   generateWorkspaceTuiPluginFile,
   installPluginFromGlobal,
   mergeAgentsMdContent,
   mergeGitignoreContent,
+  LEGACY_PLUGIN_ENTRY,
+  LEGACY_TUI_CONFIG,
+  LEGACY_TUI_ENTRY,
+  WORKSPACE_PLUGIN_DIR,
+  WORKSPACE_PLUGIN_ENTRY,
+  WORKSPACE_TUI_ENTRY,
 } from "./init-helpers.js";
 import { detectOllamaBackend } from "./backend-detect.js";
 
@@ -84,9 +93,12 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
       const gitignorePath = path.join(opencodeDir, ".gitignore");
       const opencodeConfigPath = path.join(opencodeDir, "opencode.json");
       const pluginsDir = path.join(opencodeDir, "plugins");
-      const pluginEntryPath = path.join(pluginsDir, "rag-plugin.js");
-      const tuiPluginEntryPath = path.join(pluginsDir, "rag-tui.js");
-      const tuiConfigPath = path.join(opencodeDir, "tui.json");
+      const workspacePluginDir = path.join(pluginsDir, WORKSPACE_PLUGIN_DIR);
+      const pluginEntryPath = path.join(workspacePluginDir, "index.js");
+      const tuiPluginEntryPath = path.join(workspacePluginDir, "tui.js");
+      const legacyPluginEntryPath = path.join(pluginsDir, "rag-plugin.js");
+      const legacyTuiPluginEntryPath = path.join(pluginsDir, "rag-tui.js");
+      const legacyTuiConfigPath = path.join(opencodeDir, "tui.json");
       const opencodePackagePath = path.join(opencodeDir, "package.json");
 
       console.log(`\n${c.heading("Initializing OpenCodeRAG in workspace...")}\n`);
@@ -134,40 +146,67 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
         console.log(`  ${c.exists("Exists:")}   .opencode/opencode.json`);
       }
 
+      // OpenCode 2 discovers plugin *directories* under `.opencode/plugins/`:
+      // `index.js` is the server (business) entrypoint and `tui.js` beside it
+      // is the CLI entrypoint. Flat `.js` files only reach the server role, so
+      // the terminal UI never saw the TUI plugin before this layout.
+      if (!existsSync(workspacePluginDir)) {
+        mkdirSync(workspacePluginDir, { recursive: true });
+        console.log(`  ${c.created("Created:")}  .opencode/plugins/${WORKSPACE_PLUGIN_DIR}/`);
+      }
+
       const pluginEntryExists = existsSync(pluginEntryPath);
       const pluginEntryContent = generateWorkspacePluginFile(packageMetadata.name);
       if (!pluginEntryExists || options.force) {
         writeFileSync(pluginEntryPath, pluginEntryContent, "utf-8");
-        console.log(`  ${pluginEntryExists ? c.updated("Updated:") : c.created("Created:")} .opencode/plugins/rag-plugin.js`);
+        console.log(`  ${pluginEntryExists ? c.updated("Updated:") : c.created("Created:")} ${WORKSPACE_PLUGIN_ENTRY}`);
       } else if (readFileSync(pluginEntryPath, "utf-8") !== pluginEntryContent) {
         writeFileSync(pluginEntryPath, pluginEntryContent, "utf-8");
-        console.log(`  ${c.updated("Updated:")}  .opencode/plugins/rag-plugin.js`);
+        console.log(`  ${c.updated("Updated:")}  ${WORKSPACE_PLUGIN_ENTRY}`);
       } else {
-        console.log(`  ${c.exists("Exists:")}   .opencode/plugins/rag-plugin.js`);
+        console.log(`  ${c.exists("Exists:")}   ${WORKSPACE_PLUGIN_ENTRY}`);
       }
 
       const tuiPluginEntryExists = existsSync(tuiPluginEntryPath);
       const tuiPluginEntryContent = generateWorkspaceTuiPluginFile(packageMetadata.name);
       if (!tuiPluginEntryExists || options.force) {
         writeFileSync(tuiPluginEntryPath, tuiPluginEntryContent, "utf-8");
-        console.log(`  ${tuiPluginEntryExists ? c.updated("Updated:") : c.created("Created:")} .opencode/plugins/rag-tui.js`);
+        console.log(`  ${tuiPluginEntryExists ? c.updated("Updated:") : c.created("Created:")} ${WORKSPACE_TUI_ENTRY}`);
       } else if (readFileSync(tuiPluginEntryPath, "utf-8") !== tuiPluginEntryContent) {
         writeFileSync(tuiPluginEntryPath, tuiPluginEntryContent, "utf-8");
-        console.log(`  ${c.updated("Updated:")}  .opencode/plugins/rag-tui.js`);
+        console.log(`  ${c.updated("Updated:")}  ${WORKSPACE_TUI_ENTRY}`);
       } else {
-        console.log(`  ${c.exists("Exists:")}   .opencode/plugins/rag-tui.js`);
+        console.log(`  ${c.exists("Exists:")}   ${WORKSPACE_TUI_ENTRY}`);
       }
 
-      const tuiConfigExists = existsSync(tuiConfigPath);
-      const nextTuiConfig = { plugin: ["./plugins/rag-tui.js"] };
-      if (!tuiConfigExists || options.force) {
-        writeJsonFile(tuiConfigPath, nextTuiConfig);
-        console.log(`  ${tuiConfigExists ? c.updated("Updated:") : c.created("Created:")} .opencode/tui.json`);
-      } else if (JSON.stringify(readJsonObject(tuiConfigPath)) !== JSON.stringify(nextTuiConfig)) {
-        writeJsonFile(tuiConfigPath, nextTuiConfig);
-        console.log(`  ${c.updated("Updated:")}  .opencode/tui.json`);
-      } else {
-        console.log(`  ${c.exists("Exists:")}   .opencode/tui.json`);
+      // Migrate away from the V1-era flat entries: a leftover `rag-plugin.js`
+      // registers the server plugin a second time, and `rag-tui.js` is dead
+      // weight (the TUI never loads flat files). Only files whose content is
+      // exactly what an earlier `init` wrote are removed — hand-written files
+      // and custom `.opencode/tui.json` configs are left untouched.
+      const legacyEntries: readonly [string, string, string][] = [
+        [legacyPluginEntryPath, generateLegacyWorkspacePluginFile(packageMetadata.name), LEGACY_PLUGIN_ENTRY],
+        [legacyTuiPluginEntryPath, generateLegacyWorkspaceTuiPluginFile(packageMetadata.name), LEGACY_TUI_ENTRY],
+      ];
+      for (const [legacyPath, legacyContent, legacyRel] of legacyEntries) {
+        if (!existsSync(legacyPath)) continue;
+        if (readFileSync(legacyPath, "utf-8") === legacyContent) {
+          unlinkSync(legacyPath);
+          console.log(`  ${c.updated("Removed:")}  ${legacyRel} (superseded by ${WORKSPACE_PLUGIN_DIR}/)`);
+        } else {
+          console.log(`  ${c.warn("Kept:")}     ${legacyRel} (modified locally — no longer loaded by OpenCode 2)`);
+        }
+      }
+
+      if (existsSync(legacyTuiConfigPath)) {
+        const sameLegacyConfig =
+          JSON.stringify(readJsonObject(legacyTuiConfigPath)) === JSON.stringify(buildLegacyTuiConfig());
+        if (sameLegacyConfig) {
+          unlinkSync(legacyTuiConfigPath);
+          console.log(`  ${c.updated("Removed:")}  ${LEGACY_TUI_CONFIG} (V1 config — OpenCode 2 discovers CLI plugins)`);
+        } else {
+          console.log(`  ${c.warn("Kept:")}     ${LEGACY_TUI_CONFIG} (V1 config — ignored by OpenCode 2)`);
+        }
       }
 
       const skillsDir = path.join(opencodeDir, "skills");
@@ -452,8 +491,14 @@ export function isLikelyProjectRoot(cwd: string): boolean {
  * @returns Whether the workspace looks initialized.
  */
 export function isWorkspaceInitialized(cwd: string): boolean {
-  return (
-    existsSync(path.join(cwd, ".opencode", "plugins", "rag-plugin.js")) &&
-    existsSync(path.join(cwd, ".opencode", "tui.json"))
-  );
+  // V2 layout: plugin directory with server + TUI entrypoints beside each other.
+  if (
+    existsSync(path.join(cwd, ".opencode", "plugins", WORKSPACE_PLUGIN_DIR, "index.js")) &&
+    existsSync(path.join(cwd, ".opencode", "plugins", WORKSPACE_PLUGIN_DIR, "tui.js"))
+  ) {
+    return true;
+  }
+  // V1 layout (flat entries + .opencode/tui.json): treated as *not* initialized
+  // so `setup` re-runs `init` once and migrates the workspace.
+  return false;
 }

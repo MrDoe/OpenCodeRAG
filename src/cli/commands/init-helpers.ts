@@ -83,7 +83,7 @@ export function buildOpencodeConfig(existing: Record<string, unknown> | undefine
   if (typeof next.$schema !== "string") {
     next.$schema = "https://opencode.ai/config.json";
   }
-  // Plugin is loaded via .opencode/plugins/rag-plugin.js auto-discovery,
+  // Plugin is loaded via `.opencode/plugins/opencode-rag/` auto-discovery,
   // not via npm package resolution. Stale "plugin" entries from older
   // init versions would trigger npm install (which fails due to native
   // dependencies like sharp) and produce "Plugin export is not a function".
@@ -161,7 +161,33 @@ export function removeStaleGlobalPluginRegistrations(homeDir: string, pluginName
 }
 
 /**
- * Generate the content for `.opencode/plugins/rag-plugin.js`.
+ * Workspace plugin directory (`.opencode/plugins/opencode-rag/`).
+ *
+ * OpenCode 2 loads plugin *directories* under `.opencode/plugins/`: the
+ * `index.*` file is the server (business) entrypoint and `tui.*` beside it is
+ * the CLI entrypoint — the TUI only discovers directory targets, so a flat
+ * `rag-tui.js` is never registered with the terminal UI.
+ */
+export const WORKSPACE_PLUGIN_DIR = "opencode-rag";
+
+/** Relative path (from the workspace root) of the generated server entrypoint. */
+export const WORKSPACE_PLUGIN_ENTRY = `.opencode/plugins/${WORKSPACE_PLUGIN_DIR}/index.js`;
+
+/** Relative path (from the workspace root) of the generated TUI entrypoint. */
+export const WORKSPACE_TUI_ENTRY = `.opencode/plugins/${WORKSPACE_PLUGIN_DIR}/tui.js`;
+
+/** V1-era flat plugin files, superseded by {@link WORKSPACE_PLUGIN_DIR}. */
+export const LEGACY_PLUGIN_ENTRY = ".opencode/plugins/rag-plugin.js";
+
+/** V1-era flat TUI plugin file, superseded by {@link WORKSPACE_TUI_ENTRY}. */
+export const LEGACY_TUI_ENTRY = ".opencode/plugins/rag-tui.js";
+
+/** V1-era TUI config file (OpenCode 2 reads CLI plugins from discovery, not this). */
+export const LEGACY_TUI_CONFIG = ".opencode/tui.json";
+
+/**
+ * Generate the content for the server entrypoint
+ * (`.opencode/plugins/opencode-rag/index.js`).
  *
  * This file re-exports the plugin from the workspace-local node_modules.
  * The plugin entry default-exports the OpenCode V2 module shape
@@ -172,26 +198,49 @@ export function removeStaleGlobalPluginRegistrations(homeDir: string, pluginName
  */
 export function generateWorkspacePluginFile(packageName: string): string {
   return [
-    `import plugin from "../node_modules/${packageName}/dist/plugin-entry.js";`,
+    `import plugin from "../../node_modules/${packageName}/dist/plugin-entry.js";`,
     `export default plugin;`,
     "",
   ].join("\n");
 }
 
 /**
- * Generate the content for `.opencode/plugins/rag-tui.js`.
+ * Generate the content for the TUI entrypoint
+ * (`.opencode/plugins/opencode-rag/tui.js`).
  *
- * This file re-exports the TUI plugin from the workspace-local node_modules.
+ * OpenCode resolves this file beside the server entrypoint in the same plugin
+ * directory; the TUI role loads it, the server role never touches it.
  *
  * @param packageName - The npm package name of the RAG plugin.
  * @returns The JavaScript source code for the TUI plugin entry file.
  */
 export function generateWorkspaceTuiPluginFile(packageName: string): string {
   return [
-    `import plugin from "../node_modules/${packageName}/dist/tui.js";`,
+    `import plugin from "../../node_modules/${packageName}/dist/tui.js";`,
     `export default plugin;`,
     "",
   ].join("\n");
+}
+
+/**
+ * Content of the V1-era flat server entrypoint (`.opencode/plugins/rag-plugin.js`).
+ *
+ * Used to recognize — and safely migrate away from — files this command wrote
+ * before OpenCode 2 directory discovery. Recognized by exact content match, so
+ * hand-written files are never deleted.
+ */
+export function generateLegacyWorkspacePluginFile(packageName: string): string {
+  return [`import plugin from "../node_modules/${packageName}/dist/plugin-entry.js";`, `export default plugin;`, ""].join("\n");
+}
+
+/** Content of the V1-era flat TUI entrypoint (`.opencode/plugins/rag-tui.js`). */
+export function generateLegacyWorkspaceTuiPluginFile(packageName: string): string {
+  return [`import plugin from "../node_modules/${packageName}/dist/tui.js";`, `export default plugin;`, ""].join("\n");
+}
+
+/** Content of the V1-era `.opencode/tui.json`. */
+export function buildLegacyTuiConfig(): { plugin: string[] } {
+  return { plugin: ["./plugins/rag-tui.js"] };
 }
 
 /**

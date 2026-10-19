@@ -38,15 +38,19 @@ describe("opencode-rag init", () => {
     const gitignorePath = join(opencodeDir, ".gitignore");
     const opencodeConfigPath = join(opencodeDir, "opencode.json");
     const opencodePackagePath = join(opencodeDir, "package.json");
-    const pluginEntryPath = join(opencodeDir, "plugins", "rag-plugin.js");
-    const tuiConfigPath = join(opencodeDir, "tui.json");
+    const pluginEntryPath = join(opencodeDir, "plugins", "opencode-rag", "index.js");
+    const tuiPluginEntryPath = join(opencodeDir, "plugins", "opencode-rag", "tui.js");
 
     assert.ok(existsSync(opencodeDir), ".opencode/ should exist");
     assert.ok(existsSync(gitignorePath), ".opencode/.gitignore should exist");
     assert.ok(existsSync(opencodeConfigPath), ".opencode/opencode.json should exist");
     assert.ok(existsSync(opencodePackagePath), ".opencode/package.json should exist");
-    assert.ok(existsSync(pluginEntryPath), ".opencode/plugins/rag-plugin.js should exist");
-    assert.ok(existsSync(tuiConfigPath), ".opencode/tui.json should exist");
+    assert.ok(existsSync(pluginEntryPath), ".opencode/plugins/opencode-rag/index.js should exist");
+    assert.ok(existsSync(tuiPluginEntryPath), ".opencode/plugins/opencode-rag/tui.js should exist");
+    // V1 flat entries must not be written anymore (the TUI never loads them).
+    assert.equal(existsSync(join(opencodeDir, "plugins", "rag-plugin.js")), false);
+    assert.equal(existsSync(join(opencodeDir, "plugins", "rag-tui.js")), false);
+    assert.equal(existsSync(join(opencodeDir, "tui.json")), false);
     assert.ok(existsSync(configPath), "opencode-rag.json should exist");
 
     // Check opencode-rag.json is valid JSON
@@ -80,10 +84,10 @@ describe("opencode-rag init", () => {
     assert.equal("opencode-rag-plugin" in opencodePackage.dependencies, false);
 
     const pluginEntry = readFileSync(pluginEntryPath, "utf-8");
-    assert.match(pluginEntry, /node_modules\/opencode-rag-plugin\/dist\/plugin-entry\.js/);
+    assert.match(pluginEntry, /\.\.\/\.\.\/node_modules\/opencode-rag-plugin\/dist\/plugin-entry\.js/);
 
-    const tuiConfig = JSON.parse(readFileSync(tuiConfigPath, "utf-8"));
-    assert.deepEqual(tuiConfig.plugin, ["./plugins/rag-tui.js"]);
+    const tuiPluginEntry = readFileSync(tuiPluginEntryPath, "utf-8");
+    assert.match(tuiPluginEntry, /\.\.\/\.\.\/node_modules\/opencode-rag-plugin\/dist\/tui\.js/);
   });
 
   it("does not overwrite existing files without --force", async () => {
@@ -186,6 +190,45 @@ describe("opencode-rag init", () => {
     const content = readFileSync(configPath, "utf-8");
     const parsed = JSON.parse(content);
     assert.equal(parsed.embedding.model, "nonexistent", "config should not be overwritten");
+  });
+
+  it("migrates the V1 flat plugin entries to the plugin directory layout", async () => {
+    const legacyDir = join(tmpdir(), `opencode-rag-init-migrate-${Date.now()}`);
+    const legacyPluginsDir = join(legacyDir, ".opencode", "plugins");
+    mkdirSync(legacyPluginsDir, { recursive: true });
+    // Exact V1-generated contents (init only removes files it wrote itself).
+    writeFileSync(
+      join(legacyPluginsDir, "rag-plugin.js"),
+      'import plugin from "../node_modules/opencode-rag-plugin/dist/plugin-entry.js";\nexport default plugin;\n',
+      "utf-8"
+    );
+    writeFileSync(
+      join(legacyPluginsDir, "rag-tui.js"),
+      'import plugin from "../node_modules/opencode-rag-plugin/dist/tui.js";\nexport default plugin;\n',
+      "utf-8"
+    );
+    writeFileSync(join(legacyDir, ".opencode", "tui.json"), JSON.stringify({ plugin: ["./plugins/rag-tui.js"] }), "utf-8");
+    // A hand-written plugin file must survive the migration.
+    writeFileSync(join(legacyPluginsDir, "my-plugin.js"), "export default {};\n", "utf-8");
+
+    process.cwd = () => legacyDir;
+    const { runCli } = await import("../cli.js");
+    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+
+    try {
+      assert.equal(existsSync(join(legacyPluginsDir, "rag-plugin.js")), false, "legacy server entry should be removed");
+      assert.equal(existsSync(join(legacyPluginsDir, "rag-tui.js")), false, "legacy TUI entry should be removed");
+      assert.equal(existsSync(join(legacyDir, ".opencode", "tui.json")), false, "legacy V1 tui config should be removed");
+      assert.ok(existsSync(join(legacyPluginsDir, "my-plugin.js")), "hand-written plugin files must be preserved");
+      assert.ok(existsSync(join(legacyPluginsDir, "opencode-rag", "index.js")), "server entrypoint should exist");
+      assert.ok(existsSync(join(legacyPluginsDir, "opencode-rag", "tui.js")), "TUI entrypoint should exist");
+    } finally {
+      try {
+        rmSync(legacyDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup failures
+      }
+    }
   });
 
   it("resolves symlinked cli entrypoints", async () => {
@@ -421,18 +464,39 @@ describe("workspace detection helpers (setup integration)", () => {
     assert.equal(isLikelyProjectRoot(tmpDir), true);
   });
 
-  it("isWorkspaceInitialized requires plugin entry and tui config", async () => {
+  it("isWorkspaceInitialized requires the plugin directory layout", async () => {
     const { isWorkspaceInitialized } = await import("../cli/commands/init.js");
 
     assert.equal(isWorkspaceInitialized(tmpDir), false);
 
     // Only the server plugin entry exists -> not initialized yet.
-    mkdirSync(join(tmpDir, ".opencode", "plugins"), { recursive: true });
-    writeFileSync(join(tmpDir, ".opencode", "plugins", "rag-plugin.js"), "x", "utf-8");
+    const pluginDir = join(tmpDir, ".opencode", "plugins", "opencode-rag");
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, "index.js"), "x", "utf-8");
     assert.equal(isWorkspaceInitialized(tmpDir), false);
 
-    // TUI config present -> initialized.
-    writeFileSync(join(tmpDir, ".opencode", "tui.json"), "{}", "utf-8");
+    // TUI entrypoint beside it -> initialized.
+    writeFileSync(join(pluginDir, "tui.js"), "x", "utf-8");
     assert.equal(isWorkspaceInitialized(tmpDir), true);
+  });
+
+  it("treats the V1 flat layout as uninitialized so setup migrates it", async () => {
+    const { isWorkspaceInitialized } = await import("../cli/commands/init.js");
+
+    const legacyDir = join(tmpdir(), `opencode-rag-legacy-test-${Date.now()}`);
+    mkdirSync(join(legacyDir, ".opencode", "plugins"), { recursive: true });
+    writeFileSync(join(legacyDir, ".opencode", "plugins", "rag-plugin.js"), "x", "utf-8");
+    writeFileSync(join(legacyDir, ".opencode", "plugins", "rag-tui.js"), "x", "utf-8");
+    writeFileSync(join(legacyDir, ".opencode", "tui.json"), '{"plugin":["./plugins/rag-tui.js"]}', "utf-8");
+
+    try {
+      assert.equal(isWorkspaceInitialized(legacyDir), false);
+    } finally {
+      try {
+        rmSync(legacyDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup failures
+      }
+    }
   });
 });
