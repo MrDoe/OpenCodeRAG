@@ -48,6 +48,7 @@
   "retrieval": {
     "topK": 20,
     "minScore": 0.35,
+    "minScoreMode": "fused",
     "hybridSearch": {
       "enabled": true,
       "keywordWeight": 0.4

@@ -70,6 +70,42 @@ This produces scores on a [0, 1] scale. A result at rank 0 in both signals score
 
 RRF **rewards results that rank highly in both signals** over results that rank well in only one. When only one signal contributes, the ranking matches the raw vector order (normalization preserves monotonicity). Low-scoring chunks that don't meet `minScore` are filtered out.
 
+### Score Scale and the `minScore` Gate
+
+The fused score's **scale depends on `kw`**. A result's maximum is set by which
+signals it hit:
+
+| result hit by | maximum score |
+|---|---|
+| vector **and** keyword (rank 0 in both) | `(1 − kw) + kw` = **1.0** — the same at every `kw` |
+| vector only (rank 0) | `1 − kw` — **0.6** at `kw = 0.4` |
+| keyword only (rank 0) | `kw` — **0.4** at `kw = 0.4` |
+
+So a *fixed* `minScore` means different things at different `kw`. With
+`minScore = 0.65` and `kw = 0.4`, a vector-only hit can never clear the gate —
+the gate silently demands a **dual** hit. Measured on the 48-label golden set
+(2026-10-20, one retrieve per label, perfectly paired): at `kw = 0.4` only
+**13.5 of 20** results survive the gate, against **17.7** at `kw = 0`. At
+`kw = 0` the defect does not bite — the vector leg alone can reach 1.0.
+
+`retrieval.minScoreMode` selects how the gate reads the score:
+
+- **`"fused"`** (default) — the gate compares against the raw fused score.
+  Today's behaviour, unchanged. A threshold that changes meaning when an
+  unrelated knob moves is a contract wart, but flipping the default is a
+  behaviour change for every user, and 48 labels cannot settle it.
+- **`"normalized"`** — the score is divided by the maximum that result could
+  reach given the signals it hit, so it is **scale-free**: the same threshold
+  admits the same results at any `kw`. A vector-only hit is worth 1.0 at
+  `kw = 0.4` and at `kw = 0`. `explanation.scoreBreakdown.maxReachableScore`
+  reports the divisor.
+
+The quality delta is **not established** — paired normalized − fused is
+ΔnDCG@10 +0.033 with a 95% CI of −0.037…0.108, 10 better / 11 worse / 27
+equal (sign test p = 1.00). The +6.3 Hit@5 headline is about three labels. So
+the argument for the mode is the **contract**, not the metric, and the default
+stays `"fused"` until a bigger golden set exists.
+
 ### Calibrating `kw`
 
 `kw = 0.4` is a *default*, not an optimum. The best value depends on the embedder, the
@@ -111,6 +147,7 @@ Options:
 |---|---|---|
 | `topK` | `10` | Max results |
 | `minScore` | `0` | Minimum relevance threshold |
+| `minScoreMode` | `"fused"` | How `minScore` reads the score — [`"fused"` (default) or `"normalized"`](#score-scale-and-the-minscore-gate) |
 | `keywordIndex` | — | Keyword index instance |
 | `keywordWeight` | `0.4` | Hybrid fusion weight |
 | `queryPrefix` | — | Prefix applied to query before embedding |
