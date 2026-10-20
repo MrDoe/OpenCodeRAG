@@ -47,12 +47,13 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 | **Configurable parsers** | Remap file extensions to any parser via `chunking.parsers` (e.g. `.c` → `cpp`, or index a new `.cu` as C++) — applied to chunking, `get_file_skeleton`, and read labels ([docs](doc/chunking.md#parser-overrides-per-extension-chunkingparsers)) |
 | **Document support** | Markdown, LaTeX, PDF, DOCX, DOC, Excel |
 | **Image indexing** | Describe images via vision LLM and store descriptions as searchable vector chunks |
-| **Hybrid search** | Vector similarity + TF×IDF keyword fusion |
+| **Hybrid search** | Vector similarity + TF×IDF keyword fusion — the keyword index is repaired from the store whenever it drifts behind it, so the BM25 half never covers only part of the corpus |
+| **Retrieval calibration** | `opencode-rag eval:tune` sweeps the fusion weights against the labelled golden set and reports (or writes) the best configuration for your embedder and corpus |
 | **Decision model** | Local [tev1](https://ollama.com/library/tev1) classification — `make_decision` labels, routes, and scores short text with probabilities (40–150 ms warm); optional pre-ask routing so the agent asks fewer questions |
 | **OpenCode plugin** | Auto-inject context, read-tool override, TUI settings, Ctrl+Enter to add RAG context, MCP registration on `init` |
 | **Incremental indexing** | File-hash manifest, background watcher, auto-rebuild on corruption |
 | **Privacy-first** | All processing stays local (when using Ollama) |
-| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `decide`, `ui`, `mcp`, `setup`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare`, `eval:gate`, `eval:decide` |
+| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `decide`, `ui`, `mcp`, `setup`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare`, `eval:gate`, `eval:decide`, `eval:tune` |
 | **Proxy-aware** | Corporate proxy support with raw-socket localhost bypass |
 | **OpenAI / Anthropic / Cohere** | Use alternate embedding providers with API key auto-resolution |
 | **Evaluation** | Session-level token tracking, RAG-on vs RAG-off comparison, tiktoken BPE counting |
@@ -317,7 +318,7 @@ opencode-rag eval:compare <A> <B>   # side-by-side comparison
 
 Token counting uses tiktoken BPE (cl100k_base) for accurate code tokenization. See [Evaluation documentation](doc/evaluation.md) for details.
 
-Retrieval quality has its own harness: `opencode-rag eval:gate` runs the labelled golden set and fails when Hit@5 / MRR / nDCG@10 drop below the documented floors, and `opencode-rag eval:decide` measures tev1's accuracy, ECE, and Brier score on a labelled calibration set.
+Retrieval quality has its own harness: `opencode-rag eval:gate` runs the labelled golden set and fails when Hit@5 / MRR / nDCG@10 drop below the documented floors, and `opencode-rag eval:decide` measures tev1's accuracy, ECE, and Brier score on a labelled calibration set. `opencode-rag eval:tune` sweeps the retrieval fusion weights against the same golden set and reports the best configuration for your setup — the shipped `keywordWeight=0.4` is a default, not an optimum (on a code embedder it costs ~8 Hit@5 points), so measure it instead of guessing.
 
 ---
 
