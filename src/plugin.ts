@@ -40,16 +40,24 @@ import { countTokens } from "./eval/token-counter.js";
 import { checkForUpdate, getCurrentVersion, installLatestUpdate, type UpdateInfo } from "./core/version-check.js";
 import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "./core/auto-update-state.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
-import { listQuirks, lintQuirks, recallQuirks, sharedWords, reconcileQuirks } from "./quirks/quirk-store.js";
+import { listQuirks, lintQuirks, recallQuirks, sharedWords, reconcileQuirks, addQuirk } from "./quirks/quirk-store.js";
 import { autoCaptureQuirks, type CaptureExchange } from "./quirks/auto-capture.js";
 import {
   createToolErrorInjectionState,
-  selectToolErrorQuirks,
+  recallToolErrorQuirks,
   formatToolErrorQuirkBlock,
   toToolErrorCaptureEntry,
   type ToolErrorInfo,
   type ToolErrorInjectionState,
+  type ToolErrorQuirkHit,
 } from "./quirks/tool-error-recall.js";
+import {
+  buildToolErrorQuirkContent,
+  createToolErrorCreateState,
+  createToolErrorQuirk,
+  TOOL_ERROR_QUIRK_TAG,
+  type ToolErrorCreateState,
+} from "./quirks/tool-error-create.js";
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
@@ -834,6 +842,9 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   // Tool-error quirk path: per-session injection state (cooldown/budget) and the
   // block pending for the next model request.
   const sessionToolErrorState = new Map<string, ToolErrorInjectionState>();
+  // Tool-error quirk creation: per-session budget/cooldown for the quirks the
+  // plugin writes itself when a failure has no matching memory.
+  const sessionToolErrorCreateState = new Map<string, ToolErrorCreateState>();
   const sessionPendingToolErrorQuirk = new Map<string, { block: string; ts: number }>();
 
   // Evaluation session logger — captures OpenCode events for analysis
@@ -1225,28 +1236,125 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             boundedSet(sessionToolErrorState, input.sessionID, state, MAX_SESSION_MAP_SIZE);
 
             const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+            // `explain: true` keeps the raw vector similarity on each result —
+            // the confidence-discounted `score` is not comparable to a
+            // similarity threshold, and the tiering below needs the raw value.
             const recall = (query: string, recallOpts: { topK: number; minScore: number }) =>
-              recallQuirks(qDeps, query, recallOpts);
+              recallQuirks(qDeps, query, { ...recallOpts, explain: true }).then((rs) =>
+                rs.map((r) => ({
+                  chunk: {
+                    id: r.chunk.id,
+                    content: r.chunk.content,
+                    metadata: { quirkType: r.chunk.metadata.quirkType, tags: r.chunk.metadata.tags },
+                  },
+                  score: r.score,
+                  rawSimilarity: r.explanation?.scoreBreakdown?.rawVectorScore,
+                })),
+              );
             const budgetMs = memCfg.toolErrorLatencyBudgetMs ?? 1500;
-            await Promise.race([
-              selectToolErrorQuirks(recall, info, state, {
-                minScore: memCfg.toolErrorMinScore ?? 0.7,
-                topK: memCfg.toolErrorTopK ?? 2,
+            // One recall, two bars: the floor decides which quirks are
+            // candidates at all, the injection bar decides which are injected.
+            // A candidate between the two is a "probable match": it suppresses
+            // quirk creation but is only injected when no confident match
+            // exists.
+            const injectBar = memCfg.toolErrorMinScore ?? 0.7;
+            const floorBar = memCfg.toolErrorCreateMinScore ?? 0.6;
+            const topK = memCfg.toolErrorTopK ?? 2;
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const recallResult = await Promise.race([
+              recallToolErrorQuirks(recall, info, state, {
+                minScore: floorBar,
+                injectMinScore: injectBar,
+                topK,
                 minTokenOverlap: memCfg.toolErrorMinTokenOverlap ?? 1,
-              }).then((hits) => {
-                if (hits.length > 0) {
-                  boundedSet(
-                    sessionPendingToolErrorQuirk,
-                    input.sessionID,
-                    { block: formatToolErrorQuirkBlock(info, hits), ts: Date.now() },
-                    MAX_SESSION_MAP_SIZE,
-                  );
+                // The injection budget limits CONTEXT, not memory: when it is
+                // spent we still need the candidate list to decide whether a
+                // quirk already covers this failure (and whether to create
+                // one). The cooldown still applies.
+                enforceBudget: state.hasBudget(),
+              }),
+              new Promise<undefined>((resolve) => {
+                timer = setTimeout(() => resolve(undefined), budgetMs);
+              }),
+            ]).catch(() => undefined);
+            if (timer) clearTimeout(timer);
+
+            if (recallResult && !recallResult.blocked) {
+              // Tier 1: confident matches (>= inject bar). Tier 2: probable
+              // matches (>= floor bar) — used only when tier 1 is empty.
+              const tier1 = recallResult.inject;
+              const tier2 = recallResult.candidates.filter(
+                (c) => c.rawSimilarity < injectBar && !state.injectedQuirkIds.has(c.id),
+              );
+              const hits = tier1.length > 0 ? tier1 : tier2.slice(0, topK);
+              state.record(info, hits.map((h) => h.id));
+
+              // No candidate at all → nothing in memory covers this failure.
+              // Record one so a future occurrence can be answered from memory.
+              let createdHit: ToolErrorQuirkHit | undefined;
+              if (recallResult.candidates.length === 0 && memCfg.autoCreateOnToolError) {
+                const createState = sessionToolErrorCreateState.get(input.sessionID) ?? createToolErrorCreateState({
+                  maxPerSession: memCfg.toolErrorCreateMaxPerSession ?? 2,
+                  cooldownMs: memCfg.toolErrorCreateCooldownMs ?? 600_000,
+                });
+                boundedSet(sessionToolErrorCreateState, input.sessionID, createState, MAX_SESSION_MAP_SIZE);
+
+                if (createState.shouldCreate(info)) {
+                  const content = buildToolErrorQuirkContent(info);
+                  const createBudgetMs = memCfg.toolErrorCreateLatencyBudgetMs ?? 2000;
+                  let createTimer: ReturnType<typeof setTimeout> | undefined;
+                  const created = await Promise.race([
+                    createToolErrorQuirk({ add: (q) => addQuirk(qDeps, q) }, info, content),
+                    new Promise<undefined>((resolve) => {
+                      createTimer = setTimeout(() => resolve(undefined), createBudgetMs);
+                    }),
+                  ]).catch(() => undefined);
+                  if (createTimer) clearTimeout(createTimer);
+
+                  if (created?.created && created.id) {
+                    createState.record(info, true);
+                    appendDebugLog(options.logFilePath, {
+                      scope: "quirk.tool-error",
+                      message: `created quirk ${created.id} for tool "${input.tool}"`,
+                    });
+                    if (memCfg.toolErrorInjectCreated) {
+                      createdHit = {
+                        id: created.id,
+                        content,
+                        quirkType: "gotcha",
+                        score: 1,
+                        rawSimilarity: 1,
+                      };
+                    }
+                  } else {
+                    // A trust-monitor rejection or a store failure — log it and
+                    // carry on; the tool error must never break the session.
+                    createState.record(info, false);
+                    appendDebugLog(options.logFilePath, {
+                      scope: "quirk.tool-error",
+                      message: `quirk not created for tool "${input.tool}": ${created?.reason ?? "timeout"}`,
+                    });
+                  }
                 }
-              }),
-              new Promise<void>((resolve) => {
-                setTimeout(resolve, budgetMs);
-              }),
-            ]).catch(() => {});
+              }
+
+              const finalHits = createdHit ? [...hits, createdHit] : hits;
+              if (finalHits.length > 0) {
+                boundedSet(
+                  sessionPendingToolErrorQuirk,
+                  input.sessionID,
+                  {
+                    block: formatToolErrorQuirkBlock(info, finalHits, {
+                      heading: createdHit
+                        ? `⚠ **Tool error** \`${info.tool}\` — quirk memory (incl. newly recorded):`
+                        : undefined,
+                    }),
+                    ts: Date.now(),
+                  },
+                  MAX_SESSION_MAP_SIZE,
+                );
+              }
+            }
           }
         }
 
@@ -1330,7 +1438,13 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               const budgetMs = memCfg.autoInjectLatencyBudgetMs ?? 2000;
               let timer: ReturnType<typeof setTimeout> | undefined;
               let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, query, { topK: memCfg.autoInjectTopK ?? 1, minScore: memCfg.autoInjectMinScore ?? 0.75 })
+                recallQuirks(quirkDeps, query, {
+                  topK: memCfg.autoInjectTopK ?? 1,
+                  minScore: memCfg.autoInjectMinScore ?? 0.75,
+                  // Auto-created tool-error quirks are raw error dumps — they
+                  // are surfaced by the tool-error path, not on unrelated turns.
+                  excludeTags: [TOOL_ERROR_QUIRK_TAG],
+                })
                   .then((r) => {
                     if (timer) clearTimeout(timer);
                     return r;
@@ -1677,6 +1791,8 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               memCfg?.passiveCapture ? "passive-capture" : "",
               memCfg?.promptEnforcement ? "prompt-enforce" : "",
               memCfg?.sessionEndExtraction ? "session-end" : "",
+              memCfg?.injectOnToolError ? "tool-error-inject" : "",
+              memCfg?.autoCreateOnToolError ? "tool-error-create" : "",
             ].filter(Boolean);
             if (flags.length > 0) {
               lines.push(`Flags: ${flags.join(", ")}`);
@@ -1713,7 +1829,13 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               const minScore = quirkMemoryCfg.autoInjectMinScore ?? 0.75;
               let timer: ReturnType<typeof setTimeout> | undefined;
               let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, quirkQuery, { topK: quirkMemoryCfg.autoInjectTopK ?? 1, minScore })
+                recallQuirks(quirkDeps, quirkQuery, {
+                  topK: quirkMemoryCfg.autoInjectTopK ?? 1,
+                  minScore,
+                  // Auto-created tool-error quirks are raw error dumps — they
+                  // are surfaced by the tool-error path, not on unrelated turns.
+                  excludeTags: [TOOL_ERROR_QUIRK_TAG],
+                })
                   .then((r) => {
                     if (timer) clearTimeout(timer);
                     return r;

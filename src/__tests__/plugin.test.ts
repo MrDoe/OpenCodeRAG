@@ -6,11 +6,15 @@ import path from "node:path";
 import type { PluginInput } from "@opencode-ai/plugin";
 import type { ToolDefinition } from "@opencode-ai/plugin/tool";
 import { createRagHooks, ragPlugin } from "../plugin.js";
-import { DEFAULT_CONFIG, type RagConfig } from "../core/config.js";
+import { DEFAULT_CONFIG, type MemoryConfig, type RagConfig } from "../core/config.js";
 import type { EmbeddingProvider, SearchResult, VectorStore, MetadataFilter } from "../core/interfaces.js";
 import type { RetrieveOptions } from "../retriever/retriever.js";
+import { InMemoryVectorStore } from "../vectorstore/memory.js";
+import { KeywordIndex } from "../retriever/keyword-index.js";
 
-function makeConfig(overrides: Partial<RagConfig> = {}): RagConfig {
+function makeConfig(
+  overrides: Partial<Omit<RagConfig, "memory">> & { memory?: Partial<MemoryConfig> } = {},
+): RagConfig {
   return {
     ...DEFAULT_CONFIG,
     embedding: {
@@ -34,6 +38,10 @@ function makeConfig(overrides: Partial<RagConfig> = {}): RagConfig {
       ...overrides.openCode,
     },
     chunkers: overrides.chunkers ?? DEFAULT_CONFIG.chunkers,
+    // `DEFAULT_CONFIG.memory` is typed `MemoryConfig | undefined` on RagConfig,
+    // so the spread widens every property to optional. The cast restores the
+    // required-field contract.
+    memory: { ...DEFAULT_CONFIG.memory, ...overrides.memory } as NonNullable<RagConfig["memory"]>,
   };
 }
 
@@ -826,6 +834,154 @@ describe("ragPlugin", () => {
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  it("creates a quirk when a failed tool call has no matching memory", async () => {
+    const store = new InMemoryVectorStore();
+    const keywordIndex = new KeywordIndex();
+    // A constant embedding: the query and the stored quirk are identical
+    // vectors, so the recall sees a perfect similarity.
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+
+    const hooks = createRagHooks({
+      cfg: makeConfig({
+        memory: {
+          ...DEFAULT_CONFIG.memory,
+          enabled: true,
+          injectOnToolError: true,
+          autoCreateOnToolError: true,
+          toolErrorCreateMaxPerSession: 2,
+          toolErrorCreateCooldownMs: 0,
+        },
+      }),
+      storePath: "memory://",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store,
+      embedder,
+      keywordIndex,
+      worktree: testWorktree,
+    });
+
+    const after = hooks["tool.execute.after"];
+    assert.ok(after);
+
+    const error = "Unknown tool 'write'. Did you mean something else?";
+    await after(
+      { tool: "write", sessionID: "session-tooltip", callID: "call-1", status: "error" } as never,
+      { title: "write", output: "", metadata: {}, error } as never,
+    );
+
+    const chunks = await store.getChunks(0, 10);
+    const quirks = chunks.filter((c) => c.kind === "quirk");
+    assert.equal(quirks.length, 1, "expected exactly one auto-created quirk");
+    const quirk = quirks[0]!;
+    assert.match(quirk.content, /write/);
+    assert.match(quirk.content, /Unknown tool/);
+    assert.ok(quirk.tags?.includes("tool-error"), "expected the tool-error tag");
+    assert.ok(quirk.tags?.includes("auto-created"), "expected the auto-created tag");
+    assert.equal(quirk.quirkType, "gotcha");
+
+    // The same failure again: the quirk just created covers it, so no second
+    // quirk may be written.
+    await after(
+      { tool: "write", sessionID: "session-tooltip", callID: "call-2", status: "error" } as never,
+      { title: "write", output: "", metadata: {}, error } as never,
+    );
+
+    const after2 = await store.getChunks(0, 10);
+    assert.equal(after2.filter((c) => c.kind === "quirk").length, 1, "an existing quirk must suppress a duplicate");
+  });
+
+  it("keeps creating quirks after the injection budget is spent", async () => {
+    // The store never returns search hits, so every failure looks uncovered
+    // and each one must create a quirk. The injection budget is 1 — the
+    // creation path must not be blocked by it (it limits context, not memory).
+    const added: { content: string; tags?: string[] }[] = [];
+    const store: VectorStore = {
+      ...populatedStore,
+      addChunks: async (chunks) => {
+        for (const c of chunks) {
+          added.push({ content: c.content, tags: c.metadata.tags });
+        }
+      },
+    };
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+
+    const hooks = createRagHooks({
+      cfg: makeConfig({
+        memory: {
+          ...DEFAULT_CONFIG.memory,
+          enabled: true,
+          injectOnToolError: true,
+          autoCreateOnToolError: true,
+          toolErrorMaxPerSession: 1,
+          toolErrorCreateMaxPerSession: 3,
+          toolErrorCreateCooldownMs: 0,
+        },
+      }),
+      storePath: "memory://",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store,
+      embedder,
+      keywordIndex: new KeywordIndex(),
+      worktree: testWorktree,
+    });
+
+    const after = hooks["tool.execute.after"];
+    assert.ok(after);
+
+    const errors = [
+      "Unknown tool 'alpha'. Did you mean something else?",
+      "ENOENT: no such file or directory, open 'src/beta.ts'",
+      "EACCES: permission denied, open '/etc/gamma'",
+    ];
+    for (let i = 0; i < errors.length; i++) {
+      await after(
+        { tool: "write", sessionID: "session-budget", callID: `call-${i}`, status: "error" } as never,
+        { title: "write", output: "", metadata: {}, error: errors[i]! } as never,
+      );
+    }
+
+    const quirks = added.filter((c) => c.tags?.includes("tool-error"));
+    assert.equal(quirks.length, 3, "each failure must create a quirk even after the injection budget is spent");
+    assert.match(quirks[0]!.content, /Unknown tool/);
+    assert.match(quirks[1]!.content, /no such file/);
+    assert.match(quirks[2]!.content, /permission denied/);
+  });
+
+  it("does not create a quirk when the tool-error path is disabled", async () => {    const store = new InMemoryVectorStore();
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+
+    const hooks = createRagHooks({
+      cfg: makeConfig({
+        memory: { ...DEFAULT_CONFIG.memory, enabled: true, injectOnToolError: false },
+      }),
+      storePath: "memory://",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store,
+      embedder,
+      keywordIndex: new KeywordIndex(),
+      worktree: testWorktree,
+    });
+
+    const after = hooks["tool.execute.after"];
+    assert.ok(after);
+    await after(
+      { tool: "write", sessionID: "session-off", callID: "call-1", status: "error" } as never,
+      { title: "write", output: "", metadata: {}, error: "Unknown tool 'write'. Did you mean something else?" } as never,
+    );
+
+    const chunks = await store.getChunks(0, 10);
+    assert.equal(chunks.filter((c) => c.kind === "quirk").length, 0);
   });
 
 });

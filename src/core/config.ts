@@ -297,6 +297,33 @@ export interface MemoryConfig {
   toolErrorMaxPerSession: number;
   /** Latency budget (ms) for tool-error quirk recall; exceeded -> no injection (default 1500). */
   toolErrorLatencyBudgetMs: number;
+  /**
+   * Automatically create and persist a quirk when a failed tool call has no
+   * matching quirk memory (default true). The new quirk is a deterministic
+   * template built from the tool name and the error text — no LLM involved.
+   * It is recorded for FUTURE sessions; it is not injected into the turn that
+   * produced the failure (see `toolErrorInjectCreated`).
+   */
+  autoCreateOnToolError: boolean;
+  /** Max tool-error quirks CREATED per session (default 2). */
+  toolErrorCreateMaxPerSession: number;
+  /** Cooldown per normalized tool-error signature for creation in ms (default 600000 = 10 min). */
+  toolErrorCreateCooldownMs: number;
+  /**
+   * Minimum raw similarity (0-1) for an existing quirk to count as "an
+   * equivalent quirk already exists" and therefore suppress creation
+   * (default 0.6). Deliberately below `toolErrorMinScore` (0.7): a probable
+   * match still blocks a duplicate, it is just not injected on its own.
+   */
+  toolErrorCreateMinScore: number;
+  /** Latency budget (ms) for the tool-error creation path (embed + store write); default 2000. */
+  toolErrorCreateLatencyBudgetMs: number;
+  /**
+   * Inject a freshly created tool-error quirk into the turn that produced the
+   * failure (default false). The agent already saw the raw error, so the
+   * created quirk carries no new information for that turn.
+   */
+  toolErrorInjectCreated: boolean;
   /** Decay settings for aging quirks. */
   decay: {
     /** Whether confidence decays over time. */
@@ -945,6 +972,12 @@ export const DEFAULT_CONFIG: RagConfig = {
     toolErrorCooldownMs: 60_000,
     toolErrorMaxPerSession: 3,
     toolErrorLatencyBudgetMs: 1500,
+    autoCreateOnToolError: true,
+    toolErrorCreateMaxPerSession: 2,
+    toolErrorCreateCooldownMs: 600_000,
+    toolErrorCreateMinScore: 0.6,
+    toolErrorCreateLatencyBudgetMs: 2000,
+    toolErrorInjectCreated: false,
     decay: {
       enabled: false,
       halfLifeDays: 30,
@@ -1108,6 +1141,19 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   }
   if (config.memory?.toolErrorLatencyBudgetMs != null && config.memory.toolErrorLatencyBudgetMs < 0) {
     warnings.push("memory.toolErrorLatencyBudgetMs must be >= 0");
+  }
+  if (config.memory?.toolErrorCreateMinScore != null) {
+    const r = config.memory.toolErrorCreateMinScore;
+    if (r < 0 || r > 1) warnings.push("memory.toolErrorCreateMinScore must be between 0 and 1");
+  }
+  if (config.memory?.toolErrorCreateMaxPerSession != null && config.memory.toolErrorCreateMaxPerSession < 0) {
+    warnings.push("memory.toolErrorCreateMaxPerSession must be >= 0");
+  }
+  if (config.memory?.toolErrorCreateCooldownMs != null && config.memory.toolErrorCreateCooldownMs < 0) {
+    warnings.push("memory.toolErrorCreateCooldownMs must be >= 0");
+  }
+  if (config.memory?.toolErrorCreateLatencyBudgetMs != null && config.memory.toolErrorCreateLatencyBudgetMs < 0) {
+    warnings.push("memory.toolErrorCreateLatencyBudgetMs must be >= 0");
   }
   if (config.memory?.decay && config.memory.decay.halfLifeDays <= 0) {
     warnings.push("memory.decay.halfLifeDays must be > 0");

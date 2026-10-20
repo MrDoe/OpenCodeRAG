@@ -5,6 +5,7 @@ import {
   createToolErrorInjectionState,
   formatToolErrorQuirkBlock,
   normalizeToolErrorSignature,
+  recallToolErrorQuirks,
   selectToolErrorQuirks,
   toToolErrorCaptureEntry,
   TOOL_ERROR_DEFAULTS,
@@ -114,7 +115,9 @@ describe("tool-error-recall", () => {
         hit("b", "write path high", 0.99),
         hit("c", "write path mid", 0.5),
       ];
-      const hits = await selectToolErrorQuirks(recall, WRITE_ERROR, createToolErrorInjectionState(), { topK: 2 });
+      // minScore 0 so the mock's sub-threshold hits are not filtered out —
+      // this test is about the sort-then-slice order.
+      const hits = await selectToolErrorQuirks(recall, WRITE_ERROR, createToolErrorInjectionState(), { topK: 2, minScore: 0 });
       assert.deepEqual(hits.map((h) => h.id), ["b", "c"]);
     });
 
@@ -150,6 +153,101 @@ describe("tool-error-recall", () => {
     });
   });
 
+  describe("recallToolErrorQuirks", () => {
+    it("tiers hits by RAW similarity, not the confidence-discounted score", async () => {
+      // score 0.57 is a 0.95 similarity discounted by a 0.6 confidence —
+      // a confident-only comparison would wrongly reject it.
+      const recall = async () => [
+        { chunk: { id: "q1", content: "write requires path" }, score: 0.57, rawSimilarity: 0.95 },
+      ];
+      const result = await recallToolErrorQuirks(recall, WRITE_ERROR, createToolErrorInjectionState(), {
+        minScore: 0.6,
+        injectMinScore: 0.7,
+        minTokenOverlap: 0,
+      });
+      assert.equal(result.inject.length, 1);
+      assert.equal(result.inject[0]!.id, "q1");
+      assert.equal(result.inject[0]!.rawSimilarity, 0.95);
+    });
+
+    it("keeps a probable match in candidates but out of the inject set", async () => {
+      const recall = async () => [
+        { chunk: { id: "q1", content: "write requires path" }, score: 0.65, rawSimilarity: 0.65 },
+      ];
+      const result = await recallToolErrorQuirks(recall, WRITE_ERROR, createToolErrorInjectionState(), {
+        minScore: 0.6,
+        injectMinScore: 0.7,
+        minTokenOverlap: 0,
+      });
+      assert.equal(result.inject.length, 0, "0.65 is below the 0.7 injection bar");
+      assert.equal(result.candidates.length, 1, "but it is still a candidate — creation must be suppressed");
+    });
+
+    it("reports an empty candidate set when nothing covers the failure", async () => {
+      const recall = async () => [];
+      const result = await recallToolErrorQuirks(recall, WRITE_ERROR, createToolErrorInjectionState(), {
+        minScore: 0.6,
+        injectMinScore: 0.7,
+      });
+      assert.equal(result.inject.length, 0);
+      assert.equal(result.candidates.length, 0);
+      assert.equal(result.blocked, false);
+    });
+
+    it("keeps already-injected quirks in the candidate set so creation stays suppressed", async () => {
+      const state = createToolErrorInjectionState({ cooldownMs: 0 });
+      state.record(WRITE_ERROR, ["q1"], 0);
+      const recall = async () => [
+        { chunk: { id: "q1", content: "write requires path" }, score: 0.9, rawSimilarity: 0.9 },
+      ];
+      const result = await recallToolErrorQuirks(recall, WRITE_ERROR, state, { minScore: 0.6, injectMinScore: 0.7 });
+      assert.equal(result.inject.length, 0, "already injected — do not inject again");
+      assert.equal(result.candidates.length, 1, "but a quirk does exist — do not create a duplicate");
+    });
+
+    it("marks the attempt as blocked when the cooldown forbids it", async () => {
+      const state = createToolErrorInjectionState({ cooldownMs: 60_000 });
+      state.record(WRITE_ERROR, [], Date.now());
+      const recall = async () => [];
+      const result = await recallToolErrorQuirks(recall, WRITE_ERROR, state, { minScore: 0.6 });
+      assert.equal(result.blocked, true);
+    });
+
+    it("returns empty candidates when the recall throws", async () => {
+      const recall = async () => {
+        throw new Error("embedder down");
+      };
+      const result = await recallToolErrorQuirks(recall, WRITE_ERROR, createToolErrorInjectionState(), { minScore: 0.6 });
+      assert.equal(result.inject.length, 0);
+      assert.equal(result.candidates.length, 0);
+      assert.equal(result.blocked, false);
+    });
+
+    it("still recalls when the injection budget is spent, if enforceBudget is false", async () => {
+      const state = createToolErrorInjectionState({ cooldownMs: 0, maxPerSession: 1 });
+      state.record(WRITE_ERROR, ["q1"], 0);
+      assert.equal(state.hasBudget(), false);
+
+      const recall = async () => [hit("q2", "write requires path", 0.9)];
+      const blocked = await recallToolErrorQuirks(recall, WRITE_ERROR, state, { minScore: 0.6 });
+      assert.equal(blocked.blocked, true, "the budget blocks the recall by default");
+
+      const allowed = await recallToolErrorQuirks(recall, WRITE_ERROR, state, { minScore: 0.6, enforceBudget: false });
+      assert.equal(allowed.blocked, false);
+      assert.equal(allowed.candidates.length, 1, "the candidate list is still needed");
+      assert.equal(allowed.inject.length, 0, "but nothing may be injected without budget");
+    });
+
+    it("keeps the cooldown blocking even when enforceBudget is false", async () => {
+      const state = createToolErrorInjectionState({ cooldownMs: 60_000, maxPerSession: 5 });
+      state.record(WRITE_ERROR, [], Date.now());
+      const recall = async () => [hit("q1", "write requires path", 0.9)];
+      const result = await recallToolErrorQuirks(recall, WRITE_ERROR, state, { minScore: 0.6, enforceBudget: false });
+      assert.equal(result.blocked, true);
+      assert.equal(result.candidates.length, 0);
+    });
+  });
+
   describe("formatToolErrorQuirkBlock", () => {
     it("returns an empty string without hits", () => {
       assert.equal(formatToolErrorQuirkBlock(WRITE_ERROR, []), "");
@@ -157,7 +255,7 @@ describe("tool-error-recall", () => {
 
     it("formats the tool and typed quirk content", () => {
       const block = formatToolErrorQuirkBlock(WRITE_ERROR, [
-        { id: "q1", content: "write requires path", quirkType: "gotcha", score: 0.9 },
+        { id: "q1", content: "write requires path", quirkType: "gotcha", score: 0.9, rawSimilarity: 0.9 },
       ]);
       assert.match(block, /Tool error/);
       assert.match(block, /`write`/);

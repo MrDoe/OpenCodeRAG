@@ -559,6 +559,16 @@ export async function recallQuirks(
      *  cosine mapped to [0,1] the same way the vector stores report raw scores).
      *  Auto-inject passes its own (usually higher) bar. */
     minScore?: number;
+    /** Exclude quirks carrying any of these tags. Unlike `tags` (any-of
+     *  inclusion), this is a negative filter — used to keep specialized quirk
+     *  classes (e.g. `tool-error`) out of the generic auto-inject path. */
+    excludeTags?: string[];
+    /** Keep `explanation` on the returned results. The caller can then read the
+     *  RAW vector similarity (`explanation.scoreBreakdown.rawVectorScore`),
+     *  which is not the same as `score`: `score` is confidence-discounted
+     *  (`similarity * confidence`), so it cannot be compared against a
+     *  similarity threshold. */
+    explain?: boolean;
   },
 ): Promise<SearchResult[]> {
   const topK = options?.topK ?? 10;
@@ -601,6 +611,10 @@ export async function recallQuirks(
       const chunkTags = r.chunk.metadata.tags ?? [];
       if (!options.tags.some((t) => chunkTags.includes(t))) return false;
     }
+    if (options?.excludeTags?.length) {
+      const chunkTags = r.chunk.metadata.tags ?? [];
+      if (options.excludeTags.some((t) => chunkTags.includes(t))) return false;
+    }
     return true;
   });
 
@@ -611,7 +625,9 @@ export async function recallQuirks(
     const conf = r.chunk.metadata.confidence ?? 1;
     const similarity = r.explanation?.scoreBreakdown?.rawVectorScore ?? 0;
     r.score = similarity * Math.min(1, Math.max(0.01, conf));
-    delete r.explanation;
+    // `explain` keeps the breakdown so a caller can read the RAW similarity
+    // (unaffected by the confidence discount applied to `score` above).
+    if (!options?.explain) delete r.explanation;
   }
   filtered.sort((a, b) => b.score - a.score);
   return filtered.slice(0, topK);
