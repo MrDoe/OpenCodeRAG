@@ -293,11 +293,26 @@ See [Configuration: `retrieval.contextOptimization`](configuration.md#retrieval)
 
 Set `retrieval.contextOptimization.enabled: false` in `opencode-rag.json` to return raw `retrieve()` results unchanged.
 
+## Query Construction Today
+
+The pipeline does **not** rewrite the user's query — it *constructs* it from the
+call context. Three deterministic builders exist, all rule-based (no LLM, no
+tokens):
+
+| Builder | Where | What it does |
+|---|---|---|
+| `buildRetrievalQuery` | `src/plugin.ts` | Appends `Path hints: …` / `Language hints: …` to the raw query — a **soft** bias on the embedding, not a filter |
+| `buildReadQuery` | `src/opencode/read-query.ts` | Prefixes the intent, then appends `File: …` and a `Focus on chunks overlapping lines X-Y.` instruction |
+| `buildSessionQuery` | `src/opencode/create-read-tool.ts` | Uses the current user message as the query and appends the file/line focus |
+
+`retrieve()` then applies `queryPrefix`, embeds once, and runs the vector and
+keyword legs in parallel.
+
 ## Future Improvements
 
 | Feature | Status | Description |
 |---|---|---|
-| LLM-based re-ranking | Planned | Cross-encoder after vector search for precision |
-| Query rewriting | Planned | Multi-variant query expansion |
-| Retrieval explainability | Planned | Debug surfaces for why chunks were returned |
+| LLM-based re-ranking | **Shipped** (v2.3.0, opt-in) | Cross-encoder after vector search for precision — `reranking.*` |
+| Retrieval explainability | **Shipped** | `explain: true` on `search_semantic` / `retrieve()` — score breakdown, per-signal ranks, matched terms, query shape |
+| Query rewriting | Planned | Multi-variant query expansion — see the [roadmap](roadmap.md#-short-term--token--cost-efficiency) |
 | Cross-file graph | Planned | Dependency-aware search via import/call graphs |
