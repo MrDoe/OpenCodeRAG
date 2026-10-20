@@ -51,7 +51,7 @@ import {
   type ToolErrorInjectionState,
 } from "./quirks/tool-error-recall.js";
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
-import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 
 /** Maximum entries per session map before oldest entries are evicted. */
@@ -61,8 +61,22 @@ const MAX_SESSION_TOOL_RESULTS = 20;
 /** Pending tool-error quirk blocks older than this (ms) are dropped instead of injected. */
 const TOOL_ERROR_PENDING_TTL_MS = 120_000;
 
+/**
+ * A cached RAG configuration together with the identity of the file it was
+ * loaded from. The mtime is what makes the cache *safe*: when the config file
+ * changes on disk the entry is re-read instead of being served stale.
+ */
+type CachedConfig = {
+  /** The loaded configuration. */
+  cfg: RagConfig;
+  /** Absolute path of the config file (undefined when the workspace has none). */
+  configPath: string | undefined;
+  /** mtime of that file at load time, or -1 when there is no file. */
+  mtimeMs: number;
+};
+
 /** Cache of loaded RAG configurations keyed by workspace directory. */
-const configCache = new Map<string, RagConfig>();
+const configCache = new Map<string, CachedConfig>();
 /** Active background indexer instances keyed by workspace directory. */
 const backgroundIndexers = new Map<string, { close: () => Promise<void> }>();
 /** Active vector stores keyed by workspace directory — closed on reload/shutdown. */
@@ -253,20 +267,45 @@ function indentMultiline(text: string, indent: number): string {
 }
 
 /**
+ * mtime of a config file in milliseconds, or -1 when it does not exist.
+ */
+function configFileMtime(configPath: string | undefined): number {
+  if (!configPath) return -1;
+  try {
+    return statSync(configPath).mtimeMs;
+  } catch {
+    return -1;
+  }
+}
+
+/**
  * Load the RAG configuration for a directory, searching in order:
  * opencode-rag.json, .opencode/opencode-rag.json, .opencode/rag.json.
- * Caches the result per directory.
+ *
+ * The result is cached per directory and re-read whenever the config file
+ * changes on disk, so an edited API key or baseUrl does not require a restart.
  */
-async function getConfig(directory: string): Promise<RagConfig> {
-  const cached = configCache.get(directory);
-  if (cached) return cached;
-
+export async function getConfig(directory: string): Promise<RagConfig> {
   const configPath = findConfigFile(directory);
+  const mtimeMs = configFileMtime(configPath);
+  const cached = configCache.get(directory);
+  if (cached && cached.configPath === configPath && cached.mtimeMs === mtimeMs) {
+    return cached.cfg;
+  }
+
   if (configPath) {
     try {
       const cfg = loadConfig(configPath);
       await loadChunkersFromConfig(cfg, path.dirname(configPath));
-      configCache.set(directory, cfg);
+      const hadKey = !!cfg.embedding.apiKey;
+      resolveApiKey(cfg, directory);
+      if (!hadKey && cfg.embedding.apiKey) {
+        appendDebugLog(path.resolve(directory, ".opencode", "opencode-rag.log"), {
+          scope: "config",
+          message: `Resolved embedding API key from ${process.env.OPENAI_API_KEY ? "OPENAI_API_KEY env var" : "OpenCode provider config"}`,
+        });
+      }
+      configCache.set(directory, { cfg, configPath, mtimeMs });
       return cfg;
     } catch (err) {
       appendDebugLog(path.resolve(directory, ".opencode", "opencode-rag.log"), {
@@ -277,8 +316,118 @@ async function getConfig(directory: string): Promise<RagConfig> {
     }
   }
 
-  configCache.set(directory, DEFAULT_CONFIG);
-  return DEFAULT_CONFIG;
+  // Deep-clone so a later resolveApiKey() cannot mutate the shared
+  // DEFAULT_CONFIG singleton.
+  const cfg = structuredClone(DEFAULT_CONFIG);
+  configCache.set(directory, { cfg, configPath, mtimeMs });
+  return cfg;
+}
+
+/**
+ * Re-read a workspace's config file when it changed on disk.
+ *
+ * Only a config that this module loaded from a file is refreshed — the cache
+ * entry is the proof that the file is the source of truth for that workspace.
+ * A caller that supplies its own configuration (tests, embedders) keeps it.
+ *
+ * Synchronous on purpose: this runs on the hot path (every effective-config
+ * lookup) and `loadConfig` is synchronous. The pluggable-chunker side effect
+ * (`loadChunkersFromConfig`) mutates a global registry and is therefore
+ * re-applied asynchronously — it is not needed by the embedding path this
+ * refresh exists to fix.
+ *
+ * @param directory - Workspace directory whose config should be refreshed.
+ * @param fallback - Config to use when the workspace has no file-backed config.
+ * @returns The configuration currently in effect.
+ */
+export function refreshConfig(directory: string, fallback: RagConfig): RagConfig {
+  const cached = configCache.get(directory);
+  if (!cached) {
+    // No file-backed config for this workspace — the caller's config stands.
+    return fallback;
+  }
+
+  const configPath = findConfigFile(directory);
+  const mtimeMs = configFileMtime(configPath);
+  if (cached.configPath === configPath && cached.mtimeMs === mtimeMs) {
+    return cached.cfg;
+  }
+  if (!configPath) {
+    // The config file was removed — keep serving the last known config.
+    return cached.cfg;
+  }
+  try {
+    const cfg = loadConfig(configPath);
+    resolveApiKey(cfg, directory);
+    void loadChunkersFromConfig(cfg, path.dirname(configPath)).catch(() => { /* best-effort */ });
+    configCache.set(directory, { cfg, configPath, mtimeMs });
+    return cfg;
+  } catch (err) {
+    appendDebugLog(path.resolve(directory, ".opencode", "opencode-rag.log"), {
+      scope: "config",
+      message: `Failed to reload config from ${configPath}`,
+      error: err,
+    });
+    return cached.cfg;
+  }
+}
+
+/**
+ * Identity of the embedding-relevant configuration. A change means the
+ * embedding provider has to be rebuilt (different key, baseUrl, model, …).
+ */
+function embeddingSignature(cfg: RagConfig): string {
+  const e = cfg.embedding;
+  return [
+    e.provider,
+    e.baseUrl ?? "",
+    e.model,
+    e.apiKey ?? "",
+    e.timeoutMs ?? "",
+    JSON.stringify(e.proxy ?? null),
+  ].join("\u0000");
+}
+
+/**
+ * Wrap an embedding provider so it follows the live configuration.
+ *
+ * The provider is rebuilt whenever the embedding-relevant config changes on
+ * disk. Without this, the provider built at plugin setup kept using a stale
+ * API key / baseUrl until OpenCode was restarted — which surfaced as a 401
+ * that looked like an OpenAI auth error while the CLI worked fine against the
+ * very same config file.
+ *
+ * @param getConfig - Returns the configuration currently in effect.
+ * @param create - Factory that builds a provider for a configuration.
+ * @param initial - Provider to use until the configuration changes.
+ * @returns A provider that tracks the live configuration.
+ */
+export function createLiveEmbedder(
+  getConfig: () => RagConfig,
+  create: (cfg: RagConfig) => EmbeddingProvider,
+  initial?: EmbeddingProvider,
+): EmbeddingProvider {
+  let provider = initial ?? create(getConfig());
+  let signature = embeddingSignature(getConfig());
+
+  function current(): EmbeddingProvider {
+    const cfg = getConfig();
+    const sig = embeddingSignature(cfg);
+    if (sig !== signature) {
+      provider = create(cfg);
+      signature = sig;
+    }
+    return provider;
+  }
+
+  return {
+    get name(): string {
+      return current().name;
+    },
+    async embed(texts: string[], purpose?: "query" | "document"): Promise<number[][]> {
+      return current().embed(texts, purpose);
+    },
+  };
 }
 
 /**
@@ -622,7 +771,6 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     ...defaultDependencies,
     ...options.dependencies,
   };
-  const embedder = options.embedder ?? dependencies.createEmbedder(options.cfg);
   const configuredDimension = options.cfg.embedding.vectorDimension;
   const store = options.store ?? dependencies.createStore(
     options.storePath,
@@ -651,10 +799,24 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     if (lastEffectiveCfg && Date.now() - lastEffectiveCfgTime < 1000) {
       return lastEffectiveCfg;
     }
-    lastEffectiveCfg = applyRuntimeOverrides(options.cfg, cachedOverrides);
+    // Re-read the config file when it changed on disk, so an edited API key /
+    // baseUrl / model takes effect without restarting OpenCode.
+    lastEffectiveCfg = applyRuntimeOverrides(refreshConfig(options.worktree, options.cfg), cachedOverrides);
     lastEffectiveCfgTime = Date.now();
     return lastEffectiveCfg;
   }
+
+  // The embedder follows the live configuration: when the config file changes
+  // (new API key, baseUrl or model) the provider is rebuilt instead of
+  // keeping the one built at plugin setup.
+  //
+  // Created *after* the override state above on purpose — the facade resolves
+  // the effective config eagerly, which would otherwise hit the temporal dead
+  // zone of those `let` bindings.
+  const embedder = options.embedder ?? createLiveEmbedder(
+    () => getEffectiveCfg(),
+    (cfg) => dependencies.createEmbedder(cfg),
+  );
 
   // Session-level caches for lazy retrieval
   const sessionLastMessage = new Map<string, string>();
@@ -1752,6 +1914,11 @@ export const ragPlugin: Plugin = async (
   input: PluginInput,
   _options?: Record<string, unknown>
 ): Promise<Hooks> => {
+  // Drop the cached config before loading: a plugin reload must pick up a
+  // changed config file, and the fresh cache entry is what enables the live
+  // refresh (refreshConfig only refreshes file-backed configs).
+  configCache.delete(input.directory);
+
   const cfg = await getConfig(input.directory);
   const logFilePath = path.resolve(input.directory, resolveLogConfig(cfg).logFilePath);
   const logLevel = resolveLogConfig(cfg).level;
@@ -1833,6 +2000,15 @@ export const ragPlugin: Plugin = async (
   // When the probe fails, prefer the existing store's schema over the 384
   // default — a transient outage must not downgrade the store's dimension.
   const embedder = createEmbedder(effectiveCfg);
+  // The hooks and the background watcher share one embedder that follows the
+  // live config: when the config file changes (new API key, baseUrl or model)
+  // the provider is rebuilt instead of keeping the one built at startup. The
+  // raw `embedder` above stays the probe target — it is used once.
+  const liveEmbedder = createLiveEmbedder(
+    () => refreshConfig(input.directory, effectiveCfg),
+    (cfg) => createEmbedder(cfg),
+    embedder,
+  );
   let vectorDimension = effectiveCfg.embedding.vectorDimension;
   if (vectorDimension && vectorDimension > 0) {
     appendDebugLog(logFilePath, {
@@ -1887,7 +2063,7 @@ export const ragPlugin: Plugin = async (
   // or keyword index (full rebuilds drop quirk chunks — see reconcileQuirks).
   // Fire-and-forget: must never block plugin startup, and the embedder may be
   // offline. The background watcher re-runs this at every pass end.
-  void reconcileQuirks({ embedder, store, keywordIndex, cfg: effectiveCfg, storePath })
+  void reconcileQuirks({ embedder: liveEmbedder, store, keywordIndex, cfg: effectiveCfg, storePath })
     .then((r) => {
       if (r.restoredToStore > 0 || r.addedToKeywordIndex > 0 || r.removedOrphans > 0) {
         appendDebugLog(logFilePath, {
@@ -1916,7 +2092,7 @@ export const ragPlugin: Plugin = async (
     logFilePath,
     logLevel,
     worktree: input.directory,
-    embedder,
+    embedder: liveEmbedder,
     store,
     keywordIndex,
     descriptionProvider,
@@ -1930,7 +2106,7 @@ export const ragPlugin: Plugin = async (
       storePath,
       config: effectiveCfg,
       store,
-      embedder,
+      embedder: liveEmbedder,
       logFilePath,
       logLevel,
       keywordIndex,
