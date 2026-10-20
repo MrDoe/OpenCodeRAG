@@ -450,6 +450,19 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
     "autoInjectTopK": 1,
     "autoInjectMinTokenOverlap": 2,
     "autoInjectLatencyBudgetMs": 2000,
+    "injectOnToolError": true,
+    "toolErrorMinScore": 0.7,
+    "toolErrorTopK": 2,
+    "toolErrorMinTokenOverlap": 1,
+    "toolErrorCooldownMs": 60000,
+    "toolErrorMaxPerSession": 3,
+    "toolErrorLatencyBudgetMs": 1500,
+    "autoCreateOnToolError": true,
+    "toolErrorCreateMaxPerSession": 2,
+    "toolErrorCreateCooldownMs": 600000,
+    "toolErrorCreateMinScore": 0.6,
+    "toolErrorCreateLatencyBudgetMs": 2000,
+    "toolErrorInjectCreated": false,
     "decay": {
       "enabled": false,
       "halfLifeDays": 30
@@ -475,8 +488,21 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 | `sessionEndExtraction` | `true` | Summarize the full session transcript into quirks on session end (via event hook). Requires `description.enabled`. |
 | `autoCaptureMaxPerTurn` | `2` | Maximum number of quirks to auto-capture per turn or session-end pass. |
 | `autoCaptureDedupThreshold` | `0.85` | Lexical similarity threshold (0–1) above which a candidate quirk is considered a duplicate of an existing quirk and skipped. |
+| `injectOnToolError` | `true` | After a **failed** tool call, recall quirks that match the failure and inject them into the next model request. The failure is also appended to the auto-capture pipeline, so recurring errors can become quirks. |
+| `toolErrorMinScore` | `0.7` | Minimum raw vector similarity (0–1) for a quirk to be **injected** after a tool error. This is the "confident match" bar. |
+| `toolErrorTopK` | `2` | Maximum number of quirks injected per tool error. |
+| `toolErrorMinTokenOverlap` | `1` | Minimum shared word tokens (≥3 chars) between a quirk and the error text. `0` disables the lexical gate. |
+| `toolErrorCooldownMs` | `60000` | Cooldown per normalized tool-error signature. The same failure only triggers a recall once per window. |
+| `toolErrorMaxPerSession` | `3` | Maximum number of tool-error quirk injections per session. |
+| `toolErrorLatencyBudgetMs` | `1500` | Latency budget (ms) for the tool-error recall. If the embedder is slower, no quirk is injected for that failure. |
+| `autoCreateOnToolError` | `true` | **Create** a quirk when a failed tool call has no matching memory. The new quirk is a deterministic template built from the tool name and the error text — no LLM involved, so it works even with `description.enabled: false`. It is recorded for *future* sessions; it is not injected into the turn that produced the failure (see `toolErrorInjectCreated`). |
+| `toolErrorCreateMaxPerSession` | `2` | Maximum number of tool-error quirks **created** per session. Bounds how much a failing session can write to memory. |
+| `toolErrorCreateCooldownMs` | `600000` | Cooldown per normalized tool-error signature for creation (10 min). |
+| `toolErrorCreateMinScore` | `0.6` | Minimum raw vector similarity (0–1) for an existing quirk to count as "an equivalent quirk already exists" and therefore **suppress** creation. Deliberately below `toolErrorMinScore`: a probable match (0.6–0.7) still blocks a duplicate — it is just not injected on its own. |
+| `toolErrorCreateLatencyBudgetMs` | `2000` | Latency budget (ms) for the creation path (embed + store write). If exceeded, the quirk is still written in the background but not confirmed within the budget. |
+| `toolErrorInjectCreated` | `false` | Also inject a freshly created tool-error quirk into the turn that produced the failure. Off by default: the agent already saw the raw error, so the created quirk carries no new information for that turn. |
 
-Quirks can also be managed from the CLI — see [CLI Reference: `quirk`](cli.md#quirk). Every `addQuirk` call is vetted by an immutable trust monitor (`src/quirks/monitor.ts`) that rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Auto-captured quirks pass through the same trust boundary before storage.
+Quirks can also be managed from the CLI — see [CLI Reference: `quirk`](cli.md#quirk). Every `addQuirk` call is vetted by an immutable trust monitor (`src/quirks/monitor.ts`) that rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Auto-captured quirks pass through the same trust boundary before storage. Auto-created tool-error quirks are no exception: an error text that contains a blocked pattern (e.g. a shell error echoing `rm -rf …`) is **not** stored — the rejection is logged to the plugin log and the session continues.
 
 ### `mcp`
 

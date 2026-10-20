@@ -351,6 +351,15 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
 
 7. **Relevance gate for auto-injection** — After vector recall, each candidate quirk must share at least `memory.autoInjectMinTokenOverlap` (default `2`) word tokens (≥3 chars) with the user's *current* message alone — not merely the combined assistant+user recall query. This stops meta-quirks (quirks about quirks themselves, e.g. "Quirk content length is guided by…") from being injected into unrelated tasks where they only matched the prior assistant text in the recall query. Set `autoInjectMinTokenOverlap` to `0` to disable the gate (restores the old behavior of pure semantic matching).
 
+8. **Tool-error memory (recall + auto-create)** — When a tool call fails, the plugin turns the failure into memory:
+   - **Recall & inject** (`memory.injectOnToolError`, default `true`): The failure is turned into a recall query (`Tool "<name>" failed: <error>`) and matched against stored quirks. Matches that clear `memory.toolErrorMinScore` (default `0.7` — the "confident match" bar) are injected into the next model request. The failure is also appended to the auto-capture pipeline, so recurring errors can be picked up by the LLM-based extraction modes.
+   - **Auto-create** (`memory.autoCreateOnToolError`, default `true`): When **no** stored quirk covers the failure, the plugin writes one. The content is a deterministic template — `Tool \`write\` failed: <error>` plus a short classified cause for well-known error classes (unknown tool, missing path, permissions, schema mismatch, rate limit, timeout) — so no LLM is involved and the path works even with `description.enabled: false`. The new quirk is tagged `tool-error` / `auto-created` / `tool:<name>`, typed `gotcha`, and stored with a lower confidence (0.6).
+   - **Two bars, one recall**: The recall runs once at the *floor* (`memory.toolErrorCreateMinScore`, default `0.6`). A hit in `0.6–0.7` is a *probable match*: it is not injected on its own, but it **suppresses** creation, so a near-duplicate is never written. Only when the floor yields nothing at all is a new quirk created.
+   - **Persisted, not injected**: The created quirk is recorded for *future* sessions. It is not injected into the turn that produced the failure — the agent already saw the raw error. Set `memory.toolErrorInjectCreated` to `true` to change that.
+   - **Bounded**: A per-session budget (`memory.toolErrorCreateMaxPerSession`, default `2`) and a per-signature cooldown (`memory.toolErrorCreateCooldownMs`, default 10 min) cap how much a failing session can write. The create step runs under a latency budget (`memory.toolErrorCreateLatencyBudgetMs`, default `2000`).
+   - **Trust monitor**: Creation goes through the same immutable trust monitor as `add_quirk`. An error text containing a blocked pattern (e.g. a shell error echoing `rm -rf …`) is **not** stored — the rejection is logged and the session continues.
+   - **No context pollution**: Quirks tagged `tool-error` are excluded from the generic auto-injection paths, so a raw error dump never leaks into an unrelated turn. They surface only when a matching tool failure occurs.
+
 **Config example:**
 ```json
 {
@@ -362,6 +371,12 @@ When `memory.enabled` is `true`, the plugin provides persistent, cross-session m
     "autoInjectMinScore": 0.75,
     "autoInjectTopK": 1,
     "autoInjectMinTokenOverlap": 2,
+    "injectOnToolError": true,
+    "toolErrorMinScore": 0.7,
+    "autoCreateOnToolError": true,
+    "toolErrorCreateMaxPerSession": 2,
+    "toolErrorCreateCooldownMs": 600000,
+    "toolErrorCreateMinScore": 0.6,
     "decay": { "enabled": true, "halfLifeDays": 30 }
   }
 }

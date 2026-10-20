@@ -59,7 +59,7 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 | **Documentation mode** | `/doc` slash command: agent adds JSDoc/TSDoc to undocumented files, progress tracked per subdirectory |
 | **Wiki mode** | `/wiki` slash command: agent maintains a persistent knowledge wiki at `.opencode/wiki/` (ingest, query, lint, seed) |
 | **Context optimization** | Post-retrieval dedup, per-file chunk limits, adjacent-merge to fit the context window |
-| **Quirk memory** | Persistent experiential memory — agents recall/persist gotchas, preferences, decisions across sessions (`add_quirk` / `recall_quirks`, `opencode-rag quirk`) |
+| **Quirk memory** | Persistent experiential memory — agents recall/persist gotchas, preferences, decisions across sessions (`add_quirk` / `recall_quirks`, `opencode-rag quirk`); failed tool calls are auto-recorded as quirks |
 | **AGENTS.md directive** | `opencode-rag init` merges a tool-usage directive into `AGENTS.md` via sentinel markers |
 
 ## Web UI
@@ -210,6 +210,9 @@ OpenCodeRAG gives your agent **persistent, cross-session memory** of non-obvious
     "autoInjectMinScore": 0.75,
     "autoInjectTopK": 1,
     "autoInjectLatencyBudgetMs": 2000,
+    "injectOnToolError": true,
+    "autoCreateOnToolError": true,
+    "toolErrorCreateMaxPerSession": 2,
     "decay": { "enabled": false, "halfLifeDays": 30 }
   }
 }
@@ -239,6 +242,8 @@ opencode-rag quirk test "npm needs --legacy-peer-deps"
 ```
 
 When `memory.autoInject` is `true`, the plugin checks for relevant quirks on every user message using the combined agent-response + user-query as the search query. Quirks are only injected when their raw vector similarity to that query clears `autoInjectMinScore` (default 0.75) - the same threshold for the user-message and system-prompt injections; `recallMinScore` (default 0.72) is the bar for manual `recall_quirks` calls. A latency budget (`autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections. Every `add_quirk` and every content-changing `update_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Outdated or fixed quirks should be corrected with `update_quirk` / `delete_quirk` rather than left to contradict newer memory. See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
+
+**Failed tool calls become memory.** When a tool call fails, the plugin looks for a stored quirk that covers the failure and injects it into the next request (`memory.injectOnToolError`, default on). If **no** quirk covers it, it writes one — `memory.autoCreateOnToolError` (default on) — using a deterministic template built from the tool name and the error text, so no LLM is involved. The new quirk is tagged `tool-error` and recorded for *future* sessions; it is deliberately excluded from the generic auto-injection above, so a raw error dump never leaks into an unrelated turn. Creation is bounded by a per-session budget (2) and a per-error cooldown (10 min), and the quirk it would write is suppressed as soon as a similar one already exists.
 
 ## MCP Server (Optional)
 

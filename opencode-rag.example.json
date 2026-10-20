@@ -155,6 +155,12 @@
     "toolErrorCooldownMs": 60000,
     "toolErrorMaxPerSession": 3,
     "toolErrorLatencyBudgetMs": 1500,
+    "autoCreateOnToolError": true,
+    "toolErrorCreateMaxPerSession": 2,
+    "toolErrorCreateCooldownMs": 600000,
+    "toolErrorCreateMinScore": 0.6,
+    "toolErrorCreateLatencyBudgetMs": 2000,
+    "toolErrorInjectCreated": false,
     "decay": {
       "enabled": false,
       "halfLifeDays": 30
