@@ -70,6 +70,24 @@ This produces scores on a [0, 1] scale. A result at rank 0 in both signals score
 
 RRF **rewards results that rank highly in both signals** over results that rank well in only one. When only one signal contributes, the ranking matches the raw vector order (normalization preserves monotonicity). Low-scoring chunks that don't meet `minScore` are filtered out.
 
+### Calibrating `kw`
+
+`kw = 0.4` is a *default*, not an optimum. The best value depends on the embedder, the
+corpus and the query mix: a code embedder already ranks identifiers well through the
+vector half, so the keyword fusion only dilutes it, while a general embedder may lean on
+the keyword half. Measure it with the golden set:
+
+```bash
+opencode-rag eval:tune            # sweep the weights and report the winner
+opencode-rag eval:tune --write    # persist the winner into the config file
+```
+
+Reference run (2026-10-20, this workspace, `jina-code-embeddings-0.5b`, 48 labels,
+complete keyword index): `kw=0.4` scored Hit@5 72.9% / MRR 0.556 / nDCG@10 0.612, while
+`kw=0` scored Hit@5 81.3% / MRR 0.651 / nDCG@10 0.691. Tune against a **complete**
+keyword index — a drifted index makes the measurement meaningless (see
+[troubleshooting](troubleshooting.md#keyword-index-covers-only-part-of-the-corpus)).
+
 ### `retrieve()` API
 
 ```typescript

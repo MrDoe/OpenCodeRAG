@@ -264,6 +264,14 @@ export interface KeywordIndex {
   count(): number;
   /** Whether a chunk with the given id is indexed. Used by quirk reconcile. */
   hasChunk(id: string): boolean;
+  /**
+   * Normalized file paths that currently have at least one indexed chunk.
+   *
+   * Used to detect a keyword index that drifted behind the vector store: an
+   * incremental index pass only re-adds the files it reprocessed, so a
+   * once-partial index stays partial unless it is compared against the store.
+   */
+  getIndexedFilePaths(): string[];
   /** Persist the index to disk as JSON. */
   save(filePath?: string): Promise<void>;
 }

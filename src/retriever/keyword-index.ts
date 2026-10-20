@@ -321,6 +321,19 @@ export class KeywordIndex {
     return this.chunkMap.has(id);
   }
 
+  /**
+   * Normalized file paths that currently have at least one indexed chunk.
+   *
+   * The keyword index and the vector store are two independent stores of the
+   * same corpus, and nothing keeps them in sync by construction: an
+   * incremental index pass only calls {@link addChunks} for the files it
+   * reprocessed, so a once-partial index stays partial forever. Comparing
+   * this list with the store's file list is how that drift is detected.
+   */
+  getIndexedFilePaths(): string[] {
+    return [...this.fileToIds.keys()];
+  }
+
   async save(storePath?: string): Promise<void> {
     const effectiveStorePath = storePath ?? this.storePath;
     if (!effectiveStorePath) return;

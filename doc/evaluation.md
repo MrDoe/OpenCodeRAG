@@ -103,6 +103,37 @@ indexed workspace**, not a CI unit test.
   Hit@1 25.0%, Hit@3 50.0%, Hit@5 54.2%, Hit@10 72.9%, MRR 0.405, nDCG@10 0.461.
 - Exit codes: `0` = passed, `1` = failed, `2` = could not run.
 
+## Retrieval Tuning (`eval:tune`)
+
+`opencode-rag eval:tune` sweeps the retrieval fusion weights against the same golden set
+and reports the best configuration for **your** setup. The shipped
+`retrieval.hybridSearch.keywordWeight` is one hardcoded default, but the optimum depends
+on the embedder, the corpus and the query mix — a code embedder already ranks identifiers
+well through the vector half, while a general embedder leans on the keyword half. The
+gate tells you *whether* quality regressed; the tuner tells you *which configuration* is
+best right now.
+
+```bash
+opencode-rag eval:tune                 # sweep and report
+opencode-rag eval:tune --write         # persist the winner into the config file
+opencode-rag eval:tune --metric hit5   # pick the winner by Hit@5 instead
+```
+
+- Reuses the gate's metric implementation, so the two commands cannot disagree.
+- `--write` updates `retrieval.hybridSearch.keywordWeight`,
+  `retrieval.hybridSearch.symbolKeywordWeight`, `retrieval.minScore` and `retrieval.topK`
+  in the config file; every other key is left untouched.
+- Reference run (2026-10-20, this workspace, `jina-code-embeddings-0.5b`, 48 labels,
+  complete keyword index): the shipped `keywordWeight=0.4` scored Hit@1 39.6%, Hit@5
+  72.9%, MRR 0.556, nDCG@10 0.612; the winner `keywordWeight=0` scored Hit@1 52.1%,
+  Hit@5 81.3%, MRR 0.651, nDCG@10 0.691 — **+8.3 Hit@5 points**.
+- Exit codes: `0` = the sweep ran, `2` = could not run.
+
+**Tune against a complete index.** The keyword half of the hybrid search only helps when
+the keyword index covers the whole corpus — a drifted index makes the sweep measure a
+broken pipeline. `opencode-rag status` prints the keyword coverage; an index pass
+rehydrates the missing entries from the store (no re-embedding needed).
+
 ## Decision-Model Calibration (`eval:decide`)
 
 `opencode-rag eval:decide` answers the labelled `noul`/`choice`/`score` tasks in

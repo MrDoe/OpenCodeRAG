@@ -34,6 +34,7 @@ import {
   registerEvalCompareCommand,
   registerEvalGateCommand,
   registerEvalDecideCommand,
+  registerEvalTuneCommand,
   registerDescribeImageCommand,
   registerDecideCommand,
   registerQuirkCommand,
@@ -82,6 +83,7 @@ registerEvalAnalyzeCommand(program);
 registerEvalCompareCommand(program);
 registerEvalGateCommand(program);
 registerEvalDecideCommand(program);
+registerEvalTuneCommand(program);
 registerInitCommand(program);
 registerQuirkCommand(program);
 

@@ -118,6 +118,27 @@ entries) and logs `Orphan cleanup: removed N chunk(s) from M file(s)`. `status`
 shows the current delta as `Orphan chunks`; `Indexed chunks` minus
 `Expected chunks` minus the quirk rows should be 0 afterwards.
 
+### Keyword Index Covers Only Part Of The Corpus
+
+**Symptom:** `opencode-rag status` prints `Keyword coverage: N file(s) in the store are
+missing from the keyword index`, or the keyword half of hybrid search seems to ignore
+whole files — a query that should match `src/core/exclude.ts` returns nothing, while the
+vector search finds the file fine.
+
+**Cause:** the keyword index (`keyword-index.json`) and the vector store are two
+independent stores of the same corpus, and nothing kept them in sync by construction. An
+incremental index pass only calls `addChunks()` for the files it *reprocessed*; unchanged
+files keep whatever the loaded index had. So once the persisted index lost entries — a
+crashed pass that saved a cleared index, a partial indexer, a store rebuild that swapped
+the table without rewriting the sidecar — every later pass re-saved the same partial
+state and the missing files stayed unreachable through keyword search forever.
+
+**Fix:** run `opencode-rag index`. Every pass now compares the store's file list with the
+keyword index and rebuilds the missing entries from the store's own rows (no
+re-embedding, no re-chunking — seconds, not minutes). The pass logs
+`Keyword rehydration: restored N chunk(s) from M file(s)`. `opencode-rag status` reports
+the coverage so a drift is visible before it costs you recall.
+
 ### `clear` Appears To Do Nothing
 
 **Symptom:** `opencode-rag clear` prints `Clearing N indexed chunks...` and then
