@@ -40,7 +40,8 @@ import { countTokens } from "./eval/token-counter.js";
 import { checkForUpdate, getCurrentVersion, installLatestUpdate, type UpdateInfo } from "./core/version-check.js";
 import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "./core/auto-update-state.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
-import { listQuirks, lintQuirks, recallQuirks, sharedWords, reconcileQuirks, addQuirk } from "./quirks/quirk-store.js";
+import { listQuirks, lintQuirks, recallQuirks, sharedWords, reconcileQuirks, addQuirk, listToolErrorQuirks, type QuirkStoreDeps } from "./quirks/quirk-store.js";
+import type { Quirk } from "./quirks/types.js";
 import { autoCaptureQuirks, type CaptureExchange } from "./quirks/auto-capture.js";
 import {
   createToolErrorInjectionState,
@@ -53,8 +54,13 @@ import {
 } from "./quirks/tool-error-recall.js";
 import {
   buildToolErrorQuirkContent,
+  classifyToolErrorCause,
   createToolErrorCreateState,
   createToolErrorQuirk,
+  formatToolGotchaBlock,
+  hasEquivalentToolGotcha,
+  selectToolGotchas,
+  TOOL_ERROR_CREATE_DEFAULTS,
   TOOL_ERROR_QUIRK_TAG,
   type ToolErrorCreateState,
 } from "./quirks/tool-error-create.js";
@@ -68,6 +74,8 @@ const MAX_SESSION_MAP_SIZE = 50;
 const MAX_SESSION_TOOL_RESULTS = 20;
 /** Pending tool-error quirk blocks older than this (ms) are dropped instead of injected. */
 const TOOL_ERROR_PENDING_TTL_MS = 120_000;
+/** How long the tool-error quirk list is cached before it is re-read (ms). */
+const TOOL_GOTCHA_CACHE_MS = 30_000;
 
 /**
  * A cached RAG configuration together with the identity of the file it was
@@ -846,6 +854,9 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   // plugin writes itself when a failure has no matching memory.
   const sessionToolErrorCreateState = new Map<string, ToolErrorCreateState>();
   const sessionPendingToolErrorQuirk = new Map<string, { block: string; ts: number }>();
+  // Tool-gotcha cache: the tool-error quirks change rarely, so the audit log is
+  // read at most every TOOL_GOTCHA_CACHE_MS instead of on every model request.
+  const toolGotchaCache = new Map<string, { quirks: Quirk[]; fetchedAt: number }>();
 
   // Evaluation session logger — captures OpenCode events for analysis
   const sessionLogger: SessionLogger = createSessionLogger(options.storePath);
@@ -856,6 +867,23 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   });
 
   const readOverride = getEffectiveCfg().openCode.readOverride === true;
+
+  /**
+   * Read the auto-created tool-error quirks, cached briefly.
+   *
+   * Runs on every model request (the proactive tool-gotcha injection), so it
+   * must not hit the disk every time. The cache is invalidated explicitly
+   * when a new tool-error quirk is created.
+   */
+  async function getToolErrorQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
+    const key = options.storePath;
+    const now = Date.now();
+    const cached = toolGotchaCache.get(key);
+    if (cached && now - cached.fetchedAt < TOOL_GOTCHA_CACHE_MS) return cached.quirks;
+    const quirks = await listToolErrorQuirks(deps);
+    toolGotchaCache.set(key, { quirks, fetchedAt: now });
+    return quirks;
+  }
 
   const retrievalTool = tool({
     description:
@@ -1223,6 +1251,11 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         // `output.error` is set by the V2 adapter's error branch; the status
         // check keeps this working if a runtime reports errors via input only.
         const errorText = output.error ?? (input.status === "error" ? output.output : undefined);
+        appendDebugLog(options.logFilePath, {
+          scope: "quirk.tool-error",
+          message: `tool "${input.tool}" status=${input.status ?? "unset"} error=${errorText ? "yes" : "no"}`,
+          severity: "debug",
+        }, getEffectiveCfg().logging.level);
         if (errorText && errorText.length > 0) {
           const info: ToolErrorInfo = { tool: input.tool, error: errorText, sessionID: input.sessionID };
           results.push(toToolErrorCaptureEntry(info));
@@ -1291,8 +1324,18 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
 
               // No candidate at all → nothing in memory covers this failure.
               // Record one so a future occurrence can be answered from memory.
+              // The duplicate check is EXACT (same tool + same cause class), not
+              // a loose similarity floor: a floor low enough to catch a genuine
+              // duplicate also catches unrelated quirks, which would suppress
+              // creation on every real failure.
               let createdHit: ToolErrorQuirkHit | undefined;
-              if (recallResult.candidates.length === 0 && memCfg.autoCreateOnToolError) {
+              let createdQuirk = false;
+              const causeClass = classifyToolErrorCause(info.error)?.cls;
+              const equivalent =
+                recallResult.candidates.length > 0 ||
+                (causeClass !== undefined &&
+                  hasEquivalentToolGotcha(await getToolErrorQuirks(qDeps), info.tool, causeClass));
+              if (!equivalent && memCfg.autoCreateOnToolError) {
                 const createState = sessionToolErrorCreateState.get(input.sessionID) ?? createToolErrorCreateState({
                   maxPerSession: memCfg.toolErrorCreateMaxPerSession ?? 2,
                   cooldownMs: memCfg.toolErrorCreateCooldownMs ?? 600_000,
@@ -1313,6 +1356,10 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
 
                   if (created?.created && created.id) {
                     createState.record(info, true);
+                    createdQuirk = true;
+                    // The proactive gotcha list changed — drop the cache so
+                    // the next model request sees the new gotcha.
+                    toolGotchaCache.delete(options.storePath);
                     appendDebugLog(options.logFilePath, {
                       scope: "quirk.tool-error",
                       message: `created quirk ${created.id} for tool "${input.tool}"`,
@@ -1354,6 +1401,20 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
                   MAX_SESSION_MAP_SIZE,
                 );
               }
+              appendDebugLog(options.logFilePath, {
+                scope: "quirk.tool-error",
+                message: `tool error "${input.tool}": candidates=${recallResult.candidates.length} injected=${finalHits.length} created=${createdQuirk ? "yes" : "no"}`,
+              });
+            } else if (recallResult) {
+              appendDebugLog(options.logFilePath, {
+                scope: "quirk.tool-error",
+                message: `tool error "${input.tool}": skipped (cooldown or budget)`,
+              });
+            } else {
+              appendDebugLog(options.logFilePath, {
+                scope: "quirk.tool-error",
+                message: `tool error "${input.tool}": skipped (recall timed out after ${budgetMs}ms)`,
+              });
             }
           }
         }
@@ -1379,6 +1440,42 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           ? "system guidance injected"
           : `system guidance skipped (${guidanceEnabled ? `no RAG tools in session; agent=${input?.agent ?? "unknown"}` : "injectSystemPrompt=false"})`,
       });
+
+      // Which tools can this session actually call? The catalog is the set of
+      // tools the model may invoke, so it is the right filter for tool-scoped
+      // memory (a gotcha about a tool that is not callable is not actionable).
+      appendDebugLog(options.logFilePath, {
+        scope: "experimental.chat.system.transform",
+        message: `tool catalog (${Object.keys(input?.tools ?? {}).length}): ${Object.keys(input?.tools ?? {}).join(", ")}`,
+        severity: "debug",
+      }, getEffectiveCfg().logging.level);
+
+      // Proactive tool gotchas: surface what earlier failures taught us BEFORE
+      // the model picks a tool, so a known failure is not repeated in a later
+      // session. Scoped to the tools this session can actually call.
+      try {
+        const toolNames = Object.keys(input?.tools ?? {});
+        if (toolNames.length > 0) {
+          const memCfg = getEffectiveCfg().memory;
+          if (memCfg?.enabled && memCfg.toolErrorProactiveInject) {
+            const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+            const gotchas = selectToolGotchas(
+              await getToolErrorQuirks(qDeps),
+              toolNames,
+              memCfg.toolErrorProactiveMaxItems ?? TOOL_ERROR_CREATE_DEFAULTS.maxProactiveItems,
+            );
+            if (gotchas.length > 0) {
+              output.system.unshift(formatToolGotchaBlock(gotchas));
+              appendDebugLog(options.logFilePath, {
+                scope: "quirk.tool-error",
+                message: `proactively injected ${gotchas.length} tool gotcha(s): ${gotchas.map((g) => g.tool).join(", ")}`,
+              });
+            }
+          }
+        }
+      } catch {
+        // Non-critical — must never throw
+      }
 
       if (injectGuidance) {
         const guidance = buildSystemGuidanceLines({ promptEnforcement: !!cfg.memory?.promptEnforcement, decisionEnabled: !!cfg.decision?.enabled, routeBeforeAsking: !!cfg.decision?.routeBeforeAsking });

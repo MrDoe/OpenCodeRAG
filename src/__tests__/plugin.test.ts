@@ -11,6 +11,7 @@ import type { EmbeddingProvider, SearchResult, VectorStore, MetadataFilter } fro
 import type { RetrieveOptions } from "../retriever/retriever.js";
 import { InMemoryVectorStore } from "../vectorstore/memory.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
+import { addQuirk } from "../quirks/quirk-store.js";
 
 function makeConfig(
   overrides: Partial<Omit<RagConfig, "memory">> & { memory?: Partial<MemoryConfig> } = {},
@@ -857,7 +858,7 @@ describe("ragPlugin", () => {
           toolErrorCreateCooldownMs: 0,
         },
       }),
-      storePath: "memory://",
+      storePath: "memory://toolerr-create-1",
       logFilePath: path.join(tmpdir(), "opencode-rag.log"),
       store,
       embedder,
@@ -925,7 +926,7 @@ describe("ragPlugin", () => {
           toolErrorCreateCooldownMs: 0,
         },
       }),
-      storePath: "memory://",
+      storePath: "memory://toolerr-create-2",
       logFilePath: path.join(tmpdir(), "opencode-rag.log"),
       store,
       embedder,
@@ -955,6 +956,151 @@ describe("ragPlugin", () => {
     assert.match(quirks[2]!.content, /permission denied/);
   });
 
+  it("injects known tool gotchas into the system prompt before the model picks a tool", async () => {
+    const store = new InMemoryVectorStore();
+    const keywordIndex = new KeywordIndex();
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+    const cfg = makeConfig({
+      memory: { ...DEFAULT_CONFIG.memory, enabled: true, autoInject: false, toolErrorProactiveInject: true },
+    });
+    const { dependencies } = makeDependencies([], 1);
+    const hooks = createRagHooks({
+      cfg,
+      storePath: "memory://gotcha-inject-1",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store,
+      embedder,
+      keywordIndex,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    const qDeps = { embedder, store, keywordIndex, cfg, storePath: "memory://gotcha-inject-1" };
+    await addQuirk(qDeps, {
+      content: "Tool `write` failed: Unknown tool 'write'",
+      quirkType: "gotcha",
+      tags: ["tool-error", "auto-created", "tool:write", "cause:unknown-tool"],
+      confidence: 0.6,
+    });
+
+    const systemHook = hooks["experimental.chat.system.transform"];
+    assert.ok(systemHook);
+    const output = { system: [] as string[] };
+    await systemHook?.(
+      {
+        sessionID: "session-gotcha",
+        model: { providerID: "test", modelID: "test" },
+        tools: { write: { description: "write", input: {} }, read: { description: "read", input: {} } },
+      } as never,
+      output as never,
+    );
+
+    const block = output.system.find((s) => /Known tool gotchas/.test(s));
+    assert.ok(block, "expected the tool-gotcha block in the system prompt");
+    assert.match(block!, /Unknown tool/);
+  });
+
+  it("does not inject a gotcha for a tool the session cannot call", async () => {
+    const store = new InMemoryVectorStore();
+    const keywordIndex = new KeywordIndex();
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+    const cfg = makeConfig({
+      memory: { ...DEFAULT_CONFIG.memory, enabled: true, autoInject: false, toolErrorProactiveInject: true },
+    });
+    const { dependencies } = makeDependencies([], 1);
+    const hooks = createRagHooks({
+      cfg,
+      storePath: "memory://gotcha-inject-2",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store,
+      embedder,
+      keywordIndex,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    await addQuirk(
+      { embedder, store, keywordIndex, cfg, storePath: "memory://gotcha-inject-2" },
+      {
+        content: "Tool `deploy` failed: Unknown tool 'deploy'",
+        quirkType: "gotcha",
+        tags: ["tool-error", "auto-created", "tool:deploy", "cause:unknown-tool"],
+        confidence: 0.6,
+      },
+    );
+
+    const systemHook = hooks["experimental.chat.system.transform"];
+    assert.ok(systemHook);
+    const output = { system: [] as string[] };
+    await systemHook?.(
+      {
+        sessionID: "session-gotcha-2",
+        model: { providerID: "test", modelID: "test" },
+        tools: { write: { description: "write", input: {} } },
+      } as never,
+      output as never,
+    );
+
+    assert.equal(output.system.find((s) => /Known tool gotchas/.test(s)), undefined);
+  });
+
+  it("does not inject a gotcha for a transient cause", async () => {
+    const store = new InMemoryVectorStore();
+    const keywordIndex = new KeywordIndex();
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+    const cfg = makeConfig({
+      memory: { ...DEFAULT_CONFIG.memory, enabled: true, autoInject: false, toolErrorProactiveInject: true },
+    });
+    const { dependencies } = makeDependencies([], 1);
+    const hooks = createRagHooks({
+      cfg,
+      storePath: "memory://gotcha-inject-3",
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store,
+      embedder,
+      keywordIndex,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    await addQuirk(
+      { embedder, store, keywordIndex, cfg, storePath: "memory://gotcha-inject-3" },
+      {
+        content: "Tool `bash` failed: 429 Too Many Requests — the request was rate limited",
+        quirkType: "gotcha",
+        tags: ["tool-error", "auto-created", "tool:bash", "cause:rate-limit"],
+        confidence: 0.6,
+      },
+    );
+
+    const systemHook = hooks["experimental.chat.system.transform"];
+    assert.ok(systemHook);
+    const output = { system: [] as string[] };
+    await systemHook?.(
+      {
+        sessionID: "session-gotcha-3",
+        model: { providerID: "test", modelID: "test" },
+        tools: { bash: { description: "bash", input: {} } },
+      } as never,
+      output as never,
+    );
+
+    assert.equal(
+      output.system.find((s) => /Known tool gotchas/.test(s)),
+      undefined,
+      "a rate limit is transient — warning about it in advance is misleading",
+    );
+  });
+
   it("does not create a quirk when the tool-error path is disabled", async () => {    const store = new InMemoryVectorStore();
     const embedder: EmbeddingProvider = {
       name: "test",
@@ -965,7 +1111,7 @@ describe("ragPlugin", () => {
       cfg: makeConfig({
         memory: { ...DEFAULT_CONFIG.memory, enabled: true, injectOnToolError: false },
       }),
-      storePath: "memory://",
+      storePath: "memory://toolerr-create-3",
       logFilePath: path.join(tmpdir(), "opencode-rag.log"),
       store,
       embedder,

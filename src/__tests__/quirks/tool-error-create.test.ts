@@ -3,9 +3,13 @@ import assert from "node:assert/strict";
 import {
   buildToolErrorQuirkContent,
   classifyToolError,
+  classifyToolErrorCause,
   createToolErrorCreateState,
   createToolErrorQuirk,
+  formatToolGotchaBlock,
+  hasEquivalentToolGotcha,
   isWorthRecordingToolError,
+  selectToolGotchas,
   TOOL_ERROR_AUTO_TAG,
   TOOL_ERROR_CREATE_DEFAULTS,
   TOOL_ERROR_QUIRK_TAG,
@@ -161,5 +165,150 @@ describe("tool-error-create", () => {
       assert.equal(result.created, false);
       assert.equal(called, false);
     });
+  });
+});
+
+describe("tool-error cause classes", () => {
+  it("classifies a known cause into a class and guidance", () => {
+    const c = classifyToolErrorCause("Unknown tool 'write'");
+    assert.equal(c?.cls, "unknown-tool");
+    assert.match(c?.cause ?? "", /tool name/);
+  });
+
+  it("returns undefined for an unknown error", () => {
+    assert.equal(classifyToolErrorCause("something entirely unexpected happened"), undefined);
+  });
+
+  it("tags a created quirk with its cause class", async () => {
+    const added: QuirkInput[] = [];
+    await createToolErrorQuirk(
+      {
+        add: async (input) => {
+          added.push(input);
+          return { id: "q", content: input.content, tags: input.tags ?? [], confidence: 1, lastObserved: "" } as Quirk;
+        },
+      },
+      { tool: "write", error: "Unknown tool 'write'. Did you mean something else?" },
+    );
+    assert.ok(added[0]!.tags?.includes("cause:unknown-tool"));
+  });
+
+  it("does not tag a cause when the error is unclassified", async () => {
+    const added: QuirkInput[] = [];
+    await createToolErrorQuirk(
+      {
+        add: async (input) => {
+          added.push(input);
+          return { id: "q", content: input.content, tags: input.tags ?? [], confidence: 1, lastObserved: "" } as Quirk;
+        },
+      },
+      { tool: "write", error: "something entirely unexpected happened here" },
+    );
+    assert.ok(!added[0]!.tags?.some((t) => t.startsWith("cause:")));
+  });
+});
+
+describe("selectToolGotchas", () => {
+  const gotcha = (id: string, tags: string[], content = "Tool `write` failed: unknown tool") => ({
+    id,
+    content,
+    tags,
+  });
+
+  it("keeps a gotcha whose tool is in the catalog", () => {
+    const gotchas = selectToolGotchas(
+      [gotcha("q1", ["tool-error", "auto-created", "tool:write", "cause:unknown-tool"])],
+      ["write", "read"],
+    );
+    assert.equal(gotchas.length, 1);
+    assert.equal(gotchas[0]!.tool, "write");
+  });
+
+  it("drops a gotcha whose tool is not callable", () => {
+    const gotchas = selectToolGotchas(
+      [gotcha("q1", ["tool-error", "tool:deploy", "cause:unknown-tool"])],
+      ["write", "read"],
+    );
+    assert.equal(gotchas.length, 0);
+  });
+
+  it("drops a transient cause — warning about it in advance is misleading", () => {
+    const gotchas = selectToolGotchas(
+      [
+        gotcha("q1", ["tool-error", "tool:bash", "cause:rate-limit"]),
+        gotcha("q2", ["tool-error", "tool:bash", "cause:timeout"]),
+      ],
+      ["bash"],
+    );
+    assert.equal(gotchas.length, 0);
+  });
+
+  it("drops an unclassified gotcha — we do not know if it is durable", () => {
+    const gotchas = selectToolGotchas([gotcha("q1", ["tool-error", "tool:write"])], ["write"]);
+    assert.equal(gotchas.length, 0);
+  });
+
+  it("keeps the durable causes", () => {
+    for (const cls of ["unknown-tool", "schema", "permissions", "path"]) {
+      const gotchas = selectToolGotchas(
+        [gotcha("q1", ["tool-error", "tool:write", `cause:${cls}`])],
+        ["write"],
+      );
+      assert.equal(gotchas.length, 1, `cause ${cls} should be proactive`);
+    }
+  });
+
+  it("caps the number of gotchas", () => {
+    const many = Array.from({ length: 10 }, (_, i) =>
+      gotcha(`q${i}`, ["tool-error", "tool:write", "cause:schema"]),
+    );
+    assert.equal(selectToolGotchas(many, ["write"], 3).length, 3);
+  });
+
+  it("returns nothing without a tool catalog", () => {
+    const gotchas = selectToolGotchas([gotcha("q1", ["tool-error", "tool:write", "cause:schema"])], []);
+    assert.equal(gotchas.length, 0);
+  });
+});
+
+describe("formatToolGotchaBlock", () => {
+  it("returns an empty string without gotchas", () => {
+    assert.equal(formatToolGotchaBlock([]), "");
+  });
+
+  it("renders the gotchas with a heading", () => {
+    const block = formatToolGotchaBlock([
+      { tool: "write", content: "Tool `write` failed: unknown tool", quirkId: "q1" },
+    ]);
+    assert.match(block, /Known tool gotchas/);
+    assert.match(block, /Tool `write` failed: unknown tool/);
+  });
+});
+
+describe("hasEquivalentToolGotcha", () => {
+  const q = (tags: string[]) => ({ id: "q", content: "c", tags });
+
+  it("finds an exact duplicate (same tool + same cause class)", () => {
+    const quirks = [q(["tool-error", "tool:write", "cause:schema"])];
+    assert.equal(hasEquivalentToolGotcha(quirks, "write", "schema"), true);
+  });
+
+  it("does not match a different cause class for the same tool", () => {
+    const quirks = [q(["tool-error", "tool:write", "cause:schema"])];
+    assert.equal(hasEquivalentToolGotcha(quirks, "write", "unknown-tool"), false);
+  });
+
+  it("does not match a different tool with the same cause class", () => {
+    const quirks = [q(["tool-error", "tool:write", "cause:schema"])];
+    assert.equal(hasEquivalentToolGotcha(quirks, "bash", "schema"), false);
+  });
+
+  it("matches case-insensitively on the tool name", () => {
+    const quirks = [q(["tool-error", "tool:write", "cause:schema"])];
+    assert.equal(hasEquivalentToolGotcha(quirks, "Write", "schema"), true);
+  });
+
+  it("returns false for an empty store", () => {
+    assert.equal(hasEquivalentToolGotcha([], "write", "schema"), false);
   });
 });

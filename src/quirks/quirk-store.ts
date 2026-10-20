@@ -5,7 +5,7 @@ import type { EmbeddingProvider, VectorStore, KeywordIndex, SearchResult } from 
 import type { RagConfig } from "../core/config.js";
 import { retrieve } from "../retriever/retriever.js";
 import { isQuirkAllowed } from "./monitor.js";
-import type { Quirk, QuirkInput } from "./types.js";
+import { TOOL_ERROR_QUIRK_TAG, type Quirk, type QuirkInput } from "./types.js";
 
 /** Dependencies required by all quirk-store operations. */
 export interface QuirkStoreDeps {
@@ -631,6 +631,32 @@ export async function recallQuirks(
   }
   filtered.sort((a, b) => b.score - a.score);
   return filtered.slice(0, topK);
+}
+
+/**
+ * List the auto-created tool-error quirks, newest first.
+ *
+ * Reads the audit log directly instead of going through `listQuirks`: that
+ * function falls back to scanning the whole vector store when
+ * `quirks.jsonl` is missing, which is far too expensive for a path that runs
+ * on every model request. A tool-error quirk is always appended to the audit
+ * log, so an absent log means there are none.
+ *
+ * @param deps - The quirk store dependencies.
+ * @returns The tool-error quirks, newest `lastObserved` first.
+ */
+export async function listToolErrorQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
+  const tagged = (q: Quirk) => (q.tags ?? []).includes(TOOL_ERROR_QUIRK_TAG);
+  if (isMemoryStore(deps.storePath)) {
+    return [...memQuirksFor(deps.storePath).values()]
+      .filter(tagged)
+      .sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
+  }
+  const jp = jsonlPath(deps.storePath);
+  if (!existsSync(jp)) return [];
+  return readJsonl(jp)
+    .filter(tagged)
+    .sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
 }
 
 /** Lint quirks for low confidence, staleness, duplicates, and orphan source refs. */

@@ -22,21 +22,33 @@
  */
 
 import type { Quirk, QuirkInput } from "./types.js";
+import {
+  TOOL_ERROR_AUTO_TAG,
+  TOOL_ERROR_CAUSE_TAG_PREFIX,
+  TOOL_ERROR_QUIRK_TAG,
+  TOOL_ERROR_TOOL_TAG_PREFIX,
+} from "./types.js";
 import { normalizeToolErrorSignature, type ToolErrorInfo } from "./tool-error-recall.js";
 
-/** Tag every auto-created tool-error quirk carries. */
-export const TOOL_ERROR_QUIRK_TAG = "tool-error";
-/** Second tag marking the quirk as machine-created (not agent-authored). */
-export const TOOL_ERROR_AUTO_TAG = "auto-created";
+export {
+  TOOL_ERROR_AUTO_TAG,
+  TOOL_ERROR_CAUSE_TAG_PREFIX,
+  TOOL_ERROR_QUIRK_TAG,
+  TOOL_ERROR_TOOL_TAG_PREFIX,
+};
 
 /** Defaults for the tool-error creation path. */
 export const TOOL_ERROR_CREATE_DEFAULTS = {
   /**
    * Minimum raw similarity for a candidate to count as "an equivalent quirk
-   * already exists" (and therefore suppress creation). Default 0.6 — below
-   * the 0.7 injection bar, so a probable match still blocks a duplicate.
+   * already exists" (and therefore suppress creation). Default 0.7 — the
+   * injection bar. Measured: an error query scores 0.55-0.63 against
+   * ARBITRARY stored quirks, so a lower floor sits inside the noise band and
+   * matches unrelated quirks, which suppresses creation on every real failure.
+   * The exact duplicate check is done by metadata instead — see
+   * `hasEquivalentToolGotcha`.
    */
-  minScore: 0.6,
+  minScore: 0.7,
   /** Maximum quirks created per session. Default 2. */
   maxPerSession: 2,
   /** Cooldown per normalized error signature in ms. Default 10 minutes. */
@@ -49,35 +61,80 @@ export const TOOL_ERROR_CREATE_DEFAULTS = {
   confidence: 0.6,
   /** Errors shorter than this carry no information — nothing is recorded. */
   minErrorChars: 15,
+  /** Max tool gotchas injected proactively into the system prompt. Default 5. */
+  maxProactiveItems: 5,
 } as const;
 
 /** Known error classes with a deterministic, actionable cause. */
-const ERROR_CAUSES: { pattern: RegExp; cause: string }[] = [
+const ERROR_CAUSES: { cls: string; pattern: RegExp; cause: string }[] = [
   {
+    cls: "unknown-tool",
     pattern: /unknown tool|no such tool|tool .*not found|not a registered tool/i,
     cause: "the tool name may be wrong, or the tool is not available in this session",
   },
   {
-    pattern: /enoent|no such file or directory|cannot find module/i,
-    cause: "the path or module name may be wrong",
-  },
-  {
-    pattern: /eacces|permission denied/i,
-    cause: "the path may need different permissions",
-  },
-  {
+    cls: "schema",
     pattern: /expected .*(received|but got)|invalid argument|invalid type|schema|must be (a|an|string|number|boolean|object|array)/i,
     cause: "the arguments do not match the tool's schema",
   },
   {
+    cls: "permissions",
+    pattern: /eacces|permission denied/i,
+    cause: "the path may need different permissions",
+  },
+  {
+    cls: "path",
+    pattern: /enoent|no such file or directory|cannot find module/i,
+    cause: "the path or module name may be wrong",
+  },
+  {
+    cls: "rate-limit",
     pattern: /\b429\b|rate limit|too many requests/i,
     cause: "the request was rate limited — retry later",
   },
   {
+    cls: "timeout",
     pattern: /timed? ?out|timeout|etimedout/i,
     cause: "the operation timed out",
   },
 ];
+
+/**
+ * Cause classes that are worth surfacing BEFORE the tool is called.
+ *
+ * A transient failure (rate limit, timeout) must NOT be warned about in
+ * advance — the next call will not fail the same way, and the warning would
+ * be misleading. An unclassified error is excluded for the same reason: we do
+ * not know whether it is durable, and a raw error dump says what happened,
+ * not what to do.
+ */
+export const PROACTIVE_CAUSE_CLASSES: ReadonlySet<string> = new Set([
+  "unknown-tool",
+  "schema",
+  "permissions",
+  "path",
+]);
+
+/** A classified tool-error cause. */
+export interface ToolErrorCause {
+  /** Stable class name — also used as the `cause:<class>` tag. */
+  cls: string;
+  /** Human-readable guidance appended to the quirk content. */
+  cause: string;
+}
+
+/**
+ * Classify an error message into a cause class plus its guidance.
+ *
+ * Returns `undefined` for unknown errors — the raw text is then the whole
+ * story.
+ */
+export function classifyToolErrorCause(error: string): ToolErrorCause | undefined {
+  for (const { cls, pattern, cause } of ERROR_CAUSES) {
+    if (pattern.test(error)) return { cls, cause };
+  }
+  return undefined;
+}
 
 /**
  * Classify an error message into a short, deterministic cause.
@@ -86,10 +143,7 @@ const ERROR_CAUSES: { pattern: RegExp; cause: string }[] = [
  * story.
  */
 export function classifyToolError(error: string): string | undefined {
-  for (const { pattern, cause } of ERROR_CAUSES) {
-    if (pattern.test(error)) return cause;
-  }
-  return undefined;
+  return classifyToolErrorCause(error)?.cause;
 }
 
 /**
@@ -214,11 +268,17 @@ export async function createToolErrorQuirk(
     return { created: false, reason: "empty quirk content" };
   }
 
+  // The cause class is what makes a gotcha usable PROACTIVELY: a transient
+  // failure must not be warned about before the next call.
+  const cause = classifyToolErrorCause(info.error);
+  const tags = [TOOL_ERROR_QUIRK_TAG, TOOL_ERROR_AUTO_TAG, `tool:${info.tool}`];
+  if (cause) tags.push(`${TOOL_ERROR_CAUSE_TAG_PREFIX}${cause.cls}`);
+
   try {
     const quirk = await deps.add({
       content: text,
       quirkType: "gotcha",
-      tags: [TOOL_ERROR_QUIRK_TAG, TOOL_ERROR_AUTO_TAG, `tool:${info.tool}`],
+      tags,
       confidence: TOOL_ERROR_CREATE_DEFAULTS.confidence,
       sourceRef: `tool-error:${info.tool}`,
     });
@@ -226,4 +286,98 @@ export async function createToolErrorQuirk(
   } catch (err) {
     return { created: false, reason: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** A stored tool gotcha, ready to be surfaced proactively. */
+export interface ToolGotcha {
+  /** The tool the gotcha is about (lowercase). */
+  tool: string;
+  /** The quirk content — the lesson learned from the failure. */
+  content: string;
+  /** The quirk id, for `update_quirk` / `delete_quirk`. */
+  quirkId: string;
+}
+
+/**
+ * Pick the tool gotchas that are actionable for the tools a session can call.
+ *
+ * A gotcha about a tool the model cannot invoke is noise, so the tool name
+ * is matched against the session's tool catalog. This is a metadata scan, not
+ * a semantic recall: the question is "does a quirk exist for THIS tool", not
+ * "which quirk is most similar to the current request".
+ *
+ * @param quirks - Tool-error quirks, newest first.
+ * @param toolNames - The tool names the session may call.
+ * @param maxItems - Maximum number of gotchas to return.
+ */
+export function selectToolGotchas(
+  quirks: readonly Pick<Quirk, "id" | "content" | "tags">[],
+  toolNames: readonly string[],
+  maxItems: number = TOOL_ERROR_CREATE_DEFAULTS.maxProactiveItems,
+): ToolGotcha[] {
+  if (toolNames.length === 0 || maxItems <= 0) return [];
+  const callable = new Set(toolNames.map((t) => t.toLowerCase()));
+  const gotchas: ToolGotcha[] = [];
+  for (const q of quirks) {
+    const tags = q.tags ?? [];
+    if (!tags.includes(TOOL_ERROR_QUIRK_TAG)) continue;
+    const toolTag = tags.find((t) => t.startsWith(TOOL_ERROR_TOOL_TAG_PREFIX));
+    if (!toolTag) continue;
+    const tool = toolTag.slice(TOOL_ERROR_TOOL_TAG_PREFIX.length).toLowerCase();
+    if (!callable.has(tool)) continue;
+    // Only durable, actionable causes are worth warning about in advance.
+    const causeTag = tags.find((t) => t.startsWith(TOOL_ERROR_CAUSE_TAG_PREFIX));
+    if (!causeTag) continue;
+    const cls = causeTag.slice(TOOL_ERROR_CAUSE_TAG_PREFIX.length);
+    if (!PROACTIVE_CAUSE_CLASSES.has(cls)) continue;
+    gotchas.push({ tool, content: q.content, quirkId: q.id });
+    if (gotchas.length >= maxItems) break;
+  }
+  return gotchas;
+}
+
+/**
+ * Is there already a tool-error quirk for this tool AND cause class?
+ *
+ * The exact duplicate check. A semantic similarity floor cannot do this job:
+ * an error query scores 0.55-0.63 against arbitrary stored quirks, so any
+ * floor low enough to catch a genuine duplicate also catches noise — which
+ * silently suppressed creation on every real failure. The tags make the
+ * check exact: a quirk created for `write` + `schema` is the same lesson as
+ * the next `write` + `schema` failure, whatever the error text says.
+ *
+ * @param quirks - The stored tool-error quirks.
+ * @param tool - The failing tool name.
+ * @param causeClass - The classified cause class (e.g. "schema").
+ */
+export function hasEquivalentToolGotcha(
+  quirks: readonly Pick<Quirk, "tags">[],
+  tool: string,
+  causeClass: string,
+): boolean {
+  const toolTag = `${TOOL_ERROR_TOOL_TAG_PREFIX}${tool.toLowerCase()}`;
+  const causeTag = `${TOOL_ERROR_CAUSE_TAG_PREFIX}${causeClass}`;
+  return quirks.some(
+    (q) => (q.tags ?? []).includes(toolTag) && (q.tags ?? []).includes(causeTag),
+  );
+}
+
+/**
+ * Format the proactive tool-gotcha block for the system prompt.
+ *
+ * Injected BEFORE the model chooses a tool, so a known failure is not
+ * repeated in a later session. Empty when there are no gotchas.
+ */
+export function formatToolGotchaBlock(gotchas: readonly ToolGotcha[]): string {
+  if (gotchas.length === 0) return "";
+  const lines = [
+    "",
+    "---",
+    "⚠ **Known tool gotchas** — these tools failed before. Check before calling them:",
+    "",
+  ];
+  for (const g of gotchas) {
+    lines.push(`- ${g.content}`);
+  }
+  return lines.join("\n");
 }

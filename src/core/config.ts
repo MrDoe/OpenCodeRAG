@@ -312,8 +312,11 @@ export interface MemoryConfig {
   /**
    * Minimum raw similarity (0-1) for an existing quirk to count as "an
    * equivalent quirk already exists" and therefore suppress creation
-   * (default 0.6). Deliberately below `toolErrorMinScore` (0.7): a probable
-   * match still blocks a duplicate, it is just not injected on its own.
+   * (default 0.7). Deliberately EQUAL to `toolErrorMinScore`: measured on a
+   * real workspace, an error query scores 0.55-0.63 against arbitrary stored
+   * quirks, so a lower floor sits inside the noise band and matches unrelated
+   * quirks — which suppressed creation on every real failure. The exact
+   * duplicate check (same tool + same cause class) is done by metadata.
    */
   toolErrorCreateMinScore: number;
   /** Latency budget (ms) for the tool-error creation path (embed + store write); default 2000. */
@@ -324,6 +327,15 @@ export interface MemoryConfig {
    * created quirk carries no new information for that turn.
    */
   toolErrorInjectCreated: boolean;
+  /**
+   * Surface known tool gotchas in the system prompt BEFORE the model picks a
+   * tool (default true). A failure that already happened in an earlier
+   * session is injected as a "known tool gotcha", so the model does not repeat
+   * it. Only gotchas whose tool is in the session's tool catalog are injected.
+   */
+  toolErrorProactiveInject: boolean;
+  /** Max tool gotchas injected into the system prompt per request (default 5). */
+  toolErrorProactiveMaxItems: number;
   /** Decay settings for aging quirks. */
   decay: {
     /** Whether confidence decays over time. */
@@ -975,9 +987,11 @@ export const DEFAULT_CONFIG: RagConfig = {
     autoCreateOnToolError: true,
     toolErrorCreateMaxPerSession: 2,
     toolErrorCreateCooldownMs: 600_000,
-    toolErrorCreateMinScore: 0.6,
+    toolErrorCreateMinScore: 0.7,
     toolErrorCreateLatencyBudgetMs: 2000,
     toolErrorInjectCreated: false,
+    toolErrorProactiveInject: true,
+    toolErrorProactiveMaxItems: 5,
     decay: {
       enabled: false,
       halfLifeDays: 30,
@@ -1154,6 +1168,9 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   }
   if (config.memory?.toolErrorCreateLatencyBudgetMs != null && config.memory.toolErrorCreateLatencyBudgetMs < 0) {
     warnings.push("memory.toolErrorCreateLatencyBudgetMs must be >= 0");
+  }
+  if (config.memory?.toolErrorProactiveMaxItems != null && config.memory.toolErrorProactiveMaxItems < 0) {
+    warnings.push("memory.toolErrorProactiveMaxItems must be >= 0");
   }
   if (config.memory?.decay && config.memory.decay.halfLifeDays <= 0) {
     warnings.push("memory.decay.halfLifeDays must be > 0");
