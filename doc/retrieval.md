@@ -101,10 +101,25 @@ the gate silently demands a **dual** hit. Measured on the 48-label golden set
   reports the divisor.
 
 The quality delta is **not established** — paired normalized − fused is
-ΔnDCG@10 +0.033 with a 95% CI of −0.037…0.108, 10 better / 11 worse / 27
-equal (sign test p = 1.00). The +6.3 Hit@5 headline is about three labels. So
-the argument for the mode is the **contract**, not the metric, and the default
-stays `"fused"` until a bigger golden set exists.
+ΔnDCG@10 +0.035 with a 95% CI of −0.074…0.150, 15 better / 18 worse / 15
+equal (sign test p = 0.73, leaning slightly negative). The +6.3 Hit@5 headline
+is about three labels. So the argument for the mode is the **contract**, not the
+metric, and the default stays `"fused"` until a bigger golden set exists.
+
+Two consequences of opting in:
+
+- **More context passes the gate.** At `kw = 0.4`, 20.0 results survive instead
+  of 12.6 — roughly **60% more** injected context for the same query. Budget
+  for it (see `openCode.maxContextChunks` and the context-optimization caps).
+- **The reported score scale changes.** A score in normalized mode is relative
+  to the maximum that result could reach, so anything that displays scores
+  (plugin output, CLI `query`, the web UI) shows different numbers.
+  `explanation.scoreBreakdown.maxReachableScore` discloses the divisor.
+
+> Measured on an immutable snapshot of the store (the watcher rewrites the
+> keyword index between runs, which alone moves the numbers). The pre-change
+> build produces **byte-identical** results to the shipped default on the same
+> snapshot, so the default did not move.
 
 ### Calibrating `kw`
 
