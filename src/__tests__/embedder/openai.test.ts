@@ -174,17 +174,142 @@ function ollamaAvailable(): Promise<boolean> {
   });
 }
 
+/** Base URL of the local Ollama server used by the integration tests. */
+const OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+
+/**
+ * How long the capability probe may take before the local Ollama is treated
+ * as unable to serve embeddings. Generous enough for a cold model load.
+ */
+const EMBED_PROBE_TIMEOUT_MS = 60_000;
+
+/**
+ * Probe whether the local Ollama can actually serve an embedding right now.
+ *
+ * `/api/tags` only proves the server is *up*. A wedged or GPU-saturated
+ * Ollama accepts the connection and then never answers the embed request —
+ * the integration tests below would each burn their full 30s timeout and
+ * then fail even though the code under test is fine. Probe the endpoint the
+ * tests actually depend on and skip when it cannot answer.
+ *
+ * The probe also warms the model, so the tests that follow are fast.
+ *
+ * @param model - The embedding model to probe with.
+ * @param baseUrl - Ollama base URL (defaults to the local server).
+ * @param timeoutMs - How long the probe may take before giving up.
+ * @returns `true` when Ollama returned a usable embedding.
+ */
+async function ollamaCanServeEmbeddings(
+  model: string,
+  baseUrl: string = OLLAMA_BASE_URL,
+  timeoutMs: number = EMBED_PROBE_TIMEOUT_MS,
+): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl}/v1/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer ollama",
+      },
+      body: JSON.stringify({ model, input: "probe" }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { data?: Array<{ embedding?: number[] }> };
+    return (body.data?.[0]?.embedding?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+describe("ollamaCanServeEmbeddings probe", () => {
+  /** Start a stub server that answers the probe request. */
+  async function withStub(
+    handler: (body: string) => { status: number; payload: unknown },
+    fn: (baseUrl: string) => Promise<void>,
+  ): Promise<void> {
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => { body += String(chunk); });
+      req.on("end", () => {
+        const { status, payload } = handler(body);
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(payload));
+      });
+    });
+    try {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (typeof address !== "object" || address === null) {
+        throw new Error("failed to start stub server");
+      }
+      await fn(`http://127.0.0.1:${address.port}`);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
+  it("returns true when the endpoint answers with an embedding", async () => {
+    await withStub(
+      () => ({ status: 200, payload: { data: [{ embedding: [1, 2, 3] }] } }),
+      async (baseUrl) => {
+        assert.equal(await ollamaCanServeEmbeddings("m", baseUrl, 5000), true);
+      },
+    );
+  });
+
+  it("sends the model and an input to the endpoint", async () => {
+    let seen: { model?: string; input?: string } = {};
+    await withStub(
+      (body) => {
+        seen = JSON.parse(body) as { model?: string; input?: string };
+        return { status: 200, payload: { data: [{ embedding: [1] }] } };
+      },
+      async (baseUrl) => {
+        assert.equal(await ollamaCanServeEmbeddings("qwen3-embedding:0.6b", baseUrl, 5000), true);
+      },
+    );
+    assert.equal(seen.model, "qwen3-embedding:0.6b");
+    assert.ok(seen.input, "the probe must send an input to embed");
+  });
+
+  it("returns false when the endpoint reports an error", async () => {
+    await withStub(
+      () => ({ status: 500, payload: { error: "model not found" } }),
+      async (baseUrl) => {
+        assert.equal(await ollamaCanServeEmbeddings("m", baseUrl, 5000), false);
+      },
+    );
+  });
+
+  it("returns false when the response carries no embedding", async () => {
+    await withStub(
+      () => ({ status: 200, payload: { data: [] } }),
+      async (baseUrl) => {
+        assert.equal(await ollamaCanServeEmbeddings("m", baseUrl, 5000), false);
+      },
+    );
+  });
+
+  it("returns false when the server is unreachable", async () => {
+    // Port 1 is reserved and never listening.
+    assert.equal(await ollamaCanServeEmbeddings("m", "http://127.0.0.1:1", 2000), false);
+  });
+});
+
 describe("OpenAIProvider — Ollama integration", { skip: process.env.CI === "true" }, () => {
   const MODEL = "qwen3-embedding:0.6b";
   const EMBEDDING_DIM = 1024;
   let available = false;
 
   before(async () => {
-    available = await ollamaAvailable();
+    if (!(await ollamaAvailable())) return;
+    // The server is up — now check that it can actually serve embeddings.
+    available = await ollamaCanServeEmbeddings(MODEL);
   });
 
-  it("embeds via Ollama OpenAI-compatible endpoint", async () => {
-    if (!available) return;
+  it("embeds via Ollama OpenAI-compatible endpoint", async (t) => {
+    if (!available) return t.skip("local Ollama cannot serve embeddings right now");
 
     const p = new OpenAIProvider(
       "http://127.0.0.1:11434/v1",
@@ -202,8 +327,8 @@ describe("OpenAIProvider — Ollama integration", { skip: process.env.CI === "tr
     assert.ok(typeof embeddings[0]![0] === "number");
   });
 
-  it("embeds batch via Ollama OpenAI-compatible endpoint", async () => {
-    if (!available) return;
+  it("embeds batch via Ollama OpenAI-compatible endpoint", async (t) => {
+    if (!available) return t.skip("local Ollama cannot serve embeddings right now");
 
     const p = new OpenAIProvider(
       "http://127.0.0.1:11434/v1",
@@ -223,8 +348,8 @@ describe("OpenAIProvider — Ollama integration", { skip: process.env.CI === "tr
     }
   });
 
-  it(`returns ${EMBEDDING_DIM}-dimensional vectors`, async () => {
-    if (!available) return;
+  it(`returns ${EMBEDDING_DIM}-dimensional vectors`, async (t) => {
+    if (!available) return t.skip("local Ollama cannot serve embeddings right now");
 
     const p = new OpenAIProvider(
       "http://127.0.0.1:11434/v1",

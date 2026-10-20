@@ -58,6 +58,15 @@ the logged `cause=` is authoritative; do not infer the cause from the `ref=` alo
 
 **Cause:** The embedding provider (typically Ollama running a local model) takes longer than the configured timeout to process a batch of texts.
 
+**A second, different cause: the server is up but cannot serve.** Ollama
+answers `GET /api/tags` instantly while `POST /api/embed` never returns —
+typically because the GPU is saturated by a large model already resident in
+VRAM (e.g. a 27B model holding ~23 GB), leaving no room for the embedding
+model to be scheduled. Check with `GET /api/ps`: if a huge model is listed
+with a `size_vram` close to the card's capacity, that is the cause. Raising
+`embedding.timeoutMs` will not help — the request never completes. Unload the
+resident model (or stop the process holding it) and retry.
+
 **Default values:**
 - `embedding.timeoutMs`: `120000` (120s) — maximum time to wait for a single embedding request
 - `indexing.ollamaMaxBatchSize`: `100` — smaller batches mean each individual call completes faster
@@ -167,6 +176,24 @@ When running inside OpenCode, the runtime can interfere with the normal Node HTT
 ```bash
 node --import tsx --test --test-force-exit "src/**/*.test.ts"
 ```
+
+### Windows: `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)`
+
+**Symptom:** a test file aborts part-way through with
+`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 94`.
+The runner reports the *file* as failed, and the remaining tests in it never
+run — often with a different pass count on every attempt.
+
+**Cause:** a libuv teardown race on Windows, triggered when the process is torn
+down while an async handle is still closing. The usual trigger is an abrupt
+`process.exit()` from inside a test — e.g. Commander's default behaviour for
+`--help` and for argument-validation errors, which killed the test runner
+mid-suite. OpenCodeRAG's CLI sets `program.exitOverride()` so Commander throws
+instead of exiting (see `src/cli/index.ts`); a library that shells out to
+Commander needs the same guard.
+
+**Fix:** never let a dependency call `process.exit()` inside a test. Map the
+error to `process.exitCode` and let the process drain naturally.
 
 ### "oldString not found in content" on ReadMe Edits
 

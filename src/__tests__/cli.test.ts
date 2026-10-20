@@ -1,5 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { CommanderError } from "commander";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -416,7 +418,9 @@ describe("opencode-rag describe-image", () => {
     process.cwd = () => tmpDir;
 
     const { runCli } = await import("../cli.js");
-    // --help should exit with code 0 and show describe-image in output
+    // --help should exit with code 0 and show describe-image in output.
+    // Commander's default is process.exit(0) here, which would kill the
+    // test runner mid-suite — runCli must return instead.
     await assert.doesNotReject(
       () => runCli(["node", "cli.ts", "describe-image", "--help"]),
     );
@@ -425,10 +429,55 @@ describe("opencode-rag describe-image", () => {
   it("rejects missing file path argument", async () => {
     process.cwd = () => tmpDir;
     const { runCli } = await import("../cli.js");
-    // Missing file argument should throw
+    // Missing file argument should throw — and must NOT terminate the
+    // process, so the remaining tests still run.
     await assert.rejects(
       () => runCli(["node", "cli.ts", "describe-image"]),
+      (err: unknown) => {
+        assert.ok(err instanceof CommanderError, `expected a CommanderError, got ${String(err)}`);
+        assert.equal(err.exitCode, 1);
+        assert.equal(err.code, "commander.missingArgument");
+        return true;
+      },
     );
+  });
+
+  it("runCli resolves for --version instead of exiting the process", async () => {
+    const { runCli } = await import("../cli.js");
+    await assert.doesNotReject(
+      () => runCli(["node", "cli.ts", "--version"]),
+    );
+  });
+});
+
+describe("CLI process exit codes", () => {
+  const cliEntry = fileURLToPath(new URL("../cli/index.ts", import.meta.url));
+
+  /** Run the CLI as a real subprocess and capture its exit status. */
+  function runCliProcess(args: string[]): { status: number | null; stderr: string } {
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", cliEntry, ...args],
+      { encoding: "utf-8", windowsHide: true, timeout: 120_000 },
+    );
+    return { status: result.status, stderr: result.stderr ?? "" };
+  }
+
+  // The in-process `runCli()` tests above cover the "do not exit the host"
+  // contract. These cover the other half: as a real CLI, the process must
+  // still exit with the documented code.
+  it("exits 0 for --help", () => {
+    assert.equal(runCliProcess(["--help"]).status, 0);
+  });
+
+  it("exits 0 for --version", () => {
+    assert.equal(runCliProcess(["--version"]).status, 0);
+  });
+
+  it("exits 1 for an unknown command", () => {
+    const { status, stderr } = runCliProcess(["definitely-not-a-command"]);
+    assert.equal(status, 1);
+    assert.match(stderr, /unknown command/);
   });
 });
 
