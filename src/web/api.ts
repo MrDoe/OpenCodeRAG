@@ -743,13 +743,29 @@ const INDEXING_STRING_ARRAY_KEYS = new Set([
   "includeDirs",
 ]);
 
+/** True for a plain object whose every value is a string. */
+function isStringMap(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).every((v) => typeof v === "string");
+}
+
+/** True for a plain object whose every value is an array of strings. */
+function isStringArrayMap(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).every(
+    (v) => Array.isArray(v) && v.every((x) => typeof x === "string"),
+  );
+}
+
 /**
  * Apply a validated config patch (`{ indexing: { includeDirs: [...] } }`)
  * to the on-disk config file and refresh the in-memory config used by
  * subsequent API requests. Only known sections/keys with validated types
  * are accepted; anything else is rejected with a 400.
+ *
+ * Exported for unit testing.
  */
-function handleConfigUpdate(
+export function handleConfigUpdate(
   configPath: string | undefined,
   configRef: { current?: RagConfig },
   body: unknown,
@@ -765,7 +781,7 @@ function handleConfigUpdate(
     return { status: 400, body: { error: "Invalid config patch" } };
   }
 
-  const otherSections = Object.keys(patch).filter((k) => k !== "indexing");
+  const otherSections = Object.keys(patch).filter((k) => k !== "indexing" && k !== "chunking");
   if (otherSections.length > 0) {
     return { status: 400, body: { error: `Unsupported config section(s): ${otherSections.join(", ")}` } };
   }
@@ -785,6 +801,26 @@ function handleConfigUpdate(
     }
   }
 
+  const chunkingPatch = patch.chunking as Record<string, unknown> | undefined;
+  if (chunkingPatch !== undefined) {
+    if (typeof chunkingPatch !== "object" || chunkingPatch === null || Array.isArray(chunkingPatch)) {
+      return { status: 400, body: { error: "Invalid 'chunking' section" } };
+    }
+    for (const [key, value] of Object.entries(chunkingPatch)) {
+      if (key === "parsers") {
+        if (!isStringMap(value)) {
+          return { status: 400, body: { error: "'chunking.parsers' must be an object mapping file extensions to parser names" } };
+        }
+      } else if (key === "nodeTypes") {
+        if (!isStringArrayMap(value)) {
+          return { status: 400, body: { error: "'chunking.nodeTypes' must be an object mapping languages to arrays of node type names" } };
+        }
+      } else {
+        return { status: 400, body: { error: `Unsupported chunking key '${key}'` } };
+      }
+    }
+  }
+
   if (indexingPatch) {
     for (const [key, value] of Object.entries(indexingPatch)) {
       const ok = updateConfigValue(configPath, ["indexing", key], value);
@@ -796,6 +832,20 @@ function handleConfigUpdate(
     configRef.current = {
       ...current,
       indexing: { ...current.indexing, ...indexingPatch },
+    };
+  }
+
+  if (chunkingPatch) {
+    for (const [key, value] of Object.entries(chunkingPatch)) {
+      const ok = updateConfigValue(configPath, ["chunking", key], value);
+      if (!ok) {
+        return { status: 500, body: { error: `Failed to write 'chunking.${key}' to ${configPath}` } };
+      }
+    }
+    const current = configRef.current ?? ({} as RagConfig);
+    configRef.current = {
+      ...current,
+      chunking: { ...current.chunking, ...chunkingPatch },
     };
   }
 

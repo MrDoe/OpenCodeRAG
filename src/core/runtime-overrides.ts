@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { RagConfig } from "./config.js";
 import { DEFAULT_CONFIG } from "./config.js";
+import { normalizeParserOverrides } from "./parser-overrides.js";
 
 /** Live-configuration overrides that take precedence over the on-disk config file. */
 export interface RuntimeOverrides {
@@ -55,6 +56,16 @@ export interface RuntimeOverrides {
     fileListKeybinding?: string;
     chunksKeybinding?: string;
     settingsKeybinding?: string;
+  };
+  /**
+   * Chunking overrides. The TUI writes these live, so they must be applied
+   * here — otherwise the write to `runtime-overrides.json` is silently
+   * dropped and the edit only takes effect after an OpenCode restart (the
+   * plugin reads the on-disk config file once, at startup).
+   */
+  chunking?: {
+    nodeTypes?: Record<string, string[]>;
+    parsers?: Record<string, string>;
   };
 }
 
@@ -180,6 +191,19 @@ export function applyRuntimeOverrides(
     if (overrides.memory.autoInjectMinScore !== undefined) m.autoInjectMinScore = overrides.memory.autoInjectMinScore;
     if (overrides.memory.autoInjectLatencyBudgetMs !== undefined) m.autoInjectLatencyBudgetMs = overrides.memory.autoInjectLatencyBudgetMs;
     if (overrides.memory.autoInjectTopK !== undefined) m.autoInjectTopK = overrides.memory.autoInjectTopK;
+  }
+
+  if (overrides.chunking) {
+    if (!merged.chunking) merged.chunking = {};
+    if (overrides.chunking.nodeTypes !== undefined) {
+      merged.chunking.nodeTypes = overrides.chunking.nodeTypes;
+    }
+    if (overrides.chunking.parsers !== undefined) {
+      // Normalize exactly like the config loader does, so a hand-edited
+      // runtime-overrides.json gets the same "lowercase, leading dot"
+      // handling as the on-disk config.
+      merged.chunking.parsers = normalizeParserOverrides(overrides.chunking.parsers);
+    }
   }
 
   if (overrides.tui) {

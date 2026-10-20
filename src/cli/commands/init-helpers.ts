@@ -682,6 +682,13 @@ export function generateDefaultConfigJson(
         embedConcurrency: tuning?.embedConcurrency ?? DEFAULT_CONFIG.indexing.embedConcurrency ?? 3,
         ollamaMaxBatchSize: tuning?.ollamaMaxBatchSize ?? DEFAULT_CONFIG.indexing.ollamaMaxBatchSize ?? 100,
       },
+      chunking: {
+        // Emitted (empty) so the extension → parser mapping is discoverable
+        // in a freshly generated config. Fill in e.g. { ".c": "cpp", ".cu": "cpp" }
+        // to remap a file extension to another parser.
+        nodeTypes: {},
+        parsers: {},
+      },
       vectorStore: {
         path: DEFAULT_CONFIG.vectorStore.path,
       },

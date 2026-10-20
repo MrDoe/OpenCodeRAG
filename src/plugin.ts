@@ -634,7 +634,11 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   // Runtime overrides for live config editing from TUI
   let cachedOverrides = loadRuntimeOverrides(options.storePath);
   let overridesLastCheck = 0;
-  const OVERRIDES_TTL_MS = Number(process.env.OPENCODE_RAG_OVERRIDES_TTL_MS) || 3600000;
+  // How often the override file is re-read from disk. The documented value
+  // was 5s; the code had drifted to 1h, which made every "live" TUI edit
+  // (including `chunking.parsers`) take up to an hour to take effect — the
+  // edit looked broken. Override with OPENCODE_RAG_OVERRIDES_TTL_MS.
+  const OVERRIDES_TTL_MS = Number(process.env.OPENCODE_RAG_OVERRIDES_TTL_MS) || 5000;
   let lastEffectiveCfg: RagConfig | null = null;
   let lastEffectiveCfgTime = 0;
 
@@ -813,6 +817,9 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     const fileSkeletonTool = createFileSkeletonTool({
       worktree: options.worktree,
       languageByExtension: effectiveCfg.chunking?.parsers,
+      // Live accessor so a TUI edit of `chunking.parsers` is picked up
+      // without an OpenCode restart.
+      getParserOverrides: () => getEffectiveCfg().chunking?.parsers,
     });
     tools["get_file_skeleton"] = fileSkeletonTool;
   } catch (err) {
@@ -944,6 +951,9 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     const readTool = createRagReadTool({
       worktree: options.worktree,
       config: options.cfg,
+      // Live config so a TUI edit of `chunking.parsers` reaches the
+      // code-fence language label without an OpenCode restart.
+      getConfig: getEffectiveCfg,
       embedder,
       store,
       logFilePath: options.logFilePath,

@@ -2,6 +2,10 @@
  * @fileoverview Builds metadata headers (file type, content type, document title) for embedding context.
  */
 import path from "node:path";
+import {
+  normalizeParserOverrides,
+  type ParserOverrides,
+} from "../core/parser-overrides.js";
 
 const FILE_TYPE_LABELS: Record<string, string> = {
   ".pdf": "pdf",
@@ -83,12 +87,22 @@ function extractDocumentTitle(content: string, filePath: string): string {
  * @param filePath - Absolute path to the file.
  * @param cwd - Workspace root directory (used to compute relative path).
  * @param content - File content used to extract a document title.
+ * @param languageByExtension - Optional `chunking.parsers` override map.
+ *   When an extension is remapped to another parser, the header must name
+ *   that parser — otherwise the embedded text says `[c]` while the chunk's
+ *   `metadata.language` (and therefore the keyword filter) says `cpp`.
  * @returns A space-delimited metadata string such as `"[typescript] [src] [source] MyComponent"`.
  */
-export function buildFileMetadataHeader(filePath: string, cwd: string, content: string): string {
+export function buildFileMetadataHeader(
+  filePath: string,
+  cwd: string,
+  content: string,
+  languageByExtension?: ParserOverrides,
+): string {
   const ext = path.extname(filePath).toLowerCase();
   const relPath = path.relative(cwd, filePath).replace(/\\/g, "/");
-  const fileType = FILE_TYPE_LABELS[ext] ?? ext.slice(1);
+  const overrides = normalizeParserOverrides(languageByExtension);
+  const fileType = overrides[ext] ?? FILE_TYPE_LABELS[ext] ?? ext.slice(1);
   const dirParts = relPath.split("/");
   dirParts.pop();
   const topDir = dirParts[0] ?? "";

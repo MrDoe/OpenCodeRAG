@@ -9,7 +9,7 @@
  */
 import { Parser } from "web-tree-sitter";
 import { initParser, loadLanguage, walkTree, type AstNode } from "./grammar.js";
-import { getExtensionsForLanguage, getRegisteredLanguages } from "./factory.js";
+import { getExtensionsForLanguage, getLanguageForExtension, getRegisteredLanguages } from "./factory.js";
 import {
   normalizeParserOverrides,
   type ParserOverrides,
@@ -111,6 +111,12 @@ function resolveSkeletonKey(ext: string, overrides: ParserOverrides): string {
     }
     return ext;
   }
+
+  // An override that names the extension's existing parser changes nothing
+  // for chunking — so keep the extension's own recipe, which can be more
+  // specific than the target language's first recipe (".tsx" also collects
+  // arrow functions, ".ts" does not).
+  if (getLanguageForExtension(ext) === target) return ext;
 
   const candidates = getExtensionsForLanguage(target);
   const hit = candidates.find((c) => SKELETON_CONFIGS[c] || REGEX_SKELETON[c]);

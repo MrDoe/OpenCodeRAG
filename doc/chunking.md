@@ -214,15 +214,19 @@ The parser used for a file extension is normally fixed by the chunker registry (
 
 - **Keys** are file extensions; they are normalized (lowercased, leading dot added), so `"CXX"` and `".cxx"` are the same entry.
 - **Values** are registered parser languages: any `language` from the chunker table (`typescript`, `cpp`, `python`, …) plus `text` for the fallback parser. Unknown names produce a config warning listing the valid ones.
-- The mapping applies consistently to **all four** extension-sensitive surfaces:
+- The mapping applies consistently to **all** extension-sensitive surfaces:
   1. **Indexing/chunking** — `getChunker()` picks the target parser, and `chunking.nodeTypes` is looked up under the *target* language (so `nodeTypes.cpp` applies to remapped `.c` files).
   2. **`get_file_skeleton` tool** — resolves to the target parser's grammar recipe (shared module: `src/chunker/skeleton.ts`).
   3. **MCP `get_file_skeleton`** — same shared module, same result.
   4. **Read-tool code fences** — the language label comes from the override.
+  5. **Embedding metadata header** — the `[type]` label in the embedded text follows the override, so a remapped `.c` file is embedded as `[cpp]`, matching the chunk's `metadata.language`.
 - Extensions named in `chunking.parsers` are **implicitly added to the scan set** — you do not need to repeat them in `indexing.includeExtensions`.
 - If the target parser has no skeleton recipe (e.g. `text`), the skeleton tool falls back to a line count rather than using the extension's previous (now wrong) grammar.
+- An override that names the extension's **existing** parser is a no-op: the extension keeps its own skeleton recipe, so `.tsx` → `typescript` does not drop the `.tsx`-specific `arrow_function` node type.
 - Overrides are resolved per call and never mutate the process-wide registry, so they are workspace-scoped and coexist safely with pluggable `chunkers[]`.
+
+**Where to set it:** the config file (`opencode-rag.json`), the TUI settings editor under *Chunking* (applies live — no OpenCode restart needed), `opencode-rag init` (emits an empty `chunking` section), or the dashboard API (`PUT /api/config` with a `chunking` section).
 
 **Re-index required**: changing a mapping changes chunk boundaries for already-indexed files without touching their content hashes. Run `opencode-rag index --force` after editing (the TUI warns about this when you edit under the Chunking category).
 
-Known limits: the web dashboard config editor only accepts `indexing.*` keys (use the file or the TUI), and `imageDescription` handling bypasses the chunker, so remapping an image extension has no effect.
+Known limits: the dashboard *UI* is read-only for the `chunking` section (use the file, the TUI, or the API), and `imageDescription` handling bypasses the chunker, so remapping an image extension has no effect.

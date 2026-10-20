@@ -4,7 +4,7 @@
  * high-level convenience API (search, index, getContext), and plugin entry.
  */
 
-export { chunkFile, getChunker, registerChunker, getRegisteredLanguages, getExtensionsForLanguage, validateParserOverrides } from "./chunker/factory.js";
+export { chunkFile, getChunker, registerChunker, getRegisteredLanguages, getExtensionsForLanguage, getLanguageForExtension, validateParserOverrides } from "./chunker/factory.js";
 export { extractSkeleton } from "./chunker/skeleton.js";
 export { normalizeParserOverrides } from "./core/parser-overrides.js";
 export type { ParserOverrides } from "./core/parser-overrides.js";

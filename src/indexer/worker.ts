@@ -282,7 +282,9 @@ export async function prepareFile(
   const docPrefix = config.embedding.documentPrefix ?? "";
   const relPath = path.relative(cwd, file.filePath).replace(/\\/g, "/");
   const isImage = isImageFile(file.filePath);
-  const metaHeader = isImage ? "" : buildFileMetadataHeader(file.filePath, cwd, file.content);
+  const metaHeader = isImage
+    ? ""
+    : buildFileMetadataHeader(file.filePath, cwd, file.content, config.chunking?.parsers);
 
   if (deferDescriptions) {
     for (const chunk of chunks) {

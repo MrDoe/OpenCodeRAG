@@ -87,6 +87,15 @@ describe("generateDefaultConfigJson", () => {
     assert.equal("apiKey" in cfg.embedding, false);
   });
 
+  it("emits an empty chunking section so parser overrides are discoverable", () => {
+    const cfg = JSON.parse(generateDefaultConfigJson()) as {
+      chunking: { nodeTypes: Record<string, unknown>; parsers: Record<string, unknown> };
+    };
+    assert.ok(cfg.chunking, "generated config must contain a chunking section");
+    assert.deepStrictEqual(cfg.chunking.parsers, {});
+    assert.deepStrictEqual(cfg.chunking.nodeTypes, {});
+  });
+
   it("survives a malformed or BOM-prefixed existing config", () => {
     const malformed = JSON.parse(generateDefaultConfigJson(undefined, '{"embedding": {oops')) as {
       embedding: Record<string, unknown>;

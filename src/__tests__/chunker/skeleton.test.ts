@@ -62,6 +62,20 @@ describe("extractSkeleton", () => {
     assert.ok(asCpp.some((i) => i.type === "function_definition"));
   });
 
+  it("keeps the extension's own recipe when the override names its existing parser", async () => {
+    // ".tsx" already uses the TypeScript parser, so overriding it with
+    // "typescript" changes nothing — and must not drop the .tsx-specific
+    // arrow_function node type in favour of the first typescript recipe.
+    const source = "const App = () => 1;\n";
+    const items = await extractSkeleton(source, ".tsx", {
+      languageByExtension: { ".tsx": "typescript" },
+    });
+    assert.ok(
+      items.some((i) => i.type === "arrow_function"),
+      `expected the .tsx recipe to be preserved, got: ${JSON.stringify(items)}`,
+    );
+  });
+
   it("does not use the extension's own recipe when the target parser has none", async () => {
     const source = "const App = () => 1;\n";
     const items = await extractSkeleton(source, ".tsx", { languageByExtension: { ".tsx": "text" } });

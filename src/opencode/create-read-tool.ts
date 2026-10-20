@@ -18,6 +18,13 @@ export interface RagReadToolOptions {
   worktree: string;
   /** Full RAG configuration. */
   config: RagConfig;
+  /**
+   * Live configuration accessor. When provided, the read tool re-reads the
+   * config on every call, so runtime overrides (e.g. a TUI edit of
+   * `chunking.parsers`) reach the code-fence language label without
+   * restarting OpenCode. Falls back to the static `config` when omitted.
+   */
+  getConfig?: () => RagConfig;
   /** Embedding provider for retrieval. */
   embedder: EmbeddingProvider;
   /** Vector store for retrieval. */
@@ -150,6 +157,9 @@ export function createRagReadTool(
         }
 
         // 5. Format output: full file + optional RAG context
+        // Resolve the config per call so a live `chunking.parsers` override
+        // (TUI edit) is reflected in the code-fence language label.
+        const liveConfig = options.getConfig?.() ?? config;
         const output = formatHybridReadOutput({
           filePath: resolvedPath,
           fileContent,
@@ -158,7 +168,7 @@ export function createRagReadTool(
           ragChunks,
           relatedFiles,
           maxChars: maxReadOutputChars,
-          languageByExtension: config.chunking?.parsers,
+          languageByExtension: liveConfig.chunking?.parsers,
         });
 
         // 6. Return

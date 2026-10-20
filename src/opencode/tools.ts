@@ -87,6 +87,12 @@ export interface FileSkeletonToolOptions {
   worktree: string;
   /** Extension → parser overrides from `chunking.parsers`. */
   languageByExtension?: ParserOverrides;
+  /**
+   * Live accessor for the override map. When provided it is consulted on
+   * every call, so a runtime override (e.g. a TUI edit) is picked up without
+   * restarting OpenCode. Falls back to the static `languageByExtension`.
+   */
+  getParserOverrides?: () => ParserOverrides | undefined;
 }
 
 /**
@@ -118,7 +124,8 @@ export function createFileSkeletonTool(
         const content = readFileSync(resolvedPath, "utf-8");
         const ext = getExtension(args.filePath);
 
-        const skeleton = await extractSkeleton(content, ext, { languageByExtension });
+        const overrides = options.getParserOverrides?.() ?? languageByExtension;
+        const skeleton = await extractSkeleton(content, ext, { languageByExtension: overrides });
 
         const declCounts = new Map<string, number>();
         for (const item of skeleton) {

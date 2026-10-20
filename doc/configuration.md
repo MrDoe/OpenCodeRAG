@@ -608,13 +608,13 @@ Overrides which parser handles each file extension (`parsers`) and which AST nod
 | `nodeTypes` | `Record<string, string[]>` | Map of language name to AST node types to chunk on |
 | `parsers` | `Record<string, string>` | Map of file extension to parser language, overriding the built-in mapping (e.g. `.c` → `cpp`, or a new `.cu` → `cpp`) |
 
-`parsers` keys are normalized (lowercased, leading dot added); values must be a registered parser language (`typescript`, `cpp`, `python`, … or `text`) — invalid entries are reported as config warnings. Mapped extensions are implicitly indexed (no need to repeat them in `indexing.includeExtensions`), and the override applies to chunking, `get_file_skeleton` (tool + MCP), and read-tool language labels. See [chunking.md](chunking.md#parser-overrides-per-extension-chunkingparsers) for details.
+`parsers` keys are normalized (lowercased, leading dot added); values must be a registered parser language (`typescript`, `cpp`, `python`, … or `text`) — invalid entries are reported as config warnings. Mapped extensions are implicitly indexed (no need to repeat them in `indexing.includeExtensions`), and the override applies to chunking, `get_file_skeleton` (tool + MCP), read-tool language labels, and the embedding metadata header. See [chunking.md](chunking.md#parser-overrides-per-extension-chunkingparsers) for details.
 
 `nodeTypes` applies to indexing only (it does not change `get_file_skeleton` output — that uses its own per-extension recipe).
 
 See [chunking.md](chunking.md) for the full strategy and per-language node type details.
 
-These settings are also editable via the **OpenCodeRAG TUI** (`Ctrl+Shift+R` → Chunking). The `nodeTypes` and `parsers` fields use a JSON editor — changes require re-indexing (`opencode-rag index --force`).
+These settings are also editable via the **OpenCodeRAG TUI** (`Ctrl+Shift+R` → Chunking). The `nodeTypes` and `parsers` fields use a JSON editor — changes apply live (no OpenCode restart) but require re-indexing (`opencode-rag index --force`). The dashboard API accepts the same section via `PUT /api/config`.
 
 ### Custom Chunkers
 

@@ -231,7 +231,13 @@ async function main() {
         continue;
       }
 
-      const chunks = await chunkFile(absPath, content);
+      // Mirror production chunking: the parser override map and the
+      // per-language node-type overrides decide the chunk boundaries, so
+      // dropping them here would make eval results incomparable to a
+      // real index pass.
+      const chunks = await chunkFile(absPath, content, cfg.chunking?.nodeTypes, {
+        languageByExtension: cfg.chunking?.parsers,
+      });
       if (!chunks || chunks.length === 0) {
         console.log(" no chunks");
         continue;

@@ -304,4 +304,38 @@ describe("applyRuntimeOverrides", () => {
     assert.equal(result.description?.enabled, false);
   });
 
+  it("applies chunking.parsers overrides", () => {
+    // The TUI writes ["chunking","parsers"] to runtime-overrides.json. Without
+    // a matching branch here the write is silently dropped and the edit only
+    // takes effect after an OpenCode restart.
+    const result = applyRuntimeOverrides(DEFAULT_CONFIG, {
+      chunking: { parsers: { ".c": "cpp", ".cu": "cpp" } },
+    });
+    assert.deepStrictEqual(result.chunking?.parsers, { ".c": "cpp", ".cu": "cpp" });
+  });
+
+  it("normalizes chunking.parsers overrides like the config loader", () => {
+    const result = applyRuntimeOverrides(DEFAULT_CONFIG, {
+      chunking: { parsers: { CXX: "CPP", ".cu": " cpp " } },
+    });
+    assert.deepStrictEqual(result.chunking?.parsers, { ".cxx": "cpp", ".cu": "cpp" });
+  });
+
+  it("applies chunking.nodeTypes overrides", () => {
+    const result = applyRuntimeOverrides(DEFAULT_CONFIG, {
+      chunking: { nodeTypes: { cpp: ["function_definition"] } },
+    });
+    assert.deepStrictEqual(result.chunking?.nodeTypes, { cpp: ["function_definition"] });
+  });
+
+  it("keeps the on-disk chunking config when no chunking override is set", () => {
+    const cfg = {
+      ...DEFAULT_CONFIG,
+      chunking: { nodeTypes: { ts: ["function_declaration"] }, parsers: { ".c": "cpp" } },
+    };
+    const result = applyRuntimeOverrides(cfg, { retrieval: { topK: 7 } });
+    assert.deepStrictEqual(result.chunking?.parsers, { ".c": "cpp" });
+    assert.deepStrictEqual(result.chunking?.nodeTypes, { ts: ["function_declaration"] });
+  });
+
 });

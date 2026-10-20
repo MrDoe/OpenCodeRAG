@@ -194,6 +194,20 @@ export function getExtensionsForLanguage(language: string): string[] {
 }
 
 /**
+ * The parser language registered for a file extension, or `undefined` when
+ * the extension has no registered parser. Used to detect a `chunking.parsers`
+ * override that does not actually change the parser.
+ */
+export function getLanguageForExtension(ext: string): string | undefined {
+  const key = ext.toLowerCase();
+  const direct = extensionMap.get(key);
+  if (direct) return direct.language;
+  // Basename-registered parsers (e.g. "dockerfile") are stored without a dot.
+  const base = key.startsWith(".") ? key.slice(1) : key;
+  return extensionMap.get(base)?.language;
+}
+
+/**
  * Validate a raw `chunking.parsers` map against the registered parsers.
  *
  * @param parsers - Raw (unnormalized) override map from the config.

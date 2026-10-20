@@ -76,7 +76,7 @@ interface SearchResult {
 | `config.ts` | `RagConfig`, `DEFAULT_CONFIG`, `loadConfig()` with deep merge |
 | `manifest.ts` | File hash manifest with schema versioning and corruption detection |
 | `parser-overrides.ts` | Pure `chunking.parsers` helpers: `normalizeExtensionKey()`, `normalizeParserOverrides()` (import-free so config/factory/scanner can share them) |
-| `runtime-overrides.ts` | Live config overrides with 5s TTL reload |
+| `runtime-overrides.ts` | Live config overrides (TUI) with 5s TTL reload; covers `retrieval`, `openCode`, `embedding`, `description`, `imageDescription`, `memory`, `chunking`, `tui` |
 | `resolve-api-key.ts` | Auto-resolves OpenAI API key from OpenCode provider config |
 | `fileLogger.ts` | Configurable structured file logging |
 
@@ -202,7 +202,7 @@ runtime-overrides.json ───┼──> applyRuntimeOverrides() (5s TTL)
 ```
 
 - **`opencode-rag.json`**: User-defined overrides, deep-merged per section.
-- **`runtime-overrides.json`**: Live overrides written by the TUI, take precedence.
+- **`runtime-overrides.json`**: Live overrides written by the TUI, take precedence. Covers the `retrieval`, `openCode`, `embedding`, `description`, `imageDescription`, `memory`, `chunking`, and `tui` sections.
 - **`DEFAULT_CONFIG`**: Hard-coded defaults in `config.ts`.
 
 ## Tech Stack
