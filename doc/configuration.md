@@ -460,9 +460,11 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
     "autoCreateOnToolError": true,
     "toolErrorCreateMaxPerSession": 2,
     "toolErrorCreateCooldownMs": 600000,
-    "toolErrorCreateMinScore": 0.6,
+    "toolErrorCreateMinScore": 0.7,
     "toolErrorCreateLatencyBudgetMs": 2000,
     "toolErrorInjectCreated": false,
+    "toolErrorProactiveInject": true,
+    "toolErrorProactiveMaxItems": 5,
     "decay": {
       "enabled": false,
       "halfLifeDays": 30
@@ -498,9 +500,11 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 | `autoCreateOnToolError` | `true` | **Create** a quirk when a failed tool call has no matching memory. The new quirk is a deterministic template built from the tool name and the error text — no LLM involved, so it works even with `description.enabled: false`. It is recorded for *future* sessions; it is not injected into the turn that produced the failure (see `toolErrorInjectCreated`). |
 | `toolErrorCreateMaxPerSession` | `2` | Maximum number of tool-error quirks **created** per session. Bounds how much a failing session can write to memory. |
 | `toolErrorCreateCooldownMs` | `600000` | Cooldown per normalized tool-error signature for creation (10 min). |
-| `toolErrorCreateMinScore` | `0.6` | Minimum raw vector similarity (0–1) for an existing quirk to count as "an equivalent quirk already exists" and therefore **suppress** creation. Deliberately below `toolErrorMinScore`: a probable match (0.6–0.7) still blocks a duplicate — it is just not injected on its own. |
+| `toolErrorCreateMinScore` | `0.7` | Minimum raw vector similarity (0–1) for an existing quirk to count as "an equivalent quirk already exists" and therefore **suppress** creation. Deliberately EQUAL to `toolErrorMinScore`: measured on a real workspace, an error query scores 0.55–0.63 against *arbitrary* stored quirks, so a lower floor sits inside the noise band and matches unrelated quirks — which suppressed creation on every real failure. The exact duplicate check (same tool + same cause class) is done by metadata, not by similarity. |
 | `toolErrorCreateLatencyBudgetMs` | `2000` | Latency budget (ms) for the creation path (embed + store write). If exceeded, the quirk is still written in the background but not confirmed within the budget. |
 | `toolErrorInjectCreated` | `false` | Also inject a freshly created tool-error quirk into the turn that produced the failure. Off by default: the agent already saw the raw error, so the created quirk carries no new information for that turn. |
+| `toolErrorProactiveInject` | `true` | Surface known tool gotchas in the **system prompt, before the model picks a tool** — so a failure that already happened in an earlier session is not repeated. Only gotchas whose tool is in the session's tool catalog are injected, and only for *durable* cause classes (unknown tool, schema mismatch, permissions, path). A transient failure (rate limit, timeout) is never warned about in advance — the next call would not fail the same way. |
+| `toolErrorProactiveMaxItems` | `5` | Maximum number of tool gotchas injected into the system prompt per request. |
 
 Quirks can also be managed from the CLI — see [CLI Reference: `quirk`](cli.md#quirk). Every `addQuirk` call is vetted by an immutable trust monitor (`src/quirks/monitor.ts`) that rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Auto-captured quirks pass through the same trust boundary before storage. Auto-created tool-error quirks are no exception: an error text that contains a blocked pattern (e.g. a shell error echoing `rm -rf …`) is **not** stored — the rejection is logged to the plugin log and the session continues.
 
