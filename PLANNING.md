@@ -4,7 +4,7 @@ Terse mirror of [doc/roadmap.md](doc/roadmap.md) — that file is canonical and
 carries the rationale for every item. Keep the two in sync: an item moves to
 *Completed* when it lands in a release.
 
-Last reviewed: 2026-10-20 · current release: **v2.7.0**
+Last reviewed: 2026-10-20 · current release: **v2.9.0**
 
 ## Completed
 
@@ -16,6 +16,7 @@ Last reviewed: 2026-10-20 · current release: **v2.7.0**
 - [x] Opt-in cross-encoder rerank stage (v2.3.0)
 - [x] Context optimization (adjacent merge, Jaccard dedup, per-file cap) and session retrieval cache
 - [x] `eval:tune` calibrator with bootstrap CI + sign test + per-signal split (v2.7.0)
+- [x] Scale-free `minScore` gate (`retrieval.minScoreMode`, default `fused`) (v2.9.0)
 - [x] OpenCode 2 plugin-directory layout with a separate TUI plugin (issue #35)
 - [x] Quirk memory with auto-capture and bounded tool-error auto-create (v2.6.0)
 - [x] `make_decision` decision model via tev1 (v2.4.0)

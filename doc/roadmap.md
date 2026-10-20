@@ -59,6 +59,11 @@ reasoning behind the moves.
   `minScore` / `topK` against a labelled golden set and reports a paired
   bootstrap CI, an exact sign test and the BM25-only vs vector-only split —
   not a bare argmax (v2.7.0)
+- Scale-free `minScore` gate: `retrieval.minScoreMode` ("fused" default |
+  "normalized") — the fused score's maximum depends on `keywordWeight`, so a
+  fixed threshold silently changed meaning with the weight (at kw=0.4 it
+  demanded a dual hit). The default stays "fused" because 48 labels cannot
+  settle the quality delta (sign test p=1.00); the case is the contract (v2.9.0)
 - Evaluation suite: `eval:sessions`, `eval:analyze`, `eval:compare`,
   `eval:gate`, `eval:decide`, plus RAG-on/RAG-off token analysis
 
