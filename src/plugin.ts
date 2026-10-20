@@ -13,7 +13,7 @@ import { createEmbedder, probeEmbeddingDimension } from "./embedder/factory.js";
 import { readStoreDimension } from "./vectorstore/lancedb.js";
 import { createDescriptionProvider } from "./describer/factory.js";
 import { createVectorStore } from "./vectorstore/factory.js";
-import { retrieve, type RerankStageOptions } from "./retriever/retriever.js";
+import { retrieve, type RerankStageOptions, type MinScoreMode } from "./retriever/retriever.js";
 import { getRerankerFor } from "./reranker/factory.js";
 import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "./retriever/context-optimizer.js";
 import { loadChunkersFromConfig } from "./chunker/loader.js";
@@ -564,10 +564,11 @@ async function retrieveContext(
   hybridEnabled?: boolean,
   filter?: MetadataFilter,
   reranker?: RerankProvider,
-  reranking?: RerankStageOptions
+  reranking?: RerankStageOptions,
+  minScoreMode?: MinScoreMode
 ): Promise<SearchResult[]> {
   if (query.trim().length === 0) return [];
-  return retrieveFn(query, embedder, store, { topK, minScore, keywordIndex, keywordWeight, hybridEnabled, queryPrefix, explain, filter, reranker, reranking });
+  return retrieveFn(query, embedder, store, { topK, minScore, keywordIndex, keywordWeight, hybridEnabled, queryPrefix, explain, filter, reranker, reranking, minScoreMode });
 }
 
 /**
@@ -591,11 +592,12 @@ async function loadRetrievedResults(
   reranking?: RerankStageOptions
 ): Promise<SearchResult[]> {
   const minScore = cfg.retrieval.minScore;
+  const minScoreMode = cfg.retrieval.minScoreMode;
   const kw = cfg.retrieval.hybridSearch?.keywordWeight;
   const hybridEnabled = cfg.retrieval.hybridSearch?.enabled;
-  const primaryResults = await retrieveContext(query, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter, reranker, reranking);
+  const primaryResults = await retrieveContext(query, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter, reranker, reranking, minScoreMode);
   const extraResults = extraQuery
-    ? await retrieveContext(extraQuery, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter, reranker, reranking)
+    ? await retrieveContext(extraQuery, embedder, store, topK, retrieveFn, minScore, keywordIndex, kw, queryPrefix, explain, hybridEnabled, filter, reranker, reranking, minScoreMode)
     : [];
 
   const optCfg = cfg.retrieval.contextOptimization ?? DEFAULT_CONTEXT_OPTIMIZATION;

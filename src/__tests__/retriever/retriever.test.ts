@@ -222,6 +222,69 @@ describe("retrieve", () => {
       assert.equal(results[0]!.chunk.id, "a");
     });
 
+    it("makes the minScore gate scale-free across keyword weights in normalized mode", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      // "a" is a VECTOR-ONLY hit (it is in the store, not in the keyword index).
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "a", content: "apple banana", metadata: { filePath: "a.ts", startLine: 1, endLine: 2, language: "ts" } } },
+      ]);
+      // "b" is a KEYWORD-ONLY hit, so the fused branch is taken.
+      const ki = makeKeywordIndex([
+        { score: 0, chunk: { id: "b", content: "apple banana cherry", metadata: { filePath: "b.ts", startLine: 1, endLine: 2, language: "ts" } } },
+      ]);
+
+      // FUSED (the default): a vector-only hit can never exceed (1 - kw).
+      // At kw=0.4 it reaches 0.6 and is dropped by the 0.65 gate; at kw=0 it
+      // reaches 1.0 and passes. The same hit, the same threshold, two answers.
+      const fusedKw04 = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0.4, minScore: 0.65 });
+      const fusedKw0 = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0, minScore: 0.65 });
+      assert.equal(fusedKw04.some((r) => r.chunk.id === "a"), false, "fused: 0.6 < 0.65 at kw=0.4");
+      assert.equal(fusedKw0.some((r) => r.chunk.id === "a"), true, "fused: 1.0 >= 0.65 at kw=0");
+
+      // NORMALIZED: the score is divided by the maximum the result could
+      // reach, so the vector-only hit is worth 1.0 at every keyword weight.
+      const normKw04 = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0.4, minScore: 0.65, minScoreMode: "normalized" });
+      const normKw0 = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0, minScore: 0.65, minScoreMode: "normalized" });
+      const a04 = normKw04.find((r) => r.chunk.id === "a");
+      const a0 = normKw0.find((r) => r.chunk.id === "a");
+      assert.ok(a04, "normalized: the vector-only hit must survive the gate at kw=0.4");
+      assert.ok(a0, "normalized: the vector-only hit must survive the gate at kw=0");
+      assert.ok(Math.abs(a04!.score - a0!.score) < 1e-10, "normalized: the same score at both weights");
+      assert.ok(a04!.score <= 1 + 1e-9, "normalized: the score stays in [0,1]");
+    });
+
+    it("keeps the default minScore mode fused (no silent behaviour change)", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "a", content: "apple banana", metadata: { filePath: "a.ts", startLine: 1, endLine: 2, language: "ts" } } },
+      ]);
+      const ki = makeKeywordIndex([
+        { score: 0, chunk: { id: "b", content: "apple banana cherry", metadata: { filePath: "b.ts", startLine: 1, endLine: 2, language: "ts" } } },
+      ]);
+      const defaulted = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0.4, minScore: 0.65 });
+      const explicit = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0.4, minScore: 0.65, minScoreMode: "fused" });
+      const normalized = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0.4, minScore: 0.65, minScoreMode: "normalized" });
+      assert.equal(defaulted.length, explicit.length);
+      assert.deepEqual(defaulted.map((r) => r.chunk.id), explicit.map((r) => r.chunk.id));
+      assert.notDeepEqual(defaulted.map((r) => r.chunk.id), normalized.map((r) => r.chunk.id));
+    });
+
+    it("reports the max reachable score in the explanation when normalized", async () => {
+      const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
+      const store = makeStore([
+        { score: 0.9, chunk: { id: "a", content: "apple banana", metadata: { filePath: "a.ts", startLine: 1, endLine: 2, language: "ts" } } },
+      ]);
+      const ki = makeKeywordIndex([
+        { score: 0, chunk: { id: "b", content: "apple banana cherry", metadata: { filePath: "b.ts", startLine: 1, endLine: 2, language: "ts" } } },
+      ]);
+      const results = await retrieve("apple banana", embedder, store, { keywordIndex: ki, keywordWeight: 0.4, minScore: 0, explain: true, minScoreMode: "normalized" });
+      const a = results.find((r) => r.chunk.id === "a");
+      assert.ok(a);
+      assert.ok(a!.explanation?.scoreBreakdown.maxReachableScore !== undefined, "the max reachable score must be reported");
+      // A vector-only hit can reach (1 - kw) = 0.6 at kw=0.4.
+      assert.ok(Math.abs(a!.explanation!.scoreBreakdown.maxReachableScore! - 0.6) < 1e-9);
+    });
+
     it("respects keywordWeight parameter", async () => {
       const embedder = makeEmbedder([[0.1, 0.2, 0.3]]);
       const store = makeStore([

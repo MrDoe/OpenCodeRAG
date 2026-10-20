@@ -59,6 +59,7 @@ export function registerQueryCommand(program: Command): void {
         const rawResults = await retrieve(query, embedder, store, {
           topK,
           minScore,
+          minScoreMode: config.retrieval.minScoreMode,
           keywordIndex,
           keywordWeight: hybridCfg?.keywordWeight,
           hybridEnabled: hybridCfg?.enabled,

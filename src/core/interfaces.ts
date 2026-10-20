@@ -161,6 +161,12 @@ export interface SearchExplanation {
     vectorRank?: number;
     /** Rank (0-indexed) in the keyword index results. */
     keywordRank?: number;
+    /**
+     * The highest score a result with these legs could reach (rank 0 in
+     * each). Set only in `minScoreMode: "normalized"`, where the reported
+     * score is the fused score divided by this value.
+     */
+    maxReachableScore?: number;
     /** Cross-encoder relevance from the optional rerank stage. Higher means more
      *  relevant. NOT a calibrated probability (provider-dependent, llama-server
      *  semantics) and NOT comparable to the RRF-normalized fused components.

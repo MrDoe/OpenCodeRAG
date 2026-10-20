@@ -561,6 +561,18 @@ export interface RagConfig {
     topK: number;
     /** Minimum relevance score threshold (0-1). */
     minScore: number;
+    /**
+     * How `minScore` reads the score (default `"fused"`).
+     *
+     * The fused hybrid score's scale depends on `hybridSearch.keywordWeight`:
+     * a vector-only hit can never exceed `1 - kw`, so at `kw = 0.4` a fixed
+     * `minScore` of 0.65 silently demands a DUAL hit (13.5 of 20 results
+     * survive vs 17.7 at `kw = 0`). `"normalized"` divides the score by the
+     * maximum that result could reach, so the threshold keeps its meaning at
+     * every keyword weight. `"fused"` keeps today's behaviour — the default
+     * does not change silently; a default flip needs a bigger golden set.
+     */
+    minScoreMode?: "fused" | "normalized";
     /** Hybrid search (vector + keyword) configuration. */
     hybridSearch?: {
       /** Whether hybrid search is enabled. */
@@ -789,6 +801,7 @@ export const DEFAULT_CONFIG: RagConfig = {
   retrieval: {
     topK: 20,
     minScore: 0.35,
+    minScoreMode: "fused",
     hybridSearch: {
       enabled: true,
       keywordWeight: 0.4,
@@ -1171,6 +1184,9 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   }
   if (config.memory?.toolErrorProactiveMaxItems != null && config.memory.toolErrorProactiveMaxItems < 0) {
     warnings.push("memory.toolErrorProactiveMaxItems must be >= 0");
+  }
+  if (config.retrieval?.minScoreMode != null && !["fused", "normalized"].includes(config.retrieval.minScoreMode)) {
+    warnings.push(`retrieval.minScoreMode "${config.retrieval.minScoreMode}" — expected "fused" or "normalized"`);
   }
   if (config.memory?.decay && config.memory.decay.halfLifeDays <= 0) {
     warnings.push("memory.decay.halfLifeDays must be > 0");
