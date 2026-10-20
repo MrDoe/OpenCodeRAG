@@ -3,10 +3,14 @@ import assert from "node:assert/strict";
 import {
   applyTuningToConfig,
   buildCandidateGrid,
+  comparePaired,
+  signTestP,
+  measureSignalQuality,
   runTuner,
   selectBestTuning,
   tuningDelta,
   type TuningCandidate,
+  type TuningResult,
 } from "../../eval/tuner.js";
 import type { GoldenLabel } from "../../eval/golden-set.js";
 import type { SearchResult } from "../../core/interfaces.js";
@@ -204,5 +208,118 @@ describe("applyTuningToConfig", () => {
     const before = original.retrieval.hybridSearch?.keywordWeight;
     applyTuningToConfig(original, { keywordWeight: 0.9, minScore: 0.1, topK: 5 });
     assert.equal(original.retrieval.hybridSearch?.keywordWeight, before);
+  });
+});
+
+/** Build a TuningResult with a controllable per-label nDCG vector. */
+function makeResult(ndcgs: number[], keywordWeight = 0): TuningResult {
+  return {
+    keywordWeight,
+    symbolKeywordWeight: undefined,
+    minScore: 0,
+    topK: 10,
+    summary: {
+      hit1: 0, hit3: 0, hit5: 0, hit10: 0, precision5: 0, recall10: 0,
+      mrr: 0, ndcg10: ndcgs.reduce((s, v) => s + v, 0) / ndcgs.length,
+      symbolRate: 0, latencyAvg: 0, latencyP50: 0, latencyP95: 0,
+    },
+    outcomes: ndcgs.map((n, i) => ({
+      label: { id: `l-${i}`, category: "nl", query: "q", files: ["src/a.ts"] },
+      latencyMs: 1,
+      firstHitRank: 1,
+      hitAt1: 1, hitAt3: 1, hitAt5: 1, hitAt10: 1,
+      precision5: 1, recall10: 1, rr: 1, ndcg10: n, symbolHitRank: null,
+      topFiles: [], rerankRan: false,
+    })),
+    durationMs: 1,
+  };
+}
+
+/** Deterministic RNG (LCG) so the bootstrap test is reproducible. */
+function seededRng(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+describe("comparePaired", () => {
+  it("returns undefined without a comparison target", () => {
+    assert.equal(comparePaired(makeResult([1, 1]), undefined), undefined);
+  });
+
+  it("reports a clear improvement as significant", () => {
+    const better = makeResult([1, 1, 1, 1, 1, 1, 1, 1], 0);
+    const worse = makeResult([0, 0, 0, 0, 0, 0, 0, 0], 0.4);
+    const cmp = comparePaired(better, worse, "ndcg10", 2000, seededRng(7));
+
+    assert.ok(cmp);
+    assert.equal(cmp.meanDelta, 1);
+    assert.ok(cmp.ciLow > 0, "the CI must exclude 0 for a clear win");
+    assert.equal(cmp.withinNoise, false);
+    assert.equal(cmp.improved, 8);
+    assert.equal(cmp.regressed, 0);
+  });
+
+  it("flags a mixed result as within noise", () => {
+    // Half the labels improve, half regress — the point estimate is positive
+    // but the CI must include 0.
+    const better = makeResult([1, 0, 1, 0, 1, 0, 1, 0], 0);
+    const worse = makeResult([0, 1, 0, 1, 0, 1, 0, 1], 0.4);
+    const cmp = comparePaired(better, worse, "ndcg10", 2000, seededRng(11));
+
+    assert.ok(cmp);
+    assert.equal(cmp.meanDelta, 0);
+    assert.equal(cmp.improved, 4);
+    assert.equal(cmp.regressed, 4);
+    assert.equal(cmp.withinNoise, true);
+  });
+
+  it("counts an exact tie as within noise", () => {
+    const a = makeResult([1, 0, 1, 0]);
+    const b = makeResult([1, 0, 1, 0]);
+    const cmp = comparePaired(a, b, "ndcg10", 100, seededRng(3));
+
+    assert.ok(cmp);
+    assert.equal(cmp.meanDelta, 0);
+    assert.equal(cmp.unchanged, 4);
+    assert.equal(cmp.withinNoise, true);
+  });
+});
+
+describe("measureSignalQuality", () => {
+  it("measures each signal on its own", async () => {
+    const signals = await measureSignalQuality({
+      labels: LABELS,
+      root: ROOT,
+      retrieveKeyword: async (label) => [result(label.files[0]!, "kw")],
+      retrieveVector: async (label) => [result(label.files[0]!, "vec")],
+      retrieveFused: async () => [result("src/other.ts", "fused")],
+    });
+
+    assert.equal(signals.keyword.hit1, 1);
+    assert.equal(signals.vector.hit1, 1);
+    assert.equal(signals.fused.hit1, 0);
+    assert.equal(signals.fused.misses, LABELS.length);
+  });
+});
+
+describe("signTestP", () => {
+  it("returns 1 when no label flipped", () => {
+    assert.equal(signTestP(0, 0), 1);
+  });
+
+  it("is 1 for a perfectly even split", () => {
+    assert.equal(signTestP(1, 1), 1);
+  });
+
+  it("is small for a lopsided split", () => {
+    assert.ok(signTestP(19, 0) < 0.01, "19-0 must be significant");
+  });
+
+  it("matches the known 15-vs-8 reading (p ~ 0.21 two-sided)", () => {
+    const p = signTestP(15, 8);
+    assert.ok(p > 0.19 && p < 0.22, `expected ~0.21, got ${p}`);
   });
 });

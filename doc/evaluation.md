@@ -123,10 +123,20 @@ opencode-rag eval:tune --metric hit5   # pick the winner by Hit@5 instead
 - `--write` updates `retrieval.hybridSearch.keywordWeight`,
   `retrieval.hybridSearch.symbolKeywordWeight`, `retrieval.minScore` and `retrieval.topK`
   in the config file; every other key is left untouched.
+- Reports **how strong the evidence is**: a paired bootstrap CI over the labels, the
+  win/loss/unchanged counts, and an exact two-sided sign test. A CI that includes 0 or a
+  sign test above 0.05 is reported as "within noise" / "weak evidence" — the tool will
+  not pretend that an argmax on 48 labels is a measurement.
+- Prints a **signal split** (BM25-only vs vector-only vs fused), because a fused ranking
+  is only interpretable next to the quality of the two halves it mixes.
 - Reference run (2026-10-20, this workspace, `jina-code-embeddings-0.5b`, 48 labels,
-  complete keyword index): the shipped `keywordWeight=0.4` scored Hit@1 39.6%, Hit@5
-  72.9%, MRR 0.556, nDCG@10 0.612; the winner `keywordWeight=0` scored Hit@1 52.1%,
-  Hit@5 81.3%, MRR 0.651, nDCG@10 0.691 — **+8.3 Hit@5 points**.
+  complete keyword index): the shipped `keywordWeight=0.4` scored Hit@1 37.5%, Hit@5
+  68.8%, MRR 0.507, nDCG@10 0.540; the winner `keywordWeight=0` scored Hit@1 52.1%,
+  Hit@5 81.3%, MRR 0.650, nDCG@10 0.690. The paired bootstrap gave
+  ΔnDCG@10 +0.149 (95% CI 0.038…0.267) but the sign test over the 19-vs-11 discordant
+  labels was **p ≈ 0.20** — the direction is consistent, the sample is too small to
+  change a shipped default. The signal split explains the direction: BM25-only Hit@1
+  20.8% vs vector-only 52.1%, so a 40% keyword weight mostly dilutes a strong signal.
 - Exit codes: `0` = the sweep ran, `2` = could not run.
 
 **Tune against a complete index.** The keyword half of the hybrid search only helps when

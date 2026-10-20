@@ -678,6 +678,20 @@ configuration that is currently running. `--write` persists `keywordWeight`,
 left untouched). Requires a live embedder and an indexed workspace; exits `2` when it
 cannot run.
 
+**The report states how strong the evidence is** — the argmax alone is not a result:
+
+| Line | Meaning |
+|---|---|
+| `paired bootstrap: Δndcg10 … (95% CI …)` | Paired bootstrap over the labels. A CI that includes 0 means the difference is within noise |
+| `N better / N worse / N equal` | How many labels actually flipped |
+| `sign test p=…` | Exact two-sided sign test over the discordant labels — the conservative reading (19 vs 11 is still p ≈ 0.20) |
+| `Weak evidence` / `Within noise` | Printed when the data does not support a change; **do not change the shipped default on it** |
+| `Signal split` | BM25-only vs vector-only vs fused quality, so a fused number can be interpreted instead of believed |
+
+The signal split is the reason a fusion weight can matter more than expected: the keyword
+half and the vector half are measured apart, and a fused ranking can only be as good as
+the mix of its parts.
+
 Example (2026-10-20, this workspace, `jina-code-embeddings-0.5b`, 48 labels): the shipped
 `keywordWeight=0.4` scored Hit@5 72.9% / MRR 0.556 / nDCG@10 0.612, while `keywordWeight=0`
 scored Hit@1 52.1% / Hit@5 81.3% / MRR 0.651 / nDCG@10 0.691 — **+8.3 Hit@5 points**. A

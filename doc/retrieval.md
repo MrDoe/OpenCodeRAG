@@ -83,9 +83,15 @@ opencode-rag eval:tune --write    # persist the winner into the config file
 ```
 
 Reference run (2026-10-20, this workspace, `jina-code-embeddings-0.5b`, 48 labels,
-complete keyword index): `kw=0.4` scored Hit@5 72.9% / MRR 0.556 / nDCG@10 0.612, while
-`kw=0` scored Hit@5 81.3% / MRR 0.651 / nDCG@10 0.691. Tune against a **complete**
-keyword index — a drifted index makes the measurement meaningless (see
+complete keyword index): `kw=0.4` scored Hit@5 68.8% / MRR 0.507 / nDCG@10 0.540, while
+`kw=0` scored Hit@5 81.3% / MRR 0.650 / nDCG@10 0.690. The direction is explained by the
+signal split the command prints: **BM25-only Hit@1 20.8% vs vector-only 52.1%** — a 40%
+keyword weight mostly dilutes a strong vector signal on this corpus. But the evidence is
+weak in the statistical sense (19 vs 11 discordant labels, sign test p ≈ 0.20), so the
+shipped default stays where it is until more labels exist.
+
+Tune against a **complete** keyword index — a drifted index makes the measurement
+meaningless (see
 [troubleshooting](troubleshooting.md#keyword-index-covers-only-part-of-the-corpus)).
 
 ### `retrieve()` API

@@ -88,6 +88,8 @@ export function registerEvalTuneCommand(program: Command): void {
         const {
           applyTuningToConfig,
           buildCandidateGrid,
+          comparePaired,
+          measureSignalQuality,
           runTuner,
           selectBestTuning,
           tuningDelta,
@@ -193,6 +195,68 @@ export function registerEvalTuneCommand(program: Command): void {
           );
         }
 
+        // The point estimate alone is not evidence on a small label set — show
+        // the confidence interval and refuse to recommend a change the data
+        // does not support.
+        const paired = comparePaired(best, current, metric);
+        if (paired) {
+          const sign = (v: number): string => (v >= 0 ? "+" : "");
+          console.log(
+            `  ${c.dim("paired bootstrap:")} Δ${paired.metric} ${sign(paired.meanDelta)}${paired.meanDelta.toFixed(3)} ` +
+            `(95% CI ${paired.ciLow.toFixed(3)} … ${paired.ciHigh.toFixed(3)}) · ` +
+            `${paired.improved} better / ${paired.regressed} worse / ${paired.unchanged} equal · ` +
+            `sign test p=${paired.signTestP.toFixed(2)}`,
+          );
+          if (paired.signTestP > 0.05) {
+            console.log(
+              `  ${c.warn("Weak evidence:")} the sign test over the discordant labels is not significant — ` +
+              "more labels are needed before changing the shipped default.",
+            );
+          }
+          if (paired.withinNoise) {
+            console.log(
+              `  ${c.warn("Within noise:")} the 95% CI includes 0 for ${labels.length} label(s) — ` +
+              "treat the winner as a hint, not a measurement. Add labels or check the signal split below.",
+            );
+          }
+        }
+
+        // Per-signal split: a fused number is only interpretable next to the
+        // quality of the two halves it mixes.
+        const signals = await measureSignalQuality({
+          labels,
+          root: cwd,
+          retrieveKeyword: async (label) =>
+            ctx!.keywordIndex.search(label.query, (base.topK ?? 20) * 3),
+          retrieveVector: async (label) =>
+            retrieve(label.query, ctx!.embedder, ctx!.store, {
+              topK: base.topK,
+              minScore: 0,
+              keywordIndex: undefined,
+              keywordWeight: 0,
+              queryPrefix: ctx!.config.embedding.queryPrefix,
+            }),
+          retrieveFused: async (label) =>
+            retrieve(label.query, ctx!.embedder, ctx!.store, {
+              topK: base.topK,
+              minScore: base.minScore,
+              keywordIndex: ctx!.keywordIndex,
+              keywordWeight: base.keywordWeight,
+              symbolKeywordWeight: base.symbolKeywordWeight,
+              docKeywordDemotion: hybrid?.docKeywordDemotion,
+              testKeywordDemotion: hybrid?.testKeywordDemotion,
+              hybridEnabled: hybrid?.enabled,
+              queryPrefix: ctx!.config.embedding.queryPrefix,
+            }),
+        });
+        console.log(`\n  ${c.heading("Signal split")} ${c.dim("(file level, current config, minScore=0 for the single signals)")}`);
+        const signalRow = (name: string, q: { hit1: number; hit5: number; hit10: number; misses: number }): string =>
+          `  ${name.padEnd(14)} Hit@1 ${(q.hit1 * 100).toFixed(1)}% · Hit@5 ${(q.hit5 * 100).toFixed(1)}% · ` +
+          `Hit@10 ${(q.hit10 * 100).toFixed(1)}% · ${q.misses} miss`;
+        console.log(signalRow("BM25 only", signals.keyword));
+        console.log(signalRow("vector only", signals.vector));
+        console.log(signalRow(`fused kw=${base.keywordWeight}`, signals.fused));
+
         let written = false;
         if (options.write) {
           if (!ctx.configPath) {
@@ -252,6 +316,25 @@ export function registerEvalTuneCommand(program: Command): void {
                 },
               },
               delta,
+              paired: paired
+                ? {
+                    metric: paired.metric,
+                    meanDelta: paired.meanDelta,
+                    ciLow: paired.ciLow,
+                    ciHigh: paired.ciHigh,
+                    pBetter: paired.pBetter,
+                    improved: paired.improved,
+                    regressed: paired.regressed,
+                    unchanged: paired.unchanged,
+                    withinNoise: paired.withinNoise,
+                    signTestP: paired.signTestP,
+                  }
+                : null,
+              signals: {
+                keyword: signals.keyword,
+                vector: signals.vector,
+                fused: signals.fused,
+              },
               written,
             }),
           );
