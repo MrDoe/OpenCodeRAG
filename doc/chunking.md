@@ -49,7 +49,7 @@ The extension → parser mapping below is the built-in default; remap it per wor
 | Format | Chunker | Extensions | Backend |
 |---|---|---|---|
 | PDF | `pdf.ts` | `.pdf` | `pdfjs-dist` + DOMMatrix polyfill |
-| DOCX | `docx.ts` | `.docx` | `mammoth` |
+| DOCX | `docx.ts` | `.docx` | `fflate` (unzip + `word/document.xml` parse) |
 | DOC | `doc.ts` | `.doc` | `word-extractor` |
 | Excel | `excel.ts` | `.xls`, `.xlsx` | `@e965/xlsx` |
 

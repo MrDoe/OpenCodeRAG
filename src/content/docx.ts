@@ -8,14 +8,14 @@ import type { ExtractResult } from "./types.js";
 export const DOCX_EXTENSIONS = new Set([".docx"]);
 
 /**
- * Extract text content from a DOCX buffer using mammoth.
+ * Extract text content from a DOCX buffer.
  * @param _filePath - Unused, retained for API consistency.
  * @param buffer - Raw DOCX file bytes.
  */
 export async function extract(_filePath: string, buffer: Buffer): Promise<ExtractResult> {
   try {
     const { extractDocxText } = await import("../chunker/docx.js");
-    const content = await extractDocxText(buffer);
+    const content = extractDocxText(buffer);
     return { content, ok: true };
   } catch (err) {
     return { content: "", ok: false, error: (err as Error).message };
