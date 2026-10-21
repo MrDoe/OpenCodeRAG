@@ -162,6 +162,8 @@
     "toolErrorCreateMinScore": 0.6,
     "toolErrorCreateLatencyBudgetMs": 2000,
     "toolErrorInjectCreated": false,
+    "interceptAllErrors": true,
+    "autoCreateOnInterceptedError": true,
     "decay": {
       "enabled": false,
       "halfLifeDays": 30

@@ -132,6 +132,40 @@ type V2ToolExecuteAfterEvent = {
 };
 
 /**
+ * Join the text parts of a tool result's `content`.
+ *
+ * V2 delivers a completed tool result as an array of content parts. The
+ * shell tool uses one part per output line plus a separate part for the
+ * `Exited with code N` marker, so every part matters.
+ */
+export function extractContentText(content: unknown): string | undefined {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return undefined;
+  const texts: string[] = [];
+  for (const part of content) {
+    if (part && typeof part === "object") {
+      const text = (part as { text?: unknown }).text;
+      if (typeof text === "string" && text.length > 0) texts.push(text);
+    }
+  }
+  return texts.length > 0 ? texts.join("\n") : undefined;
+}
+
+/**
+ * Extract the raw text from a tool result's structured `output`.
+ *
+ * The shell tool reports `{ exit, truncated, output, status }` — the `output`
+ * field is the command's real stdout+stderr. Returning the whole object
+ * would hand the failure detector a JSON blob in which the command's text is
+ * escaped, which defeats every text rule.
+ */
+export function extractStructuredOutput(output: unknown): string | undefined {
+  if (!output || typeof output !== "object") return undefined;
+  const text = (output as { output?: unknown }).output;
+  return typeof text === "string" && text.length > 0 ? text : undefined;
+}
+
+/**
  * Extract a human-readable error string from a V2 `execute.after` error event.
  * The exact error payload differs across OpenCode versions; probe the known
  * shapes and fall back to a JSON dump or a generic message.
@@ -435,14 +469,20 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
     const registration = await ctx.tool.hook("execute.after", async (event) => {
       try {
         const isError = event.status === "error";
-        const result = event.result as { output?: unknown; content?: string | unknown[] } | undefined;
+        const result = event.result as
+          | { output?: unknown; content?: string | unknown[]; metadata?: unknown }
+          | undefined;
+        // The COMPLETED branch carries its text as an ARRAY of content parts
+        // (measured live 2026-10-21: the shell tool returns one text part
+        // per line plus a separate `Exited with code N` part). Reading only
+        // `content` as a string fell through to `JSON.stringify(result.output)`
+        // — a JSON blob that does NOT contain the failure marker, so nothing
+        // downstream could see it. Join the text parts instead.
         const outputText = isError
           ? extractToolErrorText(event)
-          : typeof result?.content === "string"
-            ? result.content
-            : result?.output !== undefined
-              ? JSON.stringify(result.output)
-              : "";
+          : extractContentText(result?.content) ??
+            extractStructuredOutput(result?.output) ??
+            (result?.output !== undefined ? JSON.stringify(result.output) : "");
         await toolAfterHook(
           {
             sessionID: event.sessionID,
@@ -450,7 +490,14 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
             callID: event.id,
             status: isError ? "error" : "completed",
           } as never,
-          { output: outputText, error: isError ? outputText : undefined } as never,
+          {
+            output: outputText,
+            // The metadata carries the structured exit code
+            // (`{ status, truncated, exit }` for the shell tool) — the most
+            // reliable failure signal there is, and it is not text.
+            metadata: result?.metadata,
+            error: isError ? outputText : undefined,
+          } as never,
         );
       } catch {
         // Non-critical — must never throw

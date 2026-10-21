@@ -62,6 +62,12 @@ export interface ToolErrorQuirkHit {
   score: number;
   /** Raw vector similarity (0-1) — the value thresholds are compared against. */
   rawSimilarity: number;
+  /**
+   * The quirk's tags. Carried so the caller's duplicate check can be EXACT
+   * (`tool:<name>` + `cause:<class>`) without a second lookup — the content is
+   * embedded error text, not a reliable identity.
+   */
+  tags?: string[];
 }
 
 /** Tunables for the tool-error quirk path. */
@@ -264,6 +270,7 @@ export async function recallToolErrorQuirks(
       quirkType: hit.chunk.metadata?.quirkType,
       score: hit.score,
       rawSimilarity: hit.rawSimilarity ?? hit.score,
+      tags: hit.chunk.metadata?.tags,
     });
   }
 

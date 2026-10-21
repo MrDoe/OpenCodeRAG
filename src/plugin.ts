@@ -40,9 +40,15 @@ import { countTokens } from "./eval/token-counter.js";
 import { checkForUpdate, getCurrentVersion, installLatestUpdate, type UpdateInfo } from "./core/version-check.js";
 import { loadAutoUpdateState, saveAutoUpdateState, shouldAttemptInstall } from "./core/auto-update-state.js";
 import { destroyAllPooledConnections } from "./embedder/http.js";
-import { listQuirks, lintQuirks, recallQuirks, sharedWords, reconcileQuirks, addQuirk, listToolErrorQuirks, type QuirkStoreDeps } from "./quirks/quirk-store.js";
+import { listQuirks, lintQuirks, recallQuirks, reconcileQuirks, addQuirk, listToolErrorQuirks, type QuirkStoreDeps } from "./quirks/quirk-store.js";
 import type { Quirk } from "./quirks/types.js";
 import { autoCaptureQuirks, type CaptureExchange } from "./quirks/auto-capture.js";
+import {
+  detectOutputError,
+  detectSessionError,
+  extractExitCode,
+  type ErrorSource,
+} from "./quirks/error-signals.js";
 import {
   createToolErrorInjectionState,
   recallToolErrorQuirks,
@@ -65,6 +71,11 @@ import {
   type ToolErrorCreateState,
 } from "./quirks/tool-error-create.js";
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
+import {
+  describeAutoInjectSelection,
+  formatAutoInjectBlock,
+  selectAutoInjectQuirksWithinBudget,
+} from "./quirks/auto-inject.js";
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 
@@ -150,6 +161,23 @@ function boundedSet<V>(map: Map<string, V>, key: string, value: V, maxSize: numb
 }
 
 /** Get or create a Set for a session key in the given Map, bounded by maxSize. */
+/**
+ * Read an event's payload.
+ *
+ * V2 puts it in `data` and never sets `properties`; V1 used `properties`.
+ * Measured live 2026-10-21 across every event type of a full session:
+ * `hasData=true, hasProperties=false` for all of them.
+ */
+function eventPayload(event: unknown): Record<string, unknown> | undefined {
+  if (!event || typeof event !== "object") return undefined;
+  const record = event as Record<string, unknown>;
+  const data = record.data;
+  if (data && typeof data === "object") return data as Record<string, unknown>;
+  const properties = record.properties;
+  if (properties && typeof properties === "object") return properties as Record<string, unknown>;
+  return undefined;
+}
+
 function getOrCreateSessionSet(map: Map<string, Set<string>>, key: string, maxSize: number): Set<string> {
   let set = map.get(key);
   if (!set) {
@@ -1178,14 +1206,262 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     message: `Registered tools: ${toolNames}`,
   });
 
+  /**
+   * Handle an intercepted error: recall the quirks that cover it and inject
+   * the best match into the NEXT model request; create a quirk when nothing
+   * in memory covers the failure.
+   *
+   * `source` names the surface the failure came from: `host` (the host
+   * rejected the call), `output` (the call was reported as successful but its
+   * output reports a failure) and `session` (a model/provider error).
+   * `causeClassOverride` supplies a stable cause class when the generic
+   * classifier cannot derive one — the exact duplicate check needs it, and an
+   * output-derived failure (raw stderr) is too varied for the classifier
+   * alone.
+   */
+  const interceptError = async (
+    info: ToolErrorInfo,
+    source: ErrorSource,
+    causeClassOverride?: string,
+  ): Promise<void> => {
+    const memCfg = getEffectiveCfg().memory;
+    if (!memCfg?.enabled || !memCfg.injectOnToolError) return;
+    if (source !== "host" && !memCfg.interceptAllErrors) return;
+    // Every session-scoped map below is keyed by session, so a failure
+    // without one cannot be tracked.
+    const sessionID = info.sessionID;
+    if (!sessionID) return;
+      const state = sessionToolErrorState.get(sessionID) ?? createToolErrorInjectionState({
+        cooldownMs: memCfg.toolErrorCooldownMs ?? 60_000,
+        maxPerSession: memCfg.toolErrorMaxPerSession ?? 3,
+      });
+      boundedSet(sessionToolErrorState, sessionID, state, MAX_SESSION_MAP_SIZE);
+
+      const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+      // `explain: true` keeps the raw vector similarity on each result —
+      // the confidence-discounted `score` is not comparable to a
+      // similarity threshold, and the tiering below needs the raw value.
+      const recall = (query: string, recallOpts: { topK: number; minScore: number }) =>
+        recallQuirks(qDeps, query, { ...recallOpts, explain: true }).then((rs) =>
+          rs.map((r) => ({
+            chunk: {
+              id: r.chunk.id,
+              content: r.chunk.content,
+              metadata: { quirkType: r.chunk.metadata.quirkType, tags: r.chunk.metadata.tags },
+            },
+            score: r.score,
+            rawSimilarity: r.explanation?.scoreBreakdown?.rawVectorScore,
+          })),
+        );
+      const budgetMs = memCfg.toolErrorLatencyBudgetMs ?? 1500;
+      // One recall, two bars: the floor decides which quirks are
+      // candidates at all, the injection bar decides which are injected.
+      // A candidate between the two is a "probable match": it suppresses
+      // quirk creation but is only injected when no confident match
+      // exists.
+      const injectBar = memCfg.toolErrorMinScore ?? 0.7;
+      const floorBar = memCfg.toolErrorCreateMinScore ?? 0.6;
+      const topK = memCfg.toolErrorTopK ?? 2;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const recallResult = await Promise.race([
+        recallToolErrorQuirks(recall, info, state, {
+          minScore: floorBar,
+          injectMinScore: injectBar,
+          topK,
+          minTokenOverlap: memCfg.toolErrorMinTokenOverlap ?? 1,
+          // The injection budget limits CONTEXT, not memory: when it is
+          // spent we still need the candidate list to decide whether a
+          // quirk already covers this failure (and whether to create
+          // one). The cooldown still applies.
+          enforceBudget: state.hasBudget(),
+        }),
+        new Promise<undefined>((resolve) => {
+          timer = setTimeout(() => resolve(undefined), budgetMs);
+        }),
+      ]).catch(() => undefined);
+      if (timer) clearTimeout(timer);
+
+      if (recallResult && !recallResult.blocked) {
+        // Tier 1: confident matches (>= inject bar). Tier 2: probable
+        // matches (>= floor bar) — used only when tier 1 is empty.
+        const tier1 = recallResult.inject;
+        const tier2 = recallResult.candidates.filter(
+          (c) => c.rawSimilarity < injectBar && !state.injectedQuirkIds.has(c.id),
+        );
+        const hits = tier1.length > 0 ? tier1 : tier2.slice(0, topK);
+        state.record(info, hits.map((h) => h.id));
+
+        // No candidate at all → nothing in memory covers this failure.
+        // Record one so a future occurrence can be answered from memory.
+        // The duplicate check is EXACT (same tool + same cause class), not
+        // a loose similarity floor: a floor low enough to catch a genuine
+        // duplicate also catches unrelated quirks, which would suppress
+        // creation on every real failure.
+        let createdHit: ToolErrorQuirkHit | undefined;
+        let createdQuirk = false;
+        const causeClass = classifyToolErrorCause(info.error)?.cls ?? causeClassOverride;
+        // The duplicate check is EXACT: same tool + same cause class, read
+        // from the `tool:<name>` / `cause:<class>` tags. A merely similar
+        // quirk is still injected (it may genuinely help), but it must not
+        // block recording the lesson — a 0.7 floor sits inside the measured
+        // error-vs-noise band, so `candidates.length > 0` suppressed
+        // creation for failures nothing in memory covered.
+        const equivalent =
+          causeClass !== undefined &&
+          ((await hasEquivalentToolGotcha(await getToolErrorQuirks(qDeps), info.tool, causeClass)) ||
+            recallResult.candidates.some(
+              (c) =>
+                (c.tags ?? []).includes(`tool:${info.tool}`) &&
+                (c.tags ?? []).includes(`cause:${causeClass}`),
+            ));
+        if (
+      !equivalent &&
+      (source === "host" ? memCfg.autoCreateOnToolError : memCfg.autoCreateOnInterceptedError)
+    ) {
+          const createState = sessionToolErrorCreateState.get(sessionID) ?? createToolErrorCreateState({
+            maxPerSession: memCfg.toolErrorCreateMaxPerSession ?? 2,
+            cooldownMs: memCfg.toolErrorCreateCooldownMs ?? 600_000,
+          });
+          boundedSet(sessionToolErrorCreateState, sessionID, createState, MAX_SESSION_MAP_SIZE);
+
+          if (createState.shouldCreate(info)) {
+            const content = buildToolErrorQuirkContent(info);
+            const createBudgetMs = memCfg.toolErrorCreateLatencyBudgetMs ?? 2000;
+            let createTimer: ReturnType<typeof setTimeout> | undefined;
+            const created = await Promise.race([
+              createToolErrorQuirk({ add: (q) => addQuirk(qDeps, q) }, info, content),
+              new Promise<undefined>((resolve) => {
+                createTimer = setTimeout(() => resolve(undefined), createBudgetMs);
+              }),
+            ]).catch(() => undefined);
+            if (createTimer) clearTimeout(createTimer);
+
+            if (created?.created && created.id) {
+              createState.record(info, true);
+              createdQuirk = true;
+              // The proactive gotcha list changed — drop the cache so
+              // the next model request sees the new gotcha.
+              toolGotchaCache.delete(options.storePath);
+              appendDebugLog(options.logFilePath, {
+                scope: "quirk.tool-error",
+                message: `created quirk ${created.id} for tool "${info.tool}" (source=${source})`,
+              });
+              if (memCfg.toolErrorInjectCreated) {
+                createdHit = {
+                  id: created.id,
+                  content,
+                  quirkType: "gotcha",
+                  score: 1,
+                  rawSimilarity: 1,
+                };
+              }
+            } else {
+              // A trust-monitor rejection or a store failure — log it and
+              // carry on; the tool error must never break the session.
+              createState.record(info, false);
+              appendDebugLog(options.logFilePath, {
+                scope: "quirk.tool-error",
+                message: `quirk not created for tool "${info.tool}": ${created?.reason ?? "timeout"}`,
+              });
+            }
+          }
+        }
+
+        const finalHits = createdHit ? [...hits, createdHit] : hits;
+        if (finalHits.length > 0) {
+          boundedSet(
+            sessionPendingToolErrorQuirk,
+            sessionID,
+            {
+              block: formatToolErrorQuirkBlock(info, finalHits, {
+                heading: createdHit
+                  ? `⚠ **Tool error** \`${info.tool}\` — quirk memory (incl. newly recorded):`
+                  : undefined,
+              }),
+              ts: Date.now(),
+            },
+            MAX_SESSION_MAP_SIZE,
+          );
+        }
+        appendDebugLog(options.logFilePath, {
+          scope: "quirk.tool-error",
+          message: `tool error "${info.tool}": source=${source} candidates=${recallResult.candidates.length} injected=${finalHits.length} created=${createdQuirk ? "yes" : "no"}`,
+        });
+      } else if (recallResult) {
+        appendDebugLog(options.logFilePath, {
+          scope: "quirk.tool-error",
+          message: `tool error "${info.tool}": skipped (cooldown or budget)`,
+        });
+      } else {
+        appendDebugLog(options.logFilePath, {
+          scope: "quirk.tool-error",
+          message: `tool error "${info.tool}": skipped (recall timed out after ${budgetMs}ms)`,
+        });
+      }
+  };
+
   return {
     async event({ event }) {
       sessionLogger.onEvent(event as Parameters<typeof sessionLogger.onEvent>[0]);
 
+      // Session-level errors (a failed model call, a provider error) are
+      // reported on the event stream, not as tool errors, so the tool-error
+      // path never saw them. Intercept them here so the same
+      // recall -> inject path applies.
+      //
+      // The V2 event is `session.execution.failed` (measured live 2026-10-21:
+      // the vocabulary is `session.execution.{started,succeeded,failed}` and
+      // the payload is `{ sessionID, error }`); `session.error` is the legacy
+      // name and is never emitted by V2. V2 carries the payload in `data`,
+      // V1 in `properties` — V2 never sets `properties` at all.
+      try {
+        const evType = (event as Record<string, unknown>).type;
+        if (evType === "session.execution.failed" || evType === "session.error") {
+          const payload = eventPayload(event);
+          const sessionID = typeof payload?.sessionID === "string" ? payload.sessionID : undefined;
+          const detected = detectSessionError(payload?.error);
+          if (sessionID && detected) {
+            const info: ToolErrorInfo = { tool: "session", error: detected.text, sessionID };
+            await interceptError(info, "session", detected.causeClass);
+          }
+        }
+      } catch {
+        // Non-critical — must never throw
+      }
+
       // Accumulate the most recent assistant message's text via streaming deltas.
       // Used to build the 2-message retrieval query in chat.message.
+      //
+      // V2 renamed these events: `message.updated` / `message.part.updated`
+      // never fire (measured live 2026-10-21: zero occurrences across a full
+      // session), and the payload moved from `properties` to `data` — so the
+      // V1 branches below were DEAD on V2 and the assistant text was NEVER
+      // accumulated, leaving the auto-inject query with the user message
+      // only. The V2 equivalents are `session.text.started` and
+      // `session.text.delta`, both carrying `{ sessionID, assistantMessageID }`.
       try {
-        if (event.type === "message.updated") {
+        const evType = (event as Record<string, unknown>).type;
+        if (evType === "session.text.delta") {
+          const data = eventPayload(event);
+          const sessionID = data?.sessionID;
+          const messageID = data?.assistantMessageID;
+          const delta = data?.delta;
+          if (
+            typeof sessionID === "string" &&
+            typeof messageID === "string" &&
+            typeof delta === "string"
+          ) {
+            // A new assistant message id means a new message: start over.
+            // (One message can carry several text blocks; they share the id.)
+            if (sessionAssistantMessageId.get(sessionID) !== messageID) {
+              boundedSet(sessionAssistantMessageId, sessionID, messageID, MAX_SESSION_MAP_SIZE);
+              boundedSet(sessionAssistantText, sessionID, delta, MAX_SESSION_MAP_SIZE);
+            } else {
+              const existing = sessionAssistantText.get(sessionID) ?? "";
+              boundedSet(sessionAssistantText, sessionID, existing + delta, MAX_SESSION_MAP_SIZE);
+            }
+          }
+        } else if (event.type === "message.updated") {
           const info = (event as Record<string, unknown>).properties as
             | Record<string, unknown>
             | undefined;
@@ -1261,162 +1537,26 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         if (errorText && errorText.length > 0) {
           const info: ToolErrorInfo = { tool: input.tool, error: errorText, sessionID: input.sessionID };
           results.push(toToolErrorCaptureEntry(info));
-
+          await interceptError(info, "host");
+        } else if (input.status !== "error") {
+          // The host reported SUCCESS. The failure may still be in the output:
+          // a command that exits non-zero, a script that raises, a file that
+          // cannot be read. Those are the most common real failures in an
+          // agent session, and they used to be invisible — the host reports
+          // them as `status=completed`.
           const memCfg = getEffectiveCfg().memory;
-          if (memCfg?.enabled && memCfg.injectOnToolError) {
-            const state = sessionToolErrorState.get(input.sessionID) ?? createToolErrorInjectionState({
-              cooldownMs: memCfg.toolErrorCooldownMs ?? 60_000,
-              maxPerSession: memCfg.toolErrorMaxPerSession ?? 3,
+          if (memCfg?.enabled && memCfg.interceptAllErrors) {
+            const detected = detectOutputError(input.tool, output.output ?? "", {
+              exitCode: extractExitCode(output.metadata),
             });
-            boundedSet(sessionToolErrorState, input.sessionID, state, MAX_SESSION_MAP_SIZE);
-
-            const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
-            // `explain: true` keeps the raw vector similarity on each result —
-            // the confidence-discounted `score` is not comparable to a
-            // similarity threshold, and the tiering below needs the raw value.
-            const recall = (query: string, recallOpts: { topK: number; minScore: number }) =>
-              recallQuirks(qDeps, query, { ...recallOpts, explain: true }).then((rs) =>
-                rs.map((r) => ({
-                  chunk: {
-                    id: r.chunk.id,
-                    content: r.chunk.content,
-                    metadata: { quirkType: r.chunk.metadata.quirkType, tags: r.chunk.metadata.tags },
-                  },
-                  score: r.score,
-                  rawSimilarity: r.explanation?.scoreBreakdown?.rawVectorScore,
-                })),
-              );
-            const budgetMs = memCfg.toolErrorLatencyBudgetMs ?? 1500;
-            // One recall, two bars: the floor decides which quirks are
-            // candidates at all, the injection bar decides which are injected.
-            // A candidate between the two is a "probable match": it suppresses
-            // quirk creation but is only injected when no confident match
-            // exists.
-            const injectBar = memCfg.toolErrorMinScore ?? 0.7;
-            const floorBar = memCfg.toolErrorCreateMinScore ?? 0.6;
-            const topK = memCfg.toolErrorTopK ?? 2;
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            const recallResult = await Promise.race([
-              recallToolErrorQuirks(recall, info, state, {
-                minScore: floorBar,
-                injectMinScore: injectBar,
-                topK,
-                minTokenOverlap: memCfg.toolErrorMinTokenOverlap ?? 1,
-                // The injection budget limits CONTEXT, not memory: when it is
-                // spent we still need the candidate list to decide whether a
-                // quirk already covers this failure (and whether to create
-                // one). The cooldown still applies.
-                enforceBudget: state.hasBudget(),
-              }),
-              new Promise<undefined>((resolve) => {
-                timer = setTimeout(() => resolve(undefined), budgetMs);
-              }),
-            ]).catch(() => undefined);
-            if (timer) clearTimeout(timer);
-
-            if (recallResult && !recallResult.blocked) {
-              // Tier 1: confident matches (>= inject bar). Tier 2: probable
-              // matches (>= floor bar) — used only when tier 1 is empty.
-              const tier1 = recallResult.inject;
-              const tier2 = recallResult.candidates.filter(
-                (c) => c.rawSimilarity < injectBar && !state.injectedQuirkIds.has(c.id),
-              );
-              const hits = tier1.length > 0 ? tier1 : tier2.slice(0, topK);
-              state.record(info, hits.map((h) => h.id));
-
-              // No candidate at all → nothing in memory covers this failure.
-              // Record one so a future occurrence can be answered from memory.
-              // The duplicate check is EXACT (same tool + same cause class), not
-              // a loose similarity floor: a floor low enough to catch a genuine
-              // duplicate also catches unrelated quirks, which would suppress
-              // creation on every real failure.
-              let createdHit: ToolErrorQuirkHit | undefined;
-              let createdQuirk = false;
-              const causeClass = classifyToolErrorCause(info.error)?.cls;
-              const equivalent =
-                recallResult.candidates.length > 0 ||
-                (causeClass !== undefined &&
-                  hasEquivalentToolGotcha(await getToolErrorQuirks(qDeps), info.tool, causeClass));
-              if (!equivalent && memCfg.autoCreateOnToolError) {
-                const createState = sessionToolErrorCreateState.get(input.sessionID) ?? createToolErrorCreateState({
-                  maxPerSession: memCfg.toolErrorCreateMaxPerSession ?? 2,
-                  cooldownMs: memCfg.toolErrorCreateCooldownMs ?? 600_000,
-                });
-                boundedSet(sessionToolErrorCreateState, input.sessionID, createState, MAX_SESSION_MAP_SIZE);
-
-                if (createState.shouldCreate(info)) {
-                  const content = buildToolErrorQuirkContent(info);
-                  const createBudgetMs = memCfg.toolErrorCreateLatencyBudgetMs ?? 2000;
-                  let createTimer: ReturnType<typeof setTimeout> | undefined;
-                  const created = await Promise.race([
-                    createToolErrorQuirk({ add: (q) => addQuirk(qDeps, q) }, info, content),
-                    new Promise<undefined>((resolve) => {
-                      createTimer = setTimeout(() => resolve(undefined), createBudgetMs);
-                    }),
-                  ]).catch(() => undefined);
-                  if (createTimer) clearTimeout(createTimer);
-
-                  if (created?.created && created.id) {
-                    createState.record(info, true);
-                    createdQuirk = true;
-                    // The proactive gotcha list changed — drop the cache so
-                    // the next model request sees the new gotcha.
-                    toolGotchaCache.delete(options.storePath);
-                    appendDebugLog(options.logFilePath, {
-                      scope: "quirk.tool-error",
-                      message: `created quirk ${created.id} for tool "${input.tool}"`,
-                    });
-                    if (memCfg.toolErrorInjectCreated) {
-                      createdHit = {
-                        id: created.id,
-                        content,
-                        quirkType: "gotcha",
-                        score: 1,
-                        rawSimilarity: 1,
-                      };
-                    }
-                  } else {
-                    // A trust-monitor rejection or a store failure — log it and
-                    // carry on; the tool error must never break the session.
-                    createState.record(info, false);
-                    appendDebugLog(options.logFilePath, {
-                      scope: "quirk.tool-error",
-                      message: `quirk not created for tool "${input.tool}": ${created?.reason ?? "timeout"}`,
-                    });
-                  }
-                }
-              }
-
-              const finalHits = createdHit ? [...hits, createdHit] : hits;
-              if (finalHits.length > 0) {
-                boundedSet(
-                  sessionPendingToolErrorQuirk,
-                  input.sessionID,
-                  {
-                    block: formatToolErrorQuirkBlock(info, finalHits, {
-                      heading: createdHit
-                        ? `⚠ **Tool error** \`${info.tool}\` — quirk memory (incl. newly recorded):`
-                        : undefined,
-                    }),
-                    ts: Date.now(),
-                  },
-                  MAX_SESSION_MAP_SIZE,
-                );
-              }
+            if (detected) {
               appendDebugLog(options.logFilePath, {
                 scope: "quirk.tool-error",
-                message: `tool error "${input.tool}": candidates=${recallResult.candidates.length} injected=${finalHits.length} created=${createdQuirk ? "yes" : "no"}`,
+                message: `tool "${input.tool}" status=completed but its output reports a failure (${detected.causeClass ?? "unknown"})`,
               });
-            } else if (recallResult) {
-              appendDebugLog(options.logFilePath, {
-                scope: "quirk.tool-error",
-                message: `tool error "${input.tool}": skipped (cooldown or budget)`,
-              });
-            } else {
-              appendDebugLog(options.logFilePath, {
-                scope: "quirk.tool-error",
-                message: `tool error "${input.tool}": skipped (recall timed out after ${budgetMs}ms)`,
-              });
+              const info: ToolErrorInfo = { tool: input.tool, error: detected.text, sessionID: input.sessionID };
+              results.push(toToolErrorCaptureEntry(info));
+              await interceptError(info, "output", detected.causeClass);
             }
           }
         }
@@ -1523,54 +1663,46 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         output.system.unshift(wikiMode.systemPrompt);
       }
 
-      // Inject relevant quirks into system prompt when memory.autoInject is enabled
       try {
-        const sessionId = (input as { sessionID?: string })?.sessionID;
-        if (sessionId) {
+        // Inject relevant quirks into the system prompt (memory.autoInject).
+        // The selector is shared with the chat.message path — one gate, one
+        // ranking, one log line — so the two surfaces cannot drift apart again.
+        const quirkSessionId = (input as { sessionID?: string })?.sessionID;
+        if (quirkSessionId) {
           const memCfg = getEffectiveCfg().memory;
           if (memCfg?.enabled && memCfg?.autoInject) {
-            const assistantText = sessionAssistantText.get(sessionId) ?? "";
-            const userReq = sessionPrevUserReq.get(sessionId) ?? "";
+            const assistantText = sessionAssistantText.get(quirkSessionId) ?? "";
+            const userReq = sessionPrevUserReq.get(quirkSessionId) ?? "";
             const query = [assistantText, userReq].filter((t) => t.length > 0).join("\n");
             if (query.length > 0) {
               const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
-              const budgetMs = memCfg.autoInjectLatencyBudgetMs ?? 2000;
-              let timer: ReturnType<typeof setTimeout> | undefined;
-              let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, query, {
-                  topK: memCfg.autoInjectTopK ?? 1,
-                  minScore: memCfg.autoInjectMinScore ?? 0.75,
-                  // Auto-created tool-error quirks are raw error dumps — they
-                  // are surfaced by the tool-error path, not on unrelated turns.
-                  excludeTags: [TOOL_ERROR_QUIRK_TAG],
-                })
-                  .then((r) => {
-                    if (timer) clearTimeout(timer);
-                    return r;
+              const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, quirkSessionId, MAX_SESSION_MAP_SIZE);
+              const selection = await selectAutoInjectQuirksWithinBudget(
+                (q, o) => recallQuirks(quirkDeps, q, { ...o, excludeTags: [TOOL_ERROR_QUIRK_TAG] }),
+                {
+                  query,
+                  userText: userReq,
+                  options: {
+                    topK: memCfg.autoInjectTopK ?? 1,
+                    minTokenOverlap: memCfg.autoInjectMinTokenOverlap ?? 2,
+                    minScore: memCfg.autoInjectMinScore ?? 0.75,
+                    injectedIds: injectedSet,
+                  },
+                },
+                memCfg.autoInjectLatencyBudgetMs ?? 2000,
+              );
+              appendDebugLog(options.logFilePath, {
+                scope: "quirk.auto-inject",
+                message: `system: ${describeAutoInjectSelection(selection)} req="${userReq.slice(0, 120)}"`,
+              });
+              if (selection.hits.length > 0) {
+                for (const hit of selection.hits) injectedSet.add(hit.id);
+                output.system.unshift(
+                  formatAutoInjectBlock(selection.hits, {
+                    heading: "⚠ **Relevant quirks for this task:**",
+                    separator: false,
                   }),
-                new Promise<any>((resolve) => {
-                  timer = setTimeout(() => resolve([]), budgetMs);
-                }),
-              ]);
-              // Dedup: skip quirks already injected into this session
-              const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, sessionId, MAX_SESSION_MAP_SIZE);
-              quirkResults = quirkResults.filter((qr: any) => !injectedSet.has(qr.chunk.id));
-              // Lexical gate: drop quirks that match only the prior assistant text (no token
-              // overlap with the user's actual request) — prevents meta-quirks (quirks about
-              // quirks) from being injected into unrelated tasks. Disabled when autoInjectMinTokenOverlap=0.
-                const minTokenOverlap = memCfg.autoInjectMinTokenOverlap ?? 2;
-                if (minTokenOverlap > 0 && userReq.length > 0) {
-                quirkResults = quirkResults.filter((qr: any) => sharedWords(qr.chunk.content, userReq) >= minTokenOverlap);
-              }
-              if (quirkResults.length > 0) {
-                const lines: string[] = ["", "⚠ **Relevant quirks for this task:**", ""];
-                for (const qr of quirkResults) {
-                  const m = qr.chunk.metadata;
-                  const badge = m.quirkType ? `[${m.quirkType}] ` : "";
-                  lines.push(`- ${badge}${qr.chunk.content}`);
-                  injectedSet.add(qr.chunk.id);
-                }
-                output.system.unshift(lines.join("\n"));
+                );
               }
             }
           }
@@ -1920,48 +2052,28 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             const quirkQuery = [assistantText, text].filter((t) => t.length > 0).join("\n");
             if (quirkQuery.length > 0) {
               const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
-              const budgetMs = quirkMemoryCfg.autoInjectLatencyBudgetMs ?? 2000;
-              // Both auto-inject paths (system prompt transform and this user-message
-              // injection) use the same high autoInjectMinScore bar — injected quirks
-              // occupy context every turn, so only strongly relevant ones qualify.
-              // Manual recall_quirks calls use the lower recallMinScore.
-              const minScore = quirkMemoryCfg.autoInjectMinScore ?? 0.75;
-              let timer: ReturnType<typeof setTimeout> | undefined;
-              let quirkResults = await Promise.race([
-                recallQuirks(quirkDeps, quirkQuery, {
-                  topK: quirkMemoryCfg.autoInjectTopK ?? 1,
-                  minScore,
-                  // Auto-created tool-error quirks are raw error dumps — they
-                  // are surfaced by the tool-error path, not on unrelated turns.
-                  excludeTags: [TOOL_ERROR_QUIRK_TAG],
-                })
-                  .then((r) => {
-                    if (timer) clearTimeout(timer);
-                    return r;
-                  }),
-                new Promise<any>((resolve) => {
-                  timer = setTimeout(() => resolve([]), budgetMs);
-                }),
-              ]);
-              // Dedup: skip quirks already injected into this session
               const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, input.sessionID, MAX_SESSION_MAP_SIZE);
-              quirkResults = quirkResults.filter((qr: any) => !injectedSet.has(qr.chunk.id));
-              // Lexical gate: drop quirks that match only the prior assistant text (no token
-              // overlap with the user's current message) — prevents meta-quirks (quirks about
-              // quirks) from being injected into unrelated tasks. Disabled when autoInjectMinTokenOverlap=0.
-              const minTokenOverlap = quirkMemoryCfg.autoInjectMinTokenOverlap ?? 2;
-              if (minTokenOverlap > 0 && text.length > 0) {
-                quirkResults = quirkResults.filter((qr: any) => sharedWords(qr.chunk.content, text) >= minTokenOverlap);
-              }
-              if (quirkResults.length > 0) {
-                const quirkLines: string[] = ["", "---", "⚠ **Quirk memory**", ""];
-                for (const qr of quirkResults) {
-                  const m = qr.chunk.metadata;
-                  const badge = m.quirkType ? `[\`${m.quirkType}\`] ` : "";
-                  quirkLines.push(`- ${badge}${qr.chunk.content}`);
-                  injectedSet.add(qr.chunk.id);
-                }
-                const quirkBlock = quirkLines.join("\n");
+              const selection = await selectAutoInjectQuirksWithinBudget(
+                (q, o) => recallQuirks(quirkDeps, q, { ...o, excludeTags: [TOOL_ERROR_QUIRK_TAG] }),
+                {
+                  query: quirkQuery,
+                  userText: text,
+                  options: {
+                    topK: quirkMemoryCfg.autoInjectTopK ?? 1,
+                    minTokenOverlap: quirkMemoryCfg.autoInjectMinTokenOverlap ?? 2,
+                    minScore: quirkMemoryCfg.autoInjectMinScore ?? 0.75,
+                    injectedIds: injectedSet,
+                  },
+                },
+                quirkMemoryCfg.autoInjectLatencyBudgetMs ?? 2000,
+              );
+              appendDebugLog(options.logFilePath, {
+                scope: "quirk.auto-inject",
+                message: `chat.message: ${describeAutoInjectSelection(selection)} text="${text.slice(0, 120)}"`,
+              });
+              if (selection.hits.length > 0) {
+                for (const hit of selection.hits) injectedSet.add(hit.id);
+                const quirkBlock = formatAutoInjectBlock(selection.hits);
                 const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
                 if (Array.isArray(parts) && parts.length > 0) {
                   const first = parts[0] as Record<string, unknown>;

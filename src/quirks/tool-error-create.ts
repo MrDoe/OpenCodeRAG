@@ -97,6 +97,31 @@ const ERROR_CAUSES: { cls: string; pattern: RegExp; cause: string }[] = [
     pattern: /timed? ?out|timeout|etimedout/i,
     cause: "the operation timed out",
   },
+  // The classes below cover failures detected in a tool's OUTPUT rather than
+  // reported by the host (see src/quirks/error-signals.ts). They are appended
+  // so the pre-existing precedence above is unchanged - a `ENOENT` in a
+  // command's output stays `path`, which is more actionable than "the
+  // command exited non-zero".
+  {
+    cls: "runtime",
+    pattern: /traceback \(most recent call last\)|^(?:type|reference|syntax|range|uri)error:/im,
+    cause: "the program raised an unhandled exception",
+  },
+  {
+    cls: "tooling",
+    pattern: /npm err!|eresolve|peer dep/i,
+    cause: "the package manager rejected the operation",
+  },
+  {
+    cls: "crash",
+    pattern: /segmentation fault|core dumped|panic:/i,
+    cause: "the process crashed",
+  },
+  {
+    cls: "exit-code",
+    pattern: /exited with code|command failed/i,
+    cause: "the command exited with a non-zero status",
+  },
 ];
 
 /**

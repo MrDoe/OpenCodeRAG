@@ -336,6 +336,22 @@ export interface MemoryConfig {
   toolErrorProactiveInject: boolean;
   /** Max tool gotchas injected into the system prompt per request (default 5). */
   toolErrorProactiveMaxItems: number;
+  /**
+   * Intercept failures the host does NOT report as tool errors (default true).
+   * A command that exits non-zero, a script that raises, a file that cannot be
+   * read, a failed model call — the host reports all of them as SUCCESS, so
+   * without this the quirk path never saw them. Detection is
+   * high-precision on purpose: a false positive costs a recall, a possible
+   * quirk write, and an injected block in the next model request.
+   */
+  interceptAllErrors: boolean;
+  /**
+   * Allow a failure detected this way to CREATE a quirk (default true). The
+   * exact duplicate check (same tool + same cause class) keeps it bounded to
+   * one quirk per failure kind, so a command that fails differently each time
+   * still yields a single entry.
+   */
+  autoCreateOnInterceptedError: boolean;
   /** Decay settings for aging quirks. */
   decay: {
     /** Whether confidence decays over time. */
@@ -1004,6 +1020,8 @@ export const DEFAULT_CONFIG: RagConfig = {
     toolErrorCreateLatencyBudgetMs: 2000,
     toolErrorInjectCreated: false,
     toolErrorProactiveInject: true,
+    interceptAllErrors: true,
+    autoCreateOnInterceptedError: true,
     toolErrorProactiveMaxItems: 5,
     decay: {
       enabled: false,

@@ -837,6 +837,63 @@ describe("ragPlugin", () => {
     }
   });
 
+  it("assembles assistant text from the V2 session.text.delta events", async () => {
+    // V2 renamed the streaming events and moved the payload from
+    // `properties` to `data` (measured live 2026-10-21). The V1 branches
+    // never fire on V2, so the assistant text was never accumulated and the
+    // auto-inject query fell back to the user message only.
+    const tmpDir = mkdtempSync(path.join(tmpdir(), "opencode-rag-test-"));
+    try {
+      const results = [
+        makeResult("c1", "/p/src/auth.ts", 10, 25, "typescript", "export function login() {}", 0.95),
+      ];
+      const { dependencies, getSeen } = makeDependencies(results, 1);
+      const hooks = createRagHooks({
+        cfg: makeConfig({
+          openCode: { enabled: true, maxContextChunks: 5 },
+          retrieval: { topK: 7, minScore: 0 },
+        }),
+        storePath: tmpDir,
+        logFilePath: path.join(tmpDir, "opencode-rag.log"),
+        store: { ...populatedStore, search: async () => results, count: async () => 1 },
+        dependencies,
+        worktree: testWorktree,
+      });
+
+      const eventHook = hooks.event;
+      assert.ok(eventHook);
+
+      const delta = (messageID: string, text: string) =>
+        eventHook({
+          event: { type: "session.text.delta", data: { sessionID: "session-v2", assistantMessageID: messageID, delta: text } },
+        } as never);
+
+      await delta("assist-v2", "Look at ");
+      await delta("assist-v2", "the ");
+      await delta("assist-v2", "config file.");
+      // A new assistant message resets the accumulation.
+      await delta("assist-v2b", "The answer ");
+      await delta("assist-v2b", "is 42.");
+
+      writeFileSync(path.join(tmpDir, ".pending-injection"), "files", "utf-8");
+
+      const chatMessageHook = hooks["chat.message"];
+      assert.ok(chatMessageHook);
+      const output = {
+        message: { id: "msg-1", role: "user", sessionID: "session-v2", parts: [{ type: "text", text: "what is the meaning" }] },
+        parts: [{ type: "text", text: "what is the meaning", id: "prt-1", messageID: "msg-1", sessionID: "session-v2" }],
+      };
+      await chatMessageHook({ sessionID: "session-v2" } as never, output as never);
+
+      const seen = getSeen();
+      assert.match(seen.query, /The answer is 42\./, "the V2 assistant text must reach the query");
+      assert.match(seen.query, /what is the meaning/);
+      assert.doesNotMatch(seen.query, /Look at/, "a new assistant message resets the accumulation");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("creates a quirk when a failed tool call has no matching memory", async () => {
     const store = new InMemoryVectorStore();
     const keywordIndex = new KeywordIndex();
@@ -954,6 +1011,124 @@ describe("ragPlugin", () => {
     assert.match(quirks[0]!.content, /Unknown tool/);
     assert.match(quirks[1]!.content, /no such file/);
     assert.match(quirks[2]!.content, /permission denied/);
+  });
+
+  it("auto-injects the quirk matching the user's message and logs the decision", async () => {
+    const store = new InMemoryVectorStore();
+    const keywordIndex = new KeywordIndex();
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+    const storePath = "memory://autoinject-1";
+    const logFile = path.join(tmpdir(), `opencode-rag-autoinject-${process.pid}.log`);
+    const cfg = makeConfig({
+      memory: {
+        ...DEFAULT_CONFIG.memory,
+        enabled: true,
+        autoInject: true,
+        autoInjectMinTokenOverlap: 2,
+        injectOnToolError: false,
+      },
+    });
+    const { dependencies } = makeDependencies([], 0);
+    const hooks = createRagHooks({
+      cfg,
+      storePath,
+      logFilePath: logFile,
+      store,
+      embedder,
+      keywordIndex,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    const qDeps = { embedder, store, keywordIndex, cfg, storePath };
+    const quirk = await addQuirk(qDeps, {
+      content: "npm install needs --legacy-peer-deps because the LanceDB peer range conflicts",
+      quirkType: "gotcha",
+    });
+
+    const chat = hooks["chat.message"];
+    assert.ok(chat);
+    const makeOutput = (sessionID: string, text: string) => ({
+      message: { id: "m1", role: "user", sessionID, parts: [{ type: "text", text }] },
+      parts: [{ type: "text", text, id: "p1", messageID: "m1", sessionID }],
+    });
+
+    const output = makeOutput("session-auto", "npm install fails with legacy peer deps");
+    await chat({ sessionID: "session-auto" } as never, output as never);
+
+    const text = (output.parts[0] as Record<string, unknown>).text as string;
+    assert.match(text, /Quirk memory/, "the matching quirk must be appended to the user message");
+    assert.match(text, /legacy-peer-deps/);
+    const log = readFileSync(logFile, "utf-8");
+    assert.match(log, new RegExp(`quirk\\.auto-inject.*${quirk.id}`), "the decision must be logged with the quirk id");
+
+    // Same session, same message: already injected — no second block.
+    const output2 = makeOutput("session-auto", "npm install fails with legacy peer deps");
+    await chat({ sessionID: "session-auto" } as never, output2 as never);
+    const text2 = (output2.parts[0] as Record<string, unknown>).text as string;
+    assert.doesNotMatch(text2, /Quirk memory/, "a quirk is injected at most once per session");
+  });
+
+  it("does not let a merely similar, untagged quirk suppress tool-error creation", async () => {
+    const store = new InMemoryVectorStore();
+    const keywordIndex = new KeywordIndex();
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+    const storePath = "memory://toolerr-exact-1";
+    const cfg = makeConfig({
+      memory: {
+        ...DEFAULT_CONFIG.memory,
+        enabled: true,
+        autoInject: false,
+        injectOnToolError: true,
+        autoCreateOnToolError: true,
+        toolErrorCreateCooldownMs: 0,
+      },
+    });
+    const { dependencies } = makeDependencies([], 0);
+    const hooks = createRagHooks({
+      cfg,
+      storePath,
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store,
+      embedder,
+      keywordIndex,
+      dependencies,
+      worktree: testWorktree,
+    });
+
+    const qDeps = { embedder, store, keywordIndex, cfg, storePath };
+    await addQuirk(qDeps, {
+      content: 'Tool `edit` failed: Invalid arguments for tool "edit": path: Missing key',
+      quirkType: "gotcha",
+    });
+
+    const after = hooks["tool.execute.after"];
+    assert.ok(after);
+    await after(
+      { tool: "edit", sessionID: "session-exact", callID: "call-1", status: "error" } as never,
+      {
+        title: "edit",
+        output: "",
+        metadata: {},
+        error: 'Invalid arguments for tool "edit":\n- oldString: Missing key\n- newString: Missing key',
+      } as never,
+    );
+
+    const quirks = (await store.getChunks(0, 50)).filter(
+      (c) => c.kind === "quirk" && c.tags.includes("tool-error"),
+    );
+    assert.equal(
+      quirks.length,
+      1,
+      "the untagged quirk is a different lesson; the failure must still be recorded",
+    );
+    assert.match(quirks[0]!.content, /oldString/);
   });
 
   it("injects known tool gotchas into the system prompt before the model picks a tool", async () => {
