@@ -297,6 +297,61 @@ export interface MemoryConfig {
   toolErrorMaxPerSession: number;
   /** Latency budget (ms) for tool-error quirk recall; exceeded -> no injection (default 1500). */
   toolErrorLatencyBudgetMs: number;
+  /**
+   * Automatically create and persist a quirk when a failed tool call has no
+   * matching quirk memory (default true). The new quirk is a deterministic
+   * template built from the tool name and the error text — no LLM involved.
+   * It is recorded for FUTURE sessions; it is not injected into the turn that
+   * produced the failure (see `toolErrorInjectCreated`).
+   */
+  autoCreateOnToolError: boolean;
+  /** Max tool-error quirks CREATED per session (default 2). */
+  toolErrorCreateMaxPerSession: number;
+  /** Cooldown per normalized tool-error signature for creation in ms (default 600000 = 10 min). */
+  toolErrorCreateCooldownMs: number;
+  /**
+   * Minimum raw similarity (0-1) for an existing quirk to count as "an
+   * equivalent quirk already exists" and therefore suppress creation
+   * (default 0.7). Deliberately EQUAL to `toolErrorMinScore`: measured on a
+   * real workspace, an error query scores 0.55-0.63 against arbitrary stored
+   * quirks, so a lower floor sits inside the noise band and matches unrelated
+   * quirks — which suppressed creation on every real failure. The exact
+   * duplicate check (same tool + same cause class) is done by metadata.
+   */
+  toolErrorCreateMinScore: number;
+  /** Latency budget (ms) for the tool-error creation path (embed + store write); default 2000. */
+  toolErrorCreateLatencyBudgetMs: number;
+  /**
+   * Inject a freshly created tool-error quirk into the turn that produced the
+   * failure (default false). The agent already saw the raw error, so the
+   * created quirk carries no new information for that turn.
+   */
+  toolErrorInjectCreated: boolean;
+  /**
+   * Surface known tool gotchas in the system prompt BEFORE the model picks a
+   * tool (default true). A failure that already happened in an earlier
+   * session is injected as a "known tool gotcha", so the model does not repeat
+   * it. Only gotchas whose tool is in the session's tool catalog are injected.
+   */
+  toolErrorProactiveInject: boolean;
+  /** Max tool gotchas injected into the system prompt per request (default 5). */
+  toolErrorProactiveMaxItems: number;
+  /**
+   * Intercept failures the host does NOT report as tool errors (default true).
+   * A command that exits non-zero, a script that raises, a file that cannot be
+   * read, a failed model call — the host reports all of them as SUCCESS, so
+   * without this the quirk path never saw them. Detection is
+   * high-precision on purpose: a false positive costs a recall, a possible
+   * quirk write, and an injected block in the next model request.
+   */
+  interceptAllErrors: boolean;
+  /**
+   * Allow a failure detected this way to CREATE a quirk (default true). The
+   * exact duplicate check (same tool + same cause class) keeps it bounded to
+   * one quirk per failure kind, so a command that fails differently each time
+   * still yields a single entry.
+   */
+  autoCreateOnInterceptedError: boolean;
   /** Decay settings for aging quirks. */
   decay: {
     /** Whether confidence decays over time. */
@@ -522,6 +577,18 @@ export interface RagConfig {
     topK: number;
     /** Minimum relevance score threshold (0-1). */
     minScore: number;
+    /**
+     * How `minScore` reads the score (default `"fused"`).
+     *
+     * The fused hybrid score's scale depends on `hybridSearch.keywordWeight`:
+     * a vector-only hit can never exceed `1 - kw`, so at `kw = 0.4` a fixed
+     * `minScore` of 0.65 silently demands a DUAL hit (13.5 of 20 results
+     * survive vs 17.7 at `kw = 0`). `"normalized"` divides the score by the
+     * maximum that result could reach, so the threshold keeps its meaning at
+     * every keyword weight. `"fused"` keeps today's behaviour — the default
+     * does not change silently; a default flip needs a bigger golden set.
+     */
+    minScoreMode?: "fused" | "normalized";
     /** Hybrid search (vector + keyword) configuration. */
     hybridSearch?: {
       /** Whether hybrid search is enabled. */
@@ -750,6 +817,7 @@ export const DEFAULT_CONFIG: RagConfig = {
   retrieval: {
     topK: 20,
     minScore: 0.35,
+    minScoreMode: "fused",
     hybridSearch: {
       enabled: true,
       keywordWeight: 0.4,
@@ -945,6 +1013,16 @@ export const DEFAULT_CONFIG: RagConfig = {
     toolErrorCooldownMs: 60_000,
     toolErrorMaxPerSession: 3,
     toolErrorLatencyBudgetMs: 1500,
+    autoCreateOnToolError: true,
+    toolErrorCreateMaxPerSession: 2,
+    toolErrorCreateCooldownMs: 600_000,
+    toolErrorCreateMinScore: 0.7,
+    toolErrorCreateLatencyBudgetMs: 2000,
+    toolErrorInjectCreated: false,
+    toolErrorProactiveInject: true,
+    interceptAllErrors: true,
+    autoCreateOnInterceptedError: true,
+    toolErrorProactiveMaxItems: 5,
     decay: {
       enabled: false,
       halfLifeDays: 30,
@@ -1108,6 +1186,25 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   }
   if (config.memory?.toolErrorLatencyBudgetMs != null && config.memory.toolErrorLatencyBudgetMs < 0) {
     warnings.push("memory.toolErrorLatencyBudgetMs must be >= 0");
+  }
+  if (config.memory?.toolErrorCreateMinScore != null) {
+    const r = config.memory.toolErrorCreateMinScore;
+    if (r < 0 || r > 1) warnings.push("memory.toolErrorCreateMinScore must be between 0 and 1");
+  }
+  if (config.memory?.toolErrorCreateMaxPerSession != null && config.memory.toolErrorCreateMaxPerSession < 0) {
+    warnings.push("memory.toolErrorCreateMaxPerSession must be >= 0");
+  }
+  if (config.memory?.toolErrorCreateCooldownMs != null && config.memory.toolErrorCreateCooldownMs < 0) {
+    warnings.push("memory.toolErrorCreateCooldownMs must be >= 0");
+  }
+  if (config.memory?.toolErrorCreateLatencyBudgetMs != null && config.memory.toolErrorCreateLatencyBudgetMs < 0) {
+    warnings.push("memory.toolErrorCreateLatencyBudgetMs must be >= 0");
+  }
+  if (config.memory?.toolErrorProactiveMaxItems != null && config.memory.toolErrorProactiveMaxItems < 0) {
+    warnings.push("memory.toolErrorProactiveMaxItems must be >= 0");
+  }
+  if (config.retrieval?.minScoreMode != null && !["fused", "normalized"].includes(config.retrieval.minScoreMode)) {
+    warnings.push(`retrieval.minScoreMode "${config.retrieval.minScoreMode}" — expected "fused" or "normalized"`);
   }
   if (config.memory?.decay && config.memory.decay.halfLifeDays <= 0) {
     warnings.push("memory.decay.halfLifeDays must be > 0");

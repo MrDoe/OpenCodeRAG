@@ -70,6 +70,81 @@ This produces scores on a [0, 1] scale. A result at rank 0 in both signals score
 
 RRF **rewards results that rank highly in both signals** over results that rank well in only one. When only one signal contributes, the ranking matches the raw vector order (normalization preserves monotonicity). Low-scoring chunks that don't meet `minScore` are filtered out.
 
+### Score Scale and the `minScore` Gate
+
+The fused score's **scale depends on `kw`**. A result's maximum is set by which
+signals it hit:
+
+| result hit by | maximum score |
+|---|---|
+| vector **and** keyword (rank 0 in both) | `(1 − kw) + kw` = **1.0** — the same at every `kw` |
+| vector only (rank 0) | `1 − kw` — **0.6** at `kw = 0.4` |
+| keyword only (rank 0) | `kw` — **0.4** at `kw = 0.4` |
+
+So a *fixed* `minScore` means different things at different `kw`. With
+`minScore = 0.65` and `kw = 0.4`, a vector-only hit can never clear the gate —
+the gate silently demands a **dual** hit. Measured on the 48-label golden set
+(2026-10-20, one retrieve per label, perfectly paired): at `kw = 0.4` only
+**13.5 of 20** results survive the gate, against **17.7** at `kw = 0`. At
+`kw = 0` the defect does not bite — the vector leg alone can reach 1.0.
+
+`retrieval.minScoreMode` selects how the gate reads the score:
+
+- **`"fused"`** (default) — the gate compares against the raw fused score.
+  Today's behaviour, unchanged. A threshold that changes meaning when an
+  unrelated knob moves is a contract wart, but flipping the default is a
+  behaviour change for every user, and 48 labels cannot settle it.
+- **`"normalized"`** — the score is divided by the maximum that result could
+  reach given the signals it hit, so it is **scale-free**: the same threshold
+  admits the same results at any `kw`. A vector-only hit is worth 1.0 at
+  `kw = 0.4` and at `kw = 0`. `explanation.scoreBreakdown.maxReachableScore`
+  reports the divisor.
+
+The quality delta is **not established** — paired normalized − fused is
+ΔnDCG@10 +0.035 with a 95% CI of −0.074…0.150, 15 better / 18 worse / 15
+equal (sign test p = 0.73, leaning slightly negative). The +6.3 Hit@5 headline
+is about three labels. So the argument for the mode is the **contract**, not the
+metric, and the default stays `"fused"` until a bigger golden set exists.
+
+Two consequences of opting in:
+
+- **More context passes the gate.** At `kw = 0.4`, 20.0 results survive instead
+  of 12.6 — roughly **60% more** injected context for the same query. Budget
+  for it (see `openCode.maxContextChunks` and the context-optimization caps).
+- **The reported score scale changes.** A score in normalized mode is relative
+  to the maximum that result could reach, so anything that displays scores
+  (plugin output, CLI `query`, the web UI) shows different numbers.
+  `explanation.scoreBreakdown.maxReachableScore` discloses the divisor.
+
+> Measured on an immutable snapshot of the store (the watcher rewrites the
+> keyword index between runs, which alone moves the numbers). The pre-change
+> build produces **byte-identical** results to the shipped default on the same
+> snapshot, so the default did not move.
+
+### Calibrating `kw`
+
+`kw = 0.4` is a *default*, not an optimum. The best value depends on the embedder, the
+corpus and the query mix: a code embedder already ranks identifiers well through the
+vector half, so the keyword fusion only dilutes it, while a general embedder may lean on
+the keyword half. Measure it with the golden set:
+
+```bash
+opencode-rag eval:tune            # sweep the weights and report the winner
+opencode-rag eval:tune --write    # persist the winner into the config file
+```
+
+Reference run (2026-10-20, this workspace, `jina-code-embeddings-0.5b`, 48 labels,
+complete keyword index): `kw=0.4` scored Hit@5 68.8% / MRR 0.507 / nDCG@10 0.540, while
+`kw=0` scored Hit@5 81.3% / MRR 0.650 / nDCG@10 0.690. The direction is explained by the
+signal split the command prints: **BM25-only Hit@1 20.8% vs vector-only 52.1%** — a 40%
+keyword weight mostly dilutes a strong vector signal on this corpus. But the evidence is
+weak in the statistical sense (19 vs 11 discordant labels, sign test p ≈ 0.20), so the
+shipped default stays where it is until more labels exist.
+
+Tune against a **complete** keyword index — a drifted index makes the measurement
+meaningless (see
+[troubleshooting](troubleshooting.md#keyword-index-covers-only-part-of-the-corpus)).
+
 ### `retrieve()` API
 
 ```typescript
@@ -87,6 +162,7 @@ Options:
 |---|---|---|
 | `topK` | `10` | Max results |
 | `minScore` | `0` | Minimum relevance threshold |
+| `minScoreMode` | `"fused"` | How `minScore` reads the score — [`"fused"` (default) or `"normalized"`](#score-scale-and-the-minscore-gate) |
 | `keywordIndex` | — | Keyword index instance |
 | `keywordWeight` | `0.4` | Hybrid fusion weight |
 | `queryPrefix` | — | Prefix applied to query before embedding |
@@ -217,11 +293,26 @@ See [Configuration: `retrieval.contextOptimization`](configuration.md#retrieval)
 
 Set `retrieval.contextOptimization.enabled: false` in `opencode-rag.json` to return raw `retrieve()` results unchanged.
 
+## Query Construction Today
+
+The pipeline does **not** rewrite the user's query — it *constructs* it from the
+call context. Three deterministic builders exist, all rule-based (no LLM, no
+tokens):
+
+| Builder | Where | What it does |
+|---|---|---|
+| `buildRetrievalQuery` | `src/plugin.ts` | Appends `Path hints: …` / `Language hints: …` to the raw query — a **soft** bias on the embedding, not a filter |
+| `buildReadQuery` | `src/opencode/read-query.ts` | Prefixes the intent, then appends `File: …` and a `Focus on chunks overlapping lines X-Y.` instruction |
+| `buildSessionQuery` | `src/opencode/create-read-tool.ts` | Uses the current user message as the query and appends the file/line focus |
+
+`retrieve()` then applies `queryPrefix`, embeds once, and runs the vector and
+keyword legs in parallel.
+
 ## Future Improvements
 
 | Feature | Status | Description |
 |---|---|---|
-| LLM-based re-ranking | Planned | Cross-encoder after vector search for precision |
-| Query rewriting | Planned | Multi-variant query expansion |
-| Retrieval explainability | Planned | Debug surfaces for why chunks were returned |
+| LLM-based re-ranking | **Shipped** (v2.3.0, opt-in) | Cross-encoder after vector search for precision — `reranking.*` |
+| Retrieval explainability | **Shipped** | `explain: true` on `search_semantic` / `retrieve()` — score breakdown, per-signal ranks, matched terms, query shape |
+| Query rewriting | Planned | Multi-variant query expansion — see the [roadmap](roadmap.md#-short-term--token--cost-efficiency) |
 | Cross-file graph | Planned | Dependency-aware search via import/call graphs |

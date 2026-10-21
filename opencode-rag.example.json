@@ -48,6 +48,7 @@
   "retrieval": {
     "topK": 20,
     "minScore": 0.35,
+    "minScoreMode": "fused",
     "hybridSearch": {
       "enabled": true,
       "keywordWeight": 0.4
@@ -155,6 +156,14 @@
     "toolErrorCooldownMs": 60000,
     "toolErrorMaxPerSession": 3,
     "toolErrorLatencyBudgetMs": 1500,
+    "autoCreateOnToolError": true,
+    "toolErrorCreateMaxPerSession": 2,
+    "toolErrorCreateCooldownMs": 600000,
+    "toolErrorCreateMinScore": 0.6,
+    "toolErrorCreateLatencyBudgetMs": 2000,
+    "toolErrorInjectCreated": false,
+    "interceptAllErrors": true,
+    "autoCreateOnInterceptedError": true,
     "decay": {
       "enabled": false,
       "halfLifeDays": 30

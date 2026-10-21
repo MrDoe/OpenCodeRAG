@@ -21,6 +21,7 @@ import { embedBatch, probeEmbeddingDimension } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { swapStoreDirectories } from "../vectorstore/lancedb.js";
 import { reconcileQuirks, QUIRK_FILE_PREFIX } from "../quirks/quirk-store.js";
+import { rehydrateKeywordIndex } from "./keyword-rehydration.js";
 import { createIndexStats, type IndexRunStats, type IndexStatusSummary } from "./stats.js";
 import { prepareFile, buildTextsToEmbed, type WorkerResult, type PreparedFile } from "./worker.js";
 import { tagChunksRole } from "../core/chunk-role.js";
@@ -382,6 +383,32 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
   let filterPaths: string[] | undefined;
   let gitDeletedPaths: string[] = [];
+
+  // ── Keyword-index rehydration ──────────────────────────────────────────
+  // The keyword index (BM25 half of hybrid search) and the vector store are
+  // two independent stores of the same corpus, and nothing keeps them in sync
+  // by construction: an incremental pass only re-adds the files it reprocessed,
+  // so a once-partial index stays partial forever and the missing files are
+  // unreachable through keyword search. Rebuild the missing entries from the
+  // store's own rows — no re-embedding needed.
+  //
+  // Skipped during a rebuild: the rebuild re-indexes every file from source,
+  // so the keyword index is repopulated from scratch anyway.
+  if (options.keywordIndex && !rebuildPerformed) {
+    try {
+      await rehydrateKeywordIndex({
+        store: effectiveStore,
+        keywordIndex: options.keywordIndex,
+        logger: {
+          info: (message) => logger.info(message),
+          warn: (message) => logger.warn(message),
+          debug: (message) => logger.debug(message),
+        },
+      });
+    } catch (err) {
+      logger.warn(`Keyword rehydration failed: ${(err as Error).message}`);
+    }
+  }
 
   if (!options.force && manifestStatus === "ok" && manifest.lastGitCommit) {
     const repoRoot = getRepoRoot(options.cwd);

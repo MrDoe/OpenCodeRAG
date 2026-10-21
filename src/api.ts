@@ -5,7 +5,7 @@
 
 import { resolveRagContext } from "./core/bootstrap.js";
 import { retrieve } from "./retriever/retriever.js";
-import type { RetrieveOptions } from "./retriever/retriever.js";
+import type { RetrieveOptions, MinScoreMode } from "./retriever/retriever.js";
 import { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "./retriever/context-optimizer.js";
 import { runIndexPass, type IndexRunStats } from "./indexer.js";
 import { scanWorkspaceFiles, type WorkspaceFile } from "./content/reader.js";
@@ -22,6 +22,13 @@ export interface SearchOptions {
   topK?: number;
   /** Minimum relevance score threshold (0-1). */
   minScore?: number;
+  /**
+   * How the `minScore` gate reads the score: `"fused"` (default, today's
+   * behaviour) or `"normalized"` (scale-free — the score is divided by the
+   * maximum that result could reach, so the threshold keeps its meaning at
+   * every keyword weight).
+   */
+  minScoreMode?: MinScoreMode;
   /** Weight for hybrid keyword search (0-1). */
   keywordWeight?: number;
   /** Filter results to files matching these path patterns. */
@@ -96,6 +103,7 @@ export async function search(
     const rawResults = await retrieve(query, ctx.embedder, ctx.store, {
       topK,
       minScore: options.minScore ?? ctx.config.retrieval.minScore,
+      minScoreMode: options.minScoreMode ?? ctx.config.retrieval.minScoreMode,
       keywordIndex: ctx.keywordIndex,
       keywordWeight: options.keywordWeight ?? ctx.config.retrieval.hybridSearch?.keywordWeight ?? 0.4,
       symbolKeywordWeight: ctx.config.retrieval.hybridSearch?.symbolKeywordWeight,

@@ -161,6 +161,12 @@ export interface SearchExplanation {
     vectorRank?: number;
     /** Rank (0-indexed) in the keyword index results. */
     keywordRank?: number;
+    /**
+     * The highest score a result with these legs could reach (rank 0 in
+     * each). Set only in `minScoreMode: "normalized"`, where the reported
+     * score is the fused score divided by this value.
+     */
+    maxReachableScore?: number;
     /** Cross-encoder relevance from the optional rerank stage. Higher means more
      *  relevant. NOT a calibrated probability (provider-dependent, llama-server
      *  semantics) and NOT comparable to the RRF-normalized fused components.
@@ -264,6 +270,14 @@ export interface KeywordIndex {
   count(): number;
   /** Whether a chunk with the given id is indexed. Used by quirk reconcile. */
   hasChunk(id: string): boolean;
+  /**
+   * Normalized file paths that currently have at least one indexed chunk.
+   *
+   * Used to detect a keyword index that drifted behind the vector store: an
+   * incremental index pass only re-adds the files it reprocessed, so a
+   * once-partial index stays partial unless it is compared against the store.
+   */
+  getIndexedFilePaths(): string[];
   /** Persist the index to disk as JSON. */
   save(filePath?: string): Promise<void>;
 }

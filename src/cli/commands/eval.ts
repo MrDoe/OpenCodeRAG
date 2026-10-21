@@ -288,6 +288,7 @@ export function registerEvalGateCommand(program: Command): void {
         const retrieveOptions = {
           topK,
           minScore: ctx.config.retrieval.minScore,
+          minScoreMode: ctx.config.retrieval.minScoreMode,
           keywordIndex: ctx.keywordIndex,
           keywordWeight: hybrid?.keywordWeight,
           symbolKeywordWeight: hybrid?.symbolKeywordWeight,

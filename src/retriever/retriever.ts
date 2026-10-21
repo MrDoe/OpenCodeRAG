@@ -11,10 +11,49 @@ const RRF_K = 60;
 /** Multiply raw RRF scores by (K+1) to normalize to ~[0,1]. */
 const RRF_NORMALIZE = RRF_K + 1;
 
+/**
+ * How the `minScore` gate reads the score.
+ *
+ * - `"fused"` — compare against the raw fused RRF score. Its scale depends on
+ *   `keywordWeight`, so the same threshold means different things at
+ *   different weights.
+ * - `"normalized"` — compare against the score divided by the maximum that
+ *   result could reach. Scale-free: the threshold keeps its meaning when
+ *   `keywordWeight` changes.
+ */
+export type MinScoreMode = "fused" | "normalized";
+
+/**
+ * The highest score a result with the given legs could reach (rank 0 in each).
+ *
+ * A dual hit reaches `(1 - kw) + kw` of the maximum — the same at every
+ * `keywordWeight`. A vector-only hit reaches `(1 - kw)` of it, a keyword-only
+ * hit `kw` of it. Dividing by this value is what makes the score scale-free.
+ */
+function maxReachableScore(hasVector: boolean, hasKeyword: boolean, keywordWeight: number): number {
+  const vector = hasVector ? ((1 - keywordWeight) * RRF_NORMALIZE) / (RRF_K + 1) : 0;
+  const keyword = hasKeyword ? (keywordWeight * RRF_NORMALIZE) / (RRF_K + 1) : 0;
+  return vector + keyword;
+}
+
 /** Options controlling the retrieval behavior. */
 export interface RetrieveOptions {
   topK?: number;
   minScore?: number;
+  /**
+   * How the `minScore` gate reads the score.
+   *
+   * - `"fused"` (default): the gate compares against the raw fused RRF score.
+   *   That score's scale DEPENDS on `keywordWeight` — a vector-only hit can
+   *   never exceed `(1 - kw)`, so at `kw = 0.4` the fused score maxes out at
+   *   0.6 and a fixed `minScore` of 0.65 silently demands a DUAL hit.
+   * - `"normalized"`: the fused score is divided by the maximum that result
+   *   could reach given the legs it has (a dual hit reaches the same maximum
+   *   at every `keywordWeight`, a vector-only hit reaches `(1 - kw)` times
+   *   that). The score becomes scale-free, so `minScore` means the same
+   *   thing at every `keywordWeight`.
+   */
+  minScoreMode?: MinScoreMode;
   keywordIndex?: KeywordIndex;
   keywordWeight?: number;
   /** Keyword weight for symbol-style queries (a bare identifier like `cosineSimilarity`).
@@ -193,6 +232,7 @@ export async function retrieve(
   try {
     const topK = options.topK ?? 10;
     const minScore = options.minScore ?? 0;
+    const minScoreMode = options.minScoreMode ?? "fused";
     const queryShape = detectQueryShape(query);
 
     const baseKw = options.keywordWeight ?? 0.4;
@@ -257,7 +297,13 @@ export async function retrieve(
       const kMultiplier = kR !== undefined ? keywordDemotion(chunk, docDemotion, testDemotion) : 1;
       const vContrib = vR !== undefined ? ((1 - kw) * RRF_NORMALIZE) / (RRF_K + vR + 1) : 0;
       const kContrib = kR !== undefined ? (kw * RRF_NORMALIZE) / (RRF_K + kR + 1) * kMultiplier : 0;
-      const score = vContrib + kContrib;
+      const fusedScore = vContrib + kContrib;
+      // In "normalized" mode the score is divided by the maximum this result
+      // could reach, so the `minScore` gate keeps its meaning no matter what
+      // `keywordWeight` is set to.
+      const maxReachable = maxReachableScore(vR !== undefined, kR !== undefined, kw);
+      const score =
+        minScoreMode === "normalized" && maxReachable > 0 ? fusedScore / maxReachable : fusedScore;
       const result: SearchResult = { chunk, score };
       if (options.explain) {
         result.explanation = {
@@ -269,6 +315,7 @@ export async function retrieve(
             keywordWeight: kw,
             vectorRank: vR,
             keywordRank: kR,
+            ...(minScoreMode === "normalized" ? { maxReachableScore: maxReachable } : {}),
           },
           queryShape,
         };

@@ -123,6 +123,7 @@ function makeKeywordIndex(results: SearchResult[]): KeywordIndex {
     clear: () => {},
     count: () => results.length,
     hasChunk: () => false,
+    getIndexedFilePaths: () => [],
     save: async () => {},
     close: () => {},
     getMatchedTerms: (_query: string, _chunkId: string) => [],

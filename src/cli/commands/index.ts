@@ -15,6 +15,7 @@ export { registerMcpCommand } from "./mcp.js";
 export { registerSetupCommand } from "./setup.js";
 export { registerUpdateCommand } from "./update.js";
 export { registerEvalSessionsCommand, registerEvalAnalyzeCommand, registerEvalCompareCommand, registerEvalGateCommand, registerEvalDecideCommand } from "./eval.js";
+export { registerEvalTuneCommand } from "./eval-tuner.js";
 export { registerDescribeImageCommand } from "./describe-image.js";
 export { registerDecideCommand } from "./decide.js";
 export { registerQuirkCommand } from "./quirk.js";

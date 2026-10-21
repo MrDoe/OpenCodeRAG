@@ -125,6 +125,7 @@ Controls how queries are matched against the index.
   "retrieval": {
     "topK": 10,
     "minScore": 0.35,
+    "minScoreMode": "fused",
     "hybridSearch": {
       "enabled": true,
       "keywordWeight": 0.4
@@ -144,6 +145,7 @@ Controls how queries are matched against the index.
 |---|---|---|
 | `topK` | `10` | Default number of chunks fetched per query |
 | `minScore` | `0.35` | Minimum relevance score (0–1) |
+| `minScoreMode` | `"fused"` | How `minScore` reads the score: `"fused"` (today's behaviour) or `"normalized"` (scale-free). The fused RRF score's scale depends on `hybridSearch.keywordWeight` — a vector-only hit can never exceed `1 - kw`, so at `kw = 0.4` a fixed `minScore` of 0.65 silently demands a *dual* hit (13.5 of 20 results survive vs 17.7 at `kw = 0`). `"normalized"` divides the score by the maximum that result could reach, so the threshold keeps its meaning at every keyword weight. The default does **not** change silently — flipping it needs a bigger golden set. **Opting in costs context**: at `kw = 0.4` about 20 results pass the gate instead of 12.6 (~60% more injected context), and the reported score scale changes (it becomes relative to the maximum that result could reach). See [Retrieval: Score Scale](retrieval.md#score-scale-and-the-minscore-gate). |
 | `hybridSearch.enabled` | `true` | Enable combined TF×IDF + vector search |
 | `hybridSearch.keywordWeight` | `0.4` | Keyword weight in RRF fusion: `vContrib = (1-kw)×(K+1)/(K+vRank+1)` |
 | `contextOptimization.enabled` | `true` | Enable post-retrieval optimization pipeline |
@@ -450,6 +452,21 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
     "autoInjectTopK": 1,
     "autoInjectMinTokenOverlap": 2,
     "autoInjectLatencyBudgetMs": 2000,
+    "injectOnToolError": true,
+    "toolErrorMinScore": 0.7,
+    "toolErrorTopK": 2,
+    "toolErrorMinTokenOverlap": 1,
+    "toolErrorCooldownMs": 60000,
+    "toolErrorMaxPerSession": 3,
+    "toolErrorLatencyBudgetMs": 1500,
+    "autoCreateOnToolError": true,
+    "toolErrorCreateMaxPerSession": 2,
+    "toolErrorCreateCooldownMs": 600000,
+    "toolErrorCreateMinScore": 0.7,
+    "toolErrorCreateLatencyBudgetMs": 2000,
+    "toolErrorInjectCreated": false,
+    "toolErrorProactiveInject": true,
+    "toolErrorProactiveMaxItems": 5,
     "decay": {
       "enabled": false,
       "halfLifeDays": 30
@@ -475,8 +492,25 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 | `sessionEndExtraction` | `true` | Summarize the full session transcript into quirks on session end (via event hook). Requires `description.enabled`. |
 | `autoCaptureMaxPerTurn` | `2` | Maximum number of quirks to auto-capture per turn or session-end pass. |
 | `autoCaptureDedupThreshold` | `0.85` | Lexical similarity threshold (0–1) above which a candidate quirk is considered a duplicate of an existing quirk and skipped. |
+| `injectOnToolError` | `true` | After a **failed** tool call, recall quirks that match the failure and inject them into the next model request. The failure is also appended to the auto-capture pipeline, so recurring errors can become quirks. |
+| `toolErrorMinScore` | `0.7` | Minimum raw vector similarity (0–1) for a quirk to be **injected** after a tool error. This is the "confident match" bar. |
+| `toolErrorTopK` | `2` | Maximum number of quirks injected per tool error. |
+| `toolErrorMinTokenOverlap` | `1` | Minimum shared word tokens (≥3 chars) between a quirk and the error text. `0` disables the lexical gate. |
+| `toolErrorCooldownMs` | `60000` | Cooldown per normalized tool-error signature. The same failure only triggers a recall once per window. |
+| `toolErrorMaxPerSession` | `3` | Maximum number of tool-error quirk injections per session. |
+| `toolErrorLatencyBudgetMs` | `1500` | Latency budget (ms) for the tool-error recall. If the embedder is slower, no quirk is injected for that failure. |
+| `autoCreateOnToolError` | `true` | **Create** a quirk when a failed tool call has no matching memory. The new quirk is a deterministic template built from the tool name and the error text — no LLM involved, so it works even with `description.enabled: false`. It is recorded for *future* sessions; it is not injected into the turn that produced the failure (see `toolErrorInjectCreated`). |
+| `toolErrorCreateMaxPerSession` | `2` | Maximum number of tool-error quirks **created** per session. Bounds how much a failing session can write to memory. |
+| `toolErrorCreateCooldownMs` | `600000` | Cooldown per normalized tool-error signature for creation (10 min). |
+| `toolErrorCreateMinScore` | `0.7` | Minimum raw vector similarity (0–1) for an existing quirk to count as "an equivalent quirk already exists" and therefore **suppress** creation. Deliberately EQUAL to `toolErrorMinScore`: measured on a real workspace, an error query scores 0.55–0.63 against *arbitrary* stored quirks, so a lower floor sits inside the noise band and matches unrelated quirks — which suppressed creation on every real failure. The exact duplicate check (same tool + same cause class) is done by metadata, not by similarity. |
+| `toolErrorCreateLatencyBudgetMs` | `2000` | Latency budget (ms) for the creation path (embed + store write). If exceeded, the quirk is still written in the background but not confirmed within the budget. |
+| `toolErrorInjectCreated` | `false` | Also inject a freshly created tool-error quirk into the turn that produced the failure. Off by default: the agent already saw the raw error, so the created quirk carries no new information for that turn. |
+| `toolErrorProactiveInject` | `true` | Surface known tool gotchas in the **system prompt, before the model picks a tool** — so a failure that already happened in an earlier session is not repeated. Only gotchas whose tool is in the session's tool catalog are injected, and only for *durable* cause classes (unknown tool, schema mismatch, permissions, path). A transient failure (rate limit, timeout) is never warned about in advance — the next call would not fail the same way. |
+| `toolErrorProactiveMaxItems` | `5` | Maximum number of tool gotchas injected into the system prompt per request. |
+| `interceptAllErrors` | `true` | Intercept failures the host does **not** report as tool errors. A command that exits non-zero, a script that raises, a file that cannot be read, a failed model call — OpenCode reports all of them as `status=completed`, so without this the quirk path never saw them. Detection is high-precision on purpose: only real failure markers qualify (OpenCode's own `Exited with code N`, Node errno codes, Python tracebacks, `npm ERR!`, uncaught JS exceptions, process crashes). A generic `Error:` anywhere or a localized "not found" is deliberately **not** matched — a false positive costs a recall, a possible quirk write, and an injected block in the next model request. |
+| `autoCreateOnInterceptedError` | `true` | Allow a failure detected that way to **create** a quirk. The exact duplicate check (same tool + same cause class) keeps it bounded to one quirk per failure kind, so a command that fails differently each time still yields a single entry. Set to `false` to keep the interception recall-only. |
 
-Quirks can also be managed from the CLI — see [CLI Reference: `quirk`](cli.md#quirk). Every `addQuirk` call is vetted by an immutable trust monitor (`src/quirks/monitor.ts`) that rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Auto-captured quirks pass through the same trust boundary before storage.
+Quirks can also be managed from the CLI — see [CLI Reference: `quirk`](cli.md#quirk). Every `addQuirk` call is vetted by an immutable trust monitor (`src/quirks/monitor.ts`) that rejects content matching blocked destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Auto-captured quirks pass through the same trust boundary before storage. Auto-created tool-error quirks are no exception: an error text that contains a blocked pattern (e.g. a shell error echoing `rm -rf …`) is **not** stored — the rejection is logged to the plugin log and the session continues.
 
 ### `mcp`
 

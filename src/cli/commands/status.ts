@@ -11,6 +11,7 @@ import os from "node:os";
 import fs from "node:fs";
 import { c, resolveCliContext, logCliError, logCliInfo, formatTimestamp, formatRelativeAge } from "../format.js";
 import { getIndexStatusSummary } from "../../indexer.js";
+import { findKeywordIndexGaps } from "../../indexer/keyword-rehydration.js";
 import { deriveWatcherHealth, type WatcherStatus } from "../../watcher.js";
 import { getPackageMetadata } from "../helpers.js";
 import { checkForUpdate } from "../../core/version-check.js";
@@ -165,6 +166,28 @@ export function registerStatusCommand(program: Command): void {
           ? keywordIndex?.count() ?? 0
           : 0;
         logCliInfo(logFilePath, "status", `${c.label("Keyword index:")}     ${config.retrieval.hybridSearch?.enabled ? c.enabled("enabled") : c.disabled("disabled")} (${c.num(kiCount)} chunks)`);
+        // The keyword index and the vector store are two independent stores of
+        // the same corpus. A file the store holds but the keyword index does
+        // not cover is unreachable through keyword search — report the gap
+        // instead of printing two unrelated chunk counts.
+        if (config.retrieval.hybridSearch?.enabled && keywordIndex) {
+          const gaps = await findKeywordIndexGaps(store, keywordIndex);
+          if (gaps.length > 0) {
+            logCliInfo(
+              logFilePath,
+              "status",
+              `${c.label("Keyword coverage:")} ${c.warn(`${gaps.length} file(s) in the store are missing from the keyword index`)} ${c.dim("(run 'opencode-rag index' to rehydrate — no re-embedding needed)")}`,
+            );
+            for (const gap of gaps.slice(0, 5)) {
+              logCliInfo(logFilePath, "status", `  ${c.file(path.relative(cwd, gap) || gap)}`);
+            }
+            if (gaps.length > 5) {
+              logCliInfo(logFilePath, "status", `  ${c.dim(`… and ${gaps.length - 5} more`)}`);
+            }
+          } else {
+            logCliInfo(logFilePath, "status", `${c.label("Keyword coverage:")} ${c.success("complete")} ${c.dim("(every indexed file is searchable by keyword)")}`);
+          }
+        }
         if (summary.rebuildRequired) {
           logCliInfo(logFilePath, "status", `${c.label("Rebuild required:")}  ${c.warn("yes")} (manifest missing/corrupt)`);
         }

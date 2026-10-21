@@ -47,19 +47,20 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 | **Configurable parsers** | Remap file extensions to any parser via `chunking.parsers` (e.g. `.c` → `cpp`, or index a new `.cu` as C++) — applied to chunking, `get_file_skeleton`, and read labels ([docs](doc/chunking.md#parser-overrides-per-extension-chunkingparsers)) |
 | **Document support** | Markdown, LaTeX, PDF, DOCX, DOC, Excel |
 | **Image indexing** | Describe images via vision LLM and store descriptions as searchable vector chunks |
-| **Hybrid search** | Vector similarity + TF×IDF keyword fusion |
+| **Hybrid search** | Vector similarity + TF×IDF keyword fusion — the keyword index is repaired from the store whenever it drifts behind it, so the BM25 half never covers only part of the corpus |
+| **Retrieval calibration** | `opencode-rag eval:tune` sweeps the fusion weights against the labelled golden set and reports (or writes) the best configuration for your embedder and corpus |
 | **Decision model** | Local [tev1](https://ollama.com/library/tev1) classification — `make_decision` labels, routes, and scores short text with probabilities (40–150 ms warm); optional pre-ask routing so the agent asks fewer questions |
 | **OpenCode plugin** | Auto-inject context, read-tool override, TUI settings, Ctrl+Enter to add RAG context, MCP registration on `init` |
 | **Incremental indexing** | File-hash manifest, background watcher, auto-rebuild on corruption |
 | **Privacy-first** | All processing stays local (when using Ollama) |
-| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `decide`, `ui`, `mcp`, `setup`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare`, `eval:gate`, `eval:decide` |
+| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `decide`, `ui`, `mcp`, `setup`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare`, `eval:gate`, `eval:decide`, `eval:tune` |
 | **Proxy-aware** | Corporate proxy support with raw-socket localhost bypass |
 | **OpenAI / Anthropic / Cohere** | Use alternate embedding providers with API key auto-resolution |
 | **Evaluation** | Session-level token tracking, RAG-on vs RAG-off comparison, tiktoken BPE counting |
 | **Documentation mode** | `/doc` slash command: agent adds JSDoc/TSDoc to undocumented files, progress tracked per subdirectory |
 | **Wiki mode** | `/wiki` slash command: agent maintains a persistent knowledge wiki at `.opencode/wiki/` (ingest, query, lint, seed) |
 | **Context optimization** | Post-retrieval dedup, per-file chunk limits, adjacent-merge to fit the context window |
-| **Quirk memory** | Persistent experiential memory — agents recall/persist gotchas, preferences, decisions across sessions (`add_quirk` / `recall_quirks`, `opencode-rag quirk`) |
+| **Quirk memory** | Persistent experiential memory — agents recall/persist gotchas, preferences, decisions across sessions (`add_quirk` / `recall_quirks`, `opencode-rag quirk`); failed tool calls are auto-recorded as quirks |
 | **AGENTS.md directive** | `opencode-rag init` merges a tool-usage directive into `AGENTS.md` via sentinel markers |
 
 ## Web UI
@@ -210,6 +211,9 @@ OpenCodeRAG gives your agent **persistent, cross-session memory** of non-obvious
     "autoInjectMinScore": 0.75,
     "autoInjectTopK": 1,
     "autoInjectLatencyBudgetMs": 2000,
+    "injectOnToolError": true,
+    "autoCreateOnToolError": true,
+    "toolErrorCreateMaxPerSession": 2,
     "decay": { "enabled": false, "halfLifeDays": 30 }
   }
 }
@@ -239,6 +243,10 @@ opencode-rag quirk test "npm needs --legacy-peer-deps"
 ```
 
 When `memory.autoInject` is `true`, the plugin checks for relevant quirks on every user message using the combined agent-response + user-query as the search query. Quirks are only injected when their raw vector similarity to that query clears `autoInjectMinScore` (default 0.75) - the same threshold for the user-message and system-prompt injections; `recallMinScore` (default 0.72) is the bar for manual `recall_quirks` calls. A latency budget (`autoInjectLatencyBudgetMs`, default 2000ms) prevents slow embedders from blocking message processing. To avoid polluting the context window, each quirk is injected **at most once per session** — once recalled, it is filtered out from all subsequent auto-injections. Every `add_quirk` and every content-changing `update_quirk` is vetted by an immutable trust monitor that rejects destructive patterns (e.g. `rm -rf`, `force push`, `bypass security`). Outdated or fixed quirks should be corrected with `update_quirk` / `delete_quirk` rather than left to contradict newer memory. See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI Reference: `quirk`](doc/cli.md#quirk).
+
+**Failed tool calls become memory.** When a tool call fails, the plugin looks for a stored quirk that covers the failure and injects it into the next request (`memory.injectOnToolError`, default on). If **no** quirk covers it, it writes one — `memory.autoCreateOnToolError` (default on) — using a deterministic template built from the tool name and the error text, so no LLM is involved. The new quirk is tagged `tool-error` and recorded for *future* sessions; it is deliberately excluded from the generic auto-injection above, so a raw error dump never leaks into an unrelated turn. Creation is bounded by a per-session budget (2) and a per-error cooldown (10 min), and it is suppressed when a quirk for the same tool and cause class already exists.
+
+**Prevention, not just learning.** The gotchas are also injected into the **system prompt before the model picks a tool** (`memory.toolErrorProactiveInject`, default on), scoped to the tools the session can actually call and to durable failures only — a rate limit is never warned about in advance, because the next call will not fail the same way. The first occurrence of a failure is unavoidable; every later session is warned up front.
 
 ## MCP Server (Optional)
 
@@ -312,7 +320,7 @@ opencode-rag eval:compare <A> <B>   # side-by-side comparison
 
 Token counting uses tiktoken BPE (cl100k_base) for accurate code tokenization. See [Evaluation documentation](doc/evaluation.md) for details.
 
-Retrieval quality has its own harness: `opencode-rag eval:gate` runs the labelled golden set and fails when Hit@5 / MRR / nDCG@10 drop below the documented floors, and `opencode-rag eval:decide` measures tev1's accuracy, ECE, and Brier score on a labelled calibration set.
+Retrieval quality has its own harness: `opencode-rag eval:gate` runs the labelled golden set and fails when Hit@5 / MRR / nDCG@10 drop below the documented floors, and `opencode-rag eval:decide` measures tev1's accuracy, ECE, and Brier score on a labelled calibration set. `opencode-rag eval:tune` sweeps the retrieval fusion weights against the same golden set and reports the best configuration for your setup — the shipped `keywordWeight=0.4` is a default, not an optimum (on a code embedder it costs ~8 Hit@5 points), so measure it instead of guessing.
 
 ---
 

@@ -123,6 +123,7 @@ export async function handleSearchSemantic(
   const retrieveOpts: RetrieveOptions = {
     topK,
     minScore: cfg.retrieval.minScore,
+    minScoreMode: cfg.retrieval.minScoreMode,
     keywordIndex,
     keywordWeight: cfg.retrieval.hybridSearch?.keywordWeight,
     hybridEnabled: cfg.retrieval.hybridSearch?.enabled,

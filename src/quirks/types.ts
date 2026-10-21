@@ -1,6 +1,15 @@
 /** Quirk sub-type labels. */
 export type QuirkType = "gotcha" | "preference" | "decision" | "environment-constraint";
 
+/** Tag every auto-created tool-error quirk carries. */
+export const TOOL_ERROR_QUIRK_TAG = "tool-error";
+/** Second tag marking the quirk as machine-created (not agent-authored). */
+export const TOOL_ERROR_AUTO_TAG = "auto-created";
+/** Prefix of the per-tool tag: `tool:<name>`. */
+export const TOOL_ERROR_TOOL_TAG_PREFIX = "tool:";
+/** Prefix of the cause-class tag: `cause:<class>`. */
+export const TOOL_ERROR_CAUSE_TAG_PREFIX = "cause:";
+
 /** Input for adding a new quirk. */
 export interface QuirkInput {
   content: string;

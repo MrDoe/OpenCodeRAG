@@ -647,6 +647,57 @@ Requires `decision.enabled` or `--base-url/--model`; exits `2` when Ollama/tev1 
 unavailable. `confidence` is probability concentration — this command measures how close
 it is to correctness, and documents the gap.
 
+### `eval:tune`
+
+Sweep the retrieval fusion weights against the golden set and report the best
+configuration. The shipped `retrieval.hybridSearch.keywordWeight` is a single default, but
+the optimum depends on the embedder, the corpus and the query mix — this command measures
+it for *your* setup instead of guessing.
+
+```bash
+opencode-rag eval:tune [options]
+```
+
+**Options:**
+| Flag | Default | Description |
+|---|---|---|
+| `--labels <path>` | `src/eval/rerank-labels.json` | Golden-set label file |
+| `--category <name>` | all | Only run labels of this category |
+| `--limit <n>` | all | Only run the first N labels |
+| `--metric <name>` | `ndcg10` | Metric the winner is picked by (`ndcg10` \| `hit5` \| `hit1` \| `mrr`) |
+| `--keyword-weights <list>` | `0,0.1,…,0.6` | Comma-separated keyword weights to try |
+| `--symbol-weights <list>` | same as keyword weights | Comma-separated symbol keyword weights to try |
+| `--min-scores <list>` | the configured one | Comma-separated minScore values to try |
+| `--topks <list>` | the configured one | Comma-separated topK values to try |
+| `--write` | `false` | Write the winning values into the config file |
+| `--json` | `false` | Print a machine-readable result as the last stdout line |
+
+Prints one line per candidate, the winning configuration, and the delta against the
+configuration that is currently running. `--write` persists `keywordWeight`,
+`symbolKeywordWeight`, `minScore` and `topK` into the config file (the rest of the file is
+left untouched). Requires a live embedder and an indexed workspace; exits `2` when it
+cannot run.
+
+**The report states how strong the evidence is** — the argmax alone is not a result:
+
+| Line | Meaning |
+|---|---|
+| `paired bootstrap: Δndcg10 … (95% CI …)` | Paired bootstrap over the labels. A CI that includes 0 means the difference is within noise |
+| `N better / N worse / N equal` | How many labels actually flipped |
+| `sign test p=…` | Exact two-sided sign test over the discordant labels — the conservative reading (19 vs 11 is still p ≈ 0.20) |
+| `Weak evidence` / `Within noise` | Printed when the data does not support a change; **do not change the shipped default on it** |
+| `Signal split` | BM25-only vs vector-only vs fused quality, so a fused number can be interpreted instead of believed |
+
+The signal split is the reason a fusion weight can matter more than expected: the keyword
+half and the vector half are measured apart, and a fused ranking can only be as good as
+the mix of its parts.
+
+Example (2026-10-20, this workspace, `jina-code-embeddings-0.5b`, 48 labels): the shipped
+`keywordWeight=0.4` scored Hit@5 72.9% / MRR 0.556 / nDCG@10 0.612, while `keywordWeight=0`
+scored Hit@1 52.1% / Hit@5 81.3% / MRR 0.651 / nDCG@10 0.691 — **+8.3 Hit@5 points**. A
+code embedder already ranks identifiers well through the vector half, so the keyword
+fusion only dilutes it; a general embedder may prefer the opposite. Measure, do not guess.
+
 See [Evaluation documentation](evaluation.md) for interpretation and configuration guidance.
 
 ## Programmatic Use
