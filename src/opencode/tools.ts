@@ -25,6 +25,7 @@ import { extractSkeleton, getExtension } from "../chunker/skeleton.js";
 import type { ParserOverrides } from "../core/parser-overrides.js";
 import { readFileSync } from "node:fs";
 import { resolveWorkspacePath } from "./tool-args.js";
+import { resolveUserPath } from "../core/paths.js";
 import { addQuirk, updateQuirk, removeQuirk, recallQuirks } from "../quirks/quirk-store.js";
 import { createDecisionProvider } from "../decision/factory.js";
 import { validateDecisionRequest } from "../decision/validate.js";
@@ -221,7 +222,9 @@ export function createDescribeImageTool(
       "and returns a natural language description of what the image shows. " +
       "Optionally accepts a `systemPrompt` to steer the description toward specific features or details you care about " +
       "(e.g. colors, layout, accessibility, text content, specific UI elements). " +
-      "Use when the user refers to a screenshot, diagram, mockup, or any image in the workspace.",
+      "The path may point anywhere on disk — outside the workspace too (e.g. a screenshot in the OS temp " +
+      "or home directory); relative paths resolve against the workspace root and `~` expands to the home directory. " +
+      "Use when the user refers to a screenshot, diagram, mockup, or any image.",
 
     args: {
       filePath: tool.schema.string().min(1, "An image file path is required."),
@@ -233,7 +236,7 @@ export function createDescribeImageTool(
         const { existsSync, readFileSync } = await import("node:fs");
         const path = await import("node:path");
 
-        const resolvedPath = resolveWorkspacePath(worktree, args.filePath);
+        const resolvedPath = resolveUserPath(worktree, args.filePath);
 
         if (!existsSync(resolvedPath)) {
           return {

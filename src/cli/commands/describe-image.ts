@@ -9,6 +9,7 @@ import type { Command } from "commander";
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import { c, resolveCliContext, cleanupContext, logCliError, logCliInfo } from "../format.js";
+import { resolveUserPath } from "../../core/paths.js";
 import type { CliOptions } from "../types.js";
 
 /**
@@ -35,7 +36,8 @@ export function registerDescribeImageCommand(program: Command): void {
         const { config } = ctx;
         logFilePath = ctx.logFilePath;
 
-        const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve(cwd, filePath);
+        // Any readable image path is allowed — absolute, relative to cwd, or `~`-prefixed.
+        const resolvedPath = resolveUserPath(cwd, filePath);
 
         if (!existsSync(resolvedPath)) {
           logCliError(logFilePath, "describe-image", `\nFile not found: ${filePath}`, undefined);

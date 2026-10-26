@@ -87,10 +87,12 @@ Usages of "createRagHooks" — 5 references across 2 files
 
 Reads an image file from disk, resizes it, and sends it to the configured vision provider — the description is generated live, not retrieved from the index. The call uses the indexing settings (`imageDescription.*`) unless `imageDescription.onDemand` is configured, in which case those overrides (provider, model, prompt, …) apply — see [Configuration](configuration.md#imagedescription). An optional `systemPrompt` steers the description toward specific features.
 
+Unlike `read` and `get_file_skeleton`, the path is **not sandboxed to the workspace**: absolute paths anywhere on disk work (e.g. a screenshot in the OS temp or home directory), relative paths resolve against the workspace root, and a leading `~` expands to the home directory. Only files with a supported image extension are read.
+
 **Parameters:**
 | Param | Required | Description |
 |-------|----------|-------------|
-| `filePath` | Yes | Path to the image file (relative or absolute) |
+| `filePath` | Yes | Path to the image file (relative to the workspace, absolute, or `~`-prefixed — outside the workspace is allowed) |
 | `systemPrompt` | No | Optional system prompt steering the description (e.g. "focus on colors and layout") |
 
 **Returns:** Markdown block with file path, the generated description, and the provider/model that produced it.

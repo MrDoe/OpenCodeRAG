@@ -246,7 +246,7 @@ opencode-rag describe-image <filePath> [options]
 | `-c, --config <path>` | auto-detected | Path to config file |
 | `-s, --system-prompt <text>` | — | Optional system prompt to steer the description toward specific features |
 
-**Requirements:** `imageDescription.enabled` must be `true` in config. The image is resized (per `resizeMaxDimension`), base64-encoded, and sent to the configured vision provider, which returns a natural-language description. When `imageDescription.onDemand` is set, the command uses those overrides (and logs `Source: imageDescription.onDemand override`) instead of the indexing model.
+**Requirements:** `imageDescription.enabled` must be `true` in config. The image is resized (per `resizeMaxDimension`), base64-encoded, and sent to the configured vision provider, which returns a natural-language description. When `imageDescription.onDemand` is set, the command uses those overrides (and logs `Source: imageDescription.onDemand override`) instead of the indexing model. The path is not restricted to the project directory: absolute paths, relative paths (resolved against the current directory), and `~`-prefixed paths are all accepted — only the image extension is validated.
 
 ### `decide`
 

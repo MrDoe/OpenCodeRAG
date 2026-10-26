@@ -163,6 +163,32 @@ describe("createDescribeImageTool", () => {
     assert.ok(r.output.includes("test image with sample content"));
   });
 
+  it("describes an image outside the workspace", async () => {
+    const outsideDir = mkdtempSync(path.join(tmpdir(), "opencode-rag-describe-outside-"));
+    const outsidePng = path.join(outsideDir, "outside.png");
+    writeFileSync(outsidePng, Buffer.from(MINI_PNG_HEX, "hex"));
+
+    try {
+      const cfg = makeConfigWithImageDesc();
+      const tool = createDescribeImageTool({
+        worktree: tmpDir,
+        config: cfg,
+        visionProvider: makeFakeVisionProvider(),
+      });
+
+      const exec = (tool as { execute: Function }).execute;
+      const r = asObject(await exec({ filePath: outsidePng }));
+
+      assert.equal(r.metadata?.tool, "describe_image");
+      assert.equal(r.metadata?.error, undefined);
+      assert.equal(r.metadata?.description, TEST_DESCRIPTION);
+      assert.equal(r.title, `Image description — ${outsidePng}`);
+      assert.ok(r.output.includes("test image with sample content"));
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("forwards systemPrompt to the vision provider", async () => {
     const cfg = makeConfigWithImageDesc();
     const { provider, calls } = makeSpyVisionProvider();

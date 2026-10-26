@@ -15,6 +15,7 @@ import { validateDecisionRequest } from "../decision/validate.js";
 import { formatDecisionAnswers } from "../decision/format.js";
 import { readFileSync } from "node:fs";
 import { resolve, isAbsolute, relative, sep as pathSep } from "node:path";
+import { resolveUserPath } from "../core/paths.js";
 
 /**
  * Resolve a user-supplied file path against the worktree root, refusing to
@@ -237,7 +238,7 @@ export interface DescribeImageResult {
   formatted: string;
 }
 
-/** Describe an image file using the configured vision provider (Ollama, OpenAI, Anthropic, Gemini, or OpenCode Zen). Honors `imageDescription.onDemand` overrides. */
+/** Describe an image file using the configured vision provider (Ollama, OpenAI, Anthropic, Gemini, or OpenCode Zen). Honors `imageDescription.onDemand` overrides. The file may live anywhere on disk; relative paths resolve against `worktree`. */
 export async function handleDescribeImage(
   params: DescribeImageParams,
   cfg: RagConfig,
@@ -247,7 +248,9 @@ export async function handleDescribeImage(
   const { existsSync, readFileSync } = await import("node:fs");
   const path = await import("node:path");
 
-  const resolvedPath = resolveFilePath(params.filePath, worktree);
+  // Unlike the skeleton tools, image description is not sandboxed to the
+  // worktree: screenshots often live in the OS temp or home directory.
+  const resolvedPath = resolveUserPath(worktree, params.filePath);
 
   if (!existsSync(resolvedPath)) {
     throw new Error(`File not found: ${params.filePath}`);

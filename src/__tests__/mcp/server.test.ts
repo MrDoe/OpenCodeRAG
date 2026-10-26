@@ -748,6 +748,27 @@ describe("handleDescribeImage", () => {
     assert.equal(result.description, TEST_DESCRIPTION);
   });
 
+  it("resolves an image outside the worktree", async () => {
+    const outsideDir = mkdtempSync(path.join(tmpdir(), "opencode-rag-describe-outside-"));
+    const outsidePng = path.join(outsideDir, "outside.png");
+    writeFileSync(outsidePng, Buffer.from(MINI_PNG_HEX, "hex"));
+
+    try {
+      const cfg = makeConfigWithImageDesc();
+      const result = await handleDescribeImage(
+        { filePath: outsidePng },
+        cfg,
+        tmpDir,
+        makeFakeVisionProvider()
+      );
+
+      assert.equal(result.description, TEST_DESCRIPTION);
+      assert.match(result.formatted, /outside\.png/);
+    } finally {
+      rmSync(outsideDir, { recursive: true, force: true });
+    }
+  });
+
   it("forwards systemPrompt to the vision provider", async () => {
     const cfg = makeConfigWithImageDesc();
     const { provider, calls } = makeSpyVisionProvider();

@@ -265,7 +265,7 @@ opencode-rag mcp
 | `search_semantic` | Vector + keyword hybrid search across the indexed codebase |
 | `get_file_skeleton` | AST-based file outline (functions, classes, methods) |
 | `find_usages` | Find all references to a symbol by name |
-| `describe_image` | Describe an image file with the configured vision model (`imageDescription.onDemand` overrides apply) |
+| `describe_image` | Describe an image file with the configured vision model (`imageDescription.onDemand` overrides apply; paths outside the workspace are allowed) |
 | `make_decision` | Classify/route/score short text with the local tev1 decision model (only when `decision.enabled` is `true`) |
 
 Clients can configure the MCP server manually, or `opencode-rag init` auto-registers it.
