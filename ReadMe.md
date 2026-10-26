@@ -1,12 +1,14 @@
 ﻿# OpenCodeRAG
 
-OpenCodeRAG is a **local-first RAG plugin** for semantic code and image search, with a built-in **local decision model** for fast classification. It converts your codebase into vector indices and retrieves relevant code chunks on natural language queries. The primary aim is to save tokens by replacing full-file reads with targeted chunk retrieval and to speed-up tool calls for large codebases. Integrates seamlessly with [OpenCode](https://opencode.ai) and works as a standalone MCP server or CLI tool for other AI harnesses.
+OpenCodeRAG is a **local-first RAG plugin** for semantic code and image search, with a built-in **local decision model** for fast classification and an optional **Shell Guard** that vets shell commands before they run. It converts your codebase into vector indices and retrieves relevant code chunks on natural language queries. The primary aim is to save tokens by replacing full-file reads with targeted chunk retrieval and to speed-up tool calls for large codebases. Integrates seamlessly with [OpenCode](https://opencode.ai) and works as a standalone MCP server or CLI tool for other AI harnesses.
 
 You don't need a dedicated GPU to run smaller embedding LLMs, as these models can still run performant on modern CPUs.
 
 [![npm version](https://img.shields.io/npm/v/opencode-rag-plugin.svg)](https://www.npmjs.com/package/opencode-rag-plugin)
 
 > ⚠️ **Note:** Don't confuse this with the npm package `opencode-rag` (a discontinued project by a different author).
+
+> 🛡️ **Shell Guard (optional):** every `shell`/`bash` command is classified by the local decision model **before it runs**. Flagged commands ask for confirmation with the full verdict (`destructive`/`malicious` probabilities + risk category); clean commands run unchanged. Enable once, machine-wide — see [Shell Guard](#shell-guard-optional).
 
 ## Quick Start
 
@@ -23,7 +25,14 @@ opencode-rag index
 
 # 4. CLI search test
 opencode-rag query "authentication middleware"
+
+# 5. Optional: vet every shell command (once per machine)
+mkdir -p ~/.config/opencode
+echo '{ "shellGuard": { "enabled": true } }' > ~/.config/opencode/opencode-rag.json
+#    Requires the decision model: ollama pull tev1:0.8b
 ```
+
+> **Try it:** with Shell Guard enabled, `rm -rf ./dist` is flagged (`delete_files`, ~0.96 destructive) and prompts for confirmation, while `ls -la src` passes untouched (~0.2).
 
 `opencode-rag setup` installs/verifies the machine-level runtime and, when
 run inside a project, initializes the workspace (`.opencode/`, plugin entries,
@@ -42,6 +51,7 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 
 | Feature | Description |
 |---|---|
+| **🛡️ Shell guard** | Optional **pre-execution vetting of every `shell`/`bash` command** by the local decision model — flagged commands ask for confirmation (with probabilities + risk category), clean commands run normally, fail-open by default. Machine-wide via the global config. [Details](#shell-guard-optional) |
 | **MCP server** | `opencode-rag mcp` - stdio-based MCP server exposing `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools for any MCP-compatible client |
 | **AST chunking** | 26 languages via tree-sitter (TS, JS, Python, Java, Go, Rust, C/C++, C#, Ruby, Kotlin, Swift, Bash, PHP, PowerShell, SQL, JSON, HTML, CSS, XML (including SVG), YAML, TOML, INI, Dockerfile, Markdown, LaTeX, Razor) |
 | **Configurable parsers** | Remap file extensions to any parser via `chunking.parsers` (e.g. `.c` → `cpp`, or index a new `.cu` as C++) — applied to chunking, `get_file_skeleton`, and read labels ([docs](doc/chunking.md#parser-overrides-per-extension-chunkingparsers)) |
@@ -50,7 +60,6 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 | **Hybrid search** | Vector similarity + TF×IDF keyword fusion — the keyword index is repaired from the store whenever it drifts behind it, so the BM25 half never covers only part of the corpus |
 | **Retrieval calibration** | `opencode-rag eval:tune` sweeps the fusion weights against the labelled golden set and reports (or writes) the best configuration for your embedder and corpus |
 | **Decision model** | Local [tev1](https://ollama.com/library/tev1) classification — `make_decision` labels, routes, and scores short text with probabilities (40–150 ms warm); optional pre-ask routing so the agent asks fewer questions |
-| **Shell guard** | Optional pre-execution vetting of every `shell`/`bash` command by the local decision model — flagged commands ask for confirmation, clean ones run normally (fail-open by default) |
 | **OpenCode plugin** | Auto-inject context, read-tool override, TUI settings, Ctrl+Enter to add RAG context, MCP registration on `init` |
 | **Incremental indexing** | File-hash manifest, background watcher, auto-rebuild on corruption |
 | **Privacy-first** | All processing stays local (when using Ollama) |
@@ -63,6 +72,31 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 | **Context optimization** | Post-retrieval dedup, per-file chunk limits, adjacent-merge to fit the context window |
 | **Quirk memory** | Persistent experiential memory — agents recall/persist gotchas, preferences, decisions across sessions (`add_quirk` / `recall_quirks`, `opencode-rag quirk`); failed tool calls are auto-recorded as quirks |
 | **AGENTS.md directive** | `opencode-rag init` merges a tool-usage directive into `AGENTS.md` via sentinel markers |
+
+## Shell Guard (Optional)
+
+The same local decision model can vet **every shell command before it runs**. With `shellGuard.enabled: true`, each `shell`/`bash` call is classified for destructive and malicious intent; a command whose `p(destructive)` or `p(malicious)` reaches the threshold is escalated to OpenCode's confirmation prompt with the full verdict — otherwise it executes unchanged.
+
+```json
+{
+  "shellGuard": {
+    "enabled": true,
+    "threshold": 0.5,
+    "timeoutMs": 10000,
+    "onError": "allow"
+  }
+}
+```
+
+- **Off by default** — enabling adds one local model call to the critical path of every shell command.
+- **Fast** — a warm verdict costs ~200–230 ms (`rm -rf ./dist` → 0.96 destructive, `delete_files`; `ls -la src` → 0.23, allowed). Repeated identical commands hit the 10-minute cache.
+- **Machine-wide** — put the block in `~/.config/opencode/opencode-rag.json` (the global layer, see [Configuration](doc/configuration.md#config-file-discovery)) and every workspace inherits it; a workspace config can still override or disable it.
+- **Fail-open by default** (`onError: "allow"`): if the classifier is down or times out, the command runs and a warning is logged. Set `onError: "ask"` to require confirmation instead.
+- **Verdict cache** (10 min, 256 entries): repeated identical commands are answered instantly; the key includes the provider/model, so switching models invalidates it, and cached probabilities are re-scored against the current threshold on every call.
+- **Config edits apply without a restart** — the guard re-reads `opencode-rag.json` when it changes.
+- **Backend** defaults to the `decision` section, and any `/v1/systemone` endpoint works — e.g. llama-swap with `"baseUrl": "http://localhost:11437", "model": "Clef-Flash"`.
+
+Every verdict is logged under `scope: shell.guard`, so you can tune the threshold against real commands. See [Configuration](doc/configuration.md#shellguard) and [Plugin documentation](doc/plugin.md#shell-guard-command-vetting).
 
 ## Web UI
 
@@ -146,30 +180,6 @@ ollama pull tev1:4b     # 4.4 GB, more accurate — recommended when scoring
 **Pre-ask routing (optional):** with `decision.routeBeforeAsking: true`, the injected agent guidance tells the agent to resolve option choices through `make_decision` before asking you — proceeding on a confident answer and asking only when the model is undecided or the choice is preference-based. Off by default.
 
 `opencode-rag decide` exposes the same engine from the CLI, and `init` creates a dedicated `make-decision` agent skill. See [Plugin documentation](doc/plugin.md#make_decision) and [Configuration](doc/configuration.md#decision).
-
-## Shell Guard (Optional)
-
-The same local decision model can vet **every shell command before it runs**. With `shellGuard.enabled: true`, each `shell`/`bash` call is classified for destructive and malicious intent; a command whose `p(destructive)` or `p(malicious)` reaches the threshold is escalated to OpenCode's confirmation prompt with the full verdict — otherwise it executes unchanged.
-
-```json
-{
-  "shellGuard": {
-    "enabled": true,
-    "threshold": 0.5,
-    "timeoutMs": 10000,
-    "onError": "allow"
-  }
-}
-```
-
-- **Off by default** — enabling adds one local model call to the critical path of every shell command.
-- **Machine-wide** — put the block in `~/.config/opencode/opencode-rag.json` (the global layer, see [Configuration](doc/configuration.md#config-file-discovery)) and every workspace inherits it; a workspace config can still override or disable it.
-- **Fail-open by default** (`onError: "allow"`): if the classifier is down or times out, the command runs and a warning is logged. Set `onError: "ask"` to require confirmation instead.
-- **Verdict cache** (10 min, 256 entries): repeated identical commands are answered instantly; the key includes the provider/model, so switching models invalidates it, and cached probabilities are re-scored against the current threshold on every call.
-- **Config edits apply without a restart** — the guard re-reads `opencode-rag.json` when it changes.
-- **Backend** defaults to the `decision` section, and any `/v1/systemone` endpoint works — e.g. llama-swap with `"baseUrl": "http://localhost:11437", "model": "Clef-Flash"`.
-
-Every verdict is logged under `scope: shell.guard`, so you can tune the threshold against real commands. See [Configuration](doc/configuration.md#shellguard) and [Plugin documentation](doc/plugin.md#shell-guard-command-vetting).
 
 ## Image Indexing
 
