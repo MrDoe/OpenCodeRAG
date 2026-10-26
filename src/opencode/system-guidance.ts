@@ -4,6 +4,8 @@
  * directive (via init-helpers.ts).
  */
 
+import type { OpenCodeShellConfig } from "../core/config.js";
+
 /** Sentinel marker that opens the managed section. */
 export const BEGIN_MARKER = "<!-- BEGIN opencode-rag -->";
 
@@ -89,7 +91,21 @@ export const DECISION_ROUTING_GUIDANCE_LINE =
  * Build the flat guidance lines array for the runtime system-prompt injector.
  * Returns a new array each call.
  */
-export function buildSystemGuidanceLines(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean }): string[] {
+export function buildShellBackgroundGuidanceLines(shell?: OpenCodeShellConfig): string[] {
+  if (shell?.backgroundGuidance === false) return [];
+  const thresholdMs = shell?.longRunningThresholdMs ?? 30000;
+  const timeoutMs = shell?.foregroundTimeoutMs ?? 120000;
+  const thresholdSec = Math.max(1, Math.round(thresholdMs / 1000));
+  return [
+    "",
+    "Long-running commands:",
+    `- Any \`shell\` call expected to take more than ${thresholdSec}s MUST set \`background: true\` (returns immediately; the session is notified on completion) or set an explicit \`timeout\` (ms).`,
+    `- Default foreground timeout: ${timeoutMs}ms. Never run builds/tests/indexes in the foreground beyond ${thresholdSec}s; if a call is already running, press Ctrl+B to background it (OpenCode: \`session.background\`).`,
+    "- OpenCodeRAG measures foreground shell duration and records a quirk when a call exceeds the threshold, so repeated foreground runs become visible.",
+  ];
+}
+
+export function buildSystemGuidanceLines(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean; shell?: OpenCodeShellConfig }): string[] {
   const lines = [...MANDATORY_GUIDANCE_LINES];
   if (opts.decisionEnabled) {
     const decisionLines = [...DECISION_GUIDANCE_LINES];
@@ -107,6 +123,7 @@ export function buildSystemGuidanceLines(opts: { promptEnforcement: boolean; dec
   if (opts.promptEnforcement) {
     lines.push(...QUIRK_ENFORCEMENT_LINES);
   }
+  lines.push(...buildShellBackgroundGuidanceLines(opts.shell));
   return lines;
 }
 
@@ -132,7 +149,7 @@ const DECISION_ROUTING_AGENTS_LINE =
  * Build the markdown-formatted AGENTS.md directive section, wrapped in sentinel
  * markers so `mergeAgentsMdContent` can replace it in place on re-runs.
  */
-export function buildAgentsMdDirective(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean }): string {
+export function buildAgentsMdDirective(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean; shell?: OpenCodeShellConfig }): string {
   const lines: string[] = [
     BEGIN_MARKER,
     "## Code Navigation",
@@ -207,6 +224,10 @@ export function buildAgentsMdDirective(opts: { promptEnforcement: boolean; decis
     );
   }
 
+  const shellLines = buildShellBackgroundGuidanceLines(opts.shell);
+  if (shellLines.length > 0) {
+    lines.push("", "### Long-running commands", ...shellLines.filter((l) => l.trim().length > 0));
+  }
   lines.push(END_MARKER);
   return lines.join("\n");
 }

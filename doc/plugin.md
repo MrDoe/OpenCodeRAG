@@ -508,6 +508,35 @@ already runs the watcher (a second OpenCode session, or `opencode-rag index
 pass — and takes over ~60s after the owning process exits. This prevents
 multiple watchers from racing on the same store.
 
+## Shell Auto-Background (Long-Running Commands)
+
+OpenCode's TUI keybind `session.background` (default `Ctrl+B`) moves a blocking
+session tool — most often a long `shell` call — into the background so the
+prompt returns. OpenCodeRAG cannot trigger that action itself (it is a plugin;
+its hooks are observational/injective), so it ships the closest feasible
+in-plugin behaviour:
+
+- **Guidance** (`openCode.shell.backgroundGuidance`, default `true`): injects a
+  system-prompt directive telling the agent to set `background: true` (or an
+  explicit `timeout`) on any `shell` call expected to exceed
+  `longRunningThresholdMs` (default 30000 ms). The recommended default
+  foreground timeout is `foregroundTimeoutMs` (default 120000 ms).
+- **Measurement**: the plugin records a start timestamp in `tool.execute.before`
+  and, in `tool.execute.after`, computes the foreground duration. The
+  `execute.before` hook is now forwarded by the V2 adapter (previously
+  dropped).
+- **Reactive nudge + quirk**: when a foreground shell call exceeds the
+  threshold, OpenCodeRAG sets a one-turn system-prompt nudge and (when
+  `captureLongRunningQuirk` is true) records a quirk tagged
+  `tool:shell` + `cause:long-foreground` (bounded to 3 per session).
+
+**Upstream dependency for true automation:** actual automatic backgrounding
+requires an OpenCode core change — e.g. `shell.backgroundAfterMs` in
+`opencode.json` (0 = off) plus a TUI auto-background timer, and a
+plugin-exposed `session.background(callID)`. Until then, Ctrl+B remains the
+manual escape hatch. See
+[`.opencode/wiki/concepts/shell-auto-background.md`](../.opencode/wiki/concepts/shell-auto-background.md).
+
 ## TUI Settings Menu
 
 The TUI plugin (`src/tui.ts`) registers a settings panel in the OpenCode sidebar:

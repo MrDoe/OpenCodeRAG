@@ -41,6 +41,18 @@ export interface AutoIndexConfig {
   watcher?: WatcherBackend;
 }
 
+/** Handling of long-running shell commands in OpenCode sessions. */
+export interface OpenCodeShellConfig {
+  /** Inject guidance telling the agent to background long commands (default true). */
+  backgroundGuidance?: boolean;
+  /** Threshold (ms) above which a command is "long" (default 30000). */
+  longRunningThresholdMs?: number;
+  /** Default foreground timeout (ms) to recommend for shell calls (default 120000). */
+  foregroundTimeoutMs?: number;
+  /** Record a quirk when a foreground command exceeds the threshold (default true). */
+  captureLongRunningQuirk?: boolean;
+}
+
 /** Behavior when a read tool query returns no results. */
 export type ReadNoResultsBehavior = "hint" | "empty" | "error";
 
@@ -630,6 +642,8 @@ export interface RagConfig {
     injectSystemPrompt?: boolean;
     /** Whether to grant the read-only RAG tools to the built-in `explore` agent (default true). */
     exploreAgentTools?: boolean;
+    /** Handling of long-running shell commands (backgrounding guidance + measurement). */
+    shell?: OpenCodeShellConfig;
   };
   /** Custom chunker module registrations. */
   chunkers?: ChunkerConfig[];
@@ -853,6 +867,12 @@ export const DEFAULT_CONFIG: RagConfig = {
     readOverride: true,
     injectSystemPrompt: true,
     exploreAgentTools: true,
+    shell: {
+      backgroundGuidance: true,
+      longRunningThresholdMs: 30000,
+      foregroundTimeoutMs: 120000,
+      captureLongRunningQuirk: true,
+    },
     autoIndex: {
       enabled: false,
       debounceMs: 2000,
@@ -1220,6 +1240,15 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   if (config.openCode.autoIndex?.watcher && !["chokidar", "git"].includes(config.openCode.autoIndex.watcher)) {
     warnings.push(`openCode.autoIndex.watcher "${config.openCode.autoIndex.watcher}" — expected "chokidar" or "git"`);
   }
+  const shellCfg = config.openCode.shell;
+  if (shellCfg) {
+    if (shellCfg.longRunningThresholdMs != null && shellCfg.longRunningThresholdMs < 0) {
+      warnings.push("openCode.shell.longRunningThresholdMs must be >= 0");
+    }
+    if (shellCfg.foregroundTimeoutMs != null && shellCfg.foregroundTimeoutMs <= 0) {
+      warnings.push("openCode.shell.foregroundTimeoutMs must be > 0");
+    }
+  }
 
   if (config.retrieval.contextOptimization) {
     const co = config.retrieval.contextOptimization;
@@ -1395,6 +1424,10 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
           ...base.autoIndex,
           ...(safeObj<AutoIndexConfig>(user.autoIndex) ?? {}),
         } as AutoIndexConfig,
+        shell: {
+          ...base.shell,
+          ...(safeObj<OpenCodeShellConfig>(user.shell) ?? {}),
+        } as OpenCodeShellConfig,
       };
       return merged;
     })(),

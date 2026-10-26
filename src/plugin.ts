@@ -85,6 +85,7 @@ const MAX_SESSION_MAP_SIZE = 50;
 const MAX_SESSION_TOOL_RESULTS = 20;
 /** Pending tool-error quirk blocks older than this (ms) are dropped instead of injected. */
 const TOOL_ERROR_PENDING_TTL_MS = 120_000;
+const SHELL_NUDGE_TTL_MS = 60_000;
 /** How long the tool-error quirk list is cached before it is re-read (ms). */
 const TOOL_GOTCHA_CACHE_MS = 30_000;
 
@@ -874,6 +875,10 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   // Auto-capture maps: previous user request per session, tool results, and full transcript
   const sessionPrevUserReq = new Map<string, string>();
   const sessionToolResults = new Map<string, { tool: string; output: string }[]>();
+  // Foreground shell-call timing for the long-running-command feature.
+  const sessionShellStart = new Map<string, { sessionID: string; start: number; command: string }>();
+  const sessionPendingShellNudge = new Map<string, { text: string; ts: number }>();
+  const sessionShellLongCount = new Map<string, number>();
   const sessionTranscript = new Map<string, CaptureExchange[]>();
   // Track quirk IDs already injected per session to avoid duplicate injection
   const sessionInjectedQuirks = new Map<string, Set<string>>();
@@ -1519,10 +1524,73 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       }
     },
     tool: tools,
+    async "tool.execute.before"(input, output) {
+      try {
+        const toolName = String(input.tool ?? "").toLowerCase();
+        if (toolName !== "shell" && toolName !== "bash") return;
+        const args = (output?.args ?? {}) as Record<string, unknown>;
+        const command = typeof args.command === "string" ? args.command : (typeof args.cmd === "string" ? args.cmd : "");
+        sessionShellStart.set(String(input.callID), {
+          sessionID: input.sessionID,
+          start: Date.now(),
+          command: command.slice(0, 200),
+        });
+      } catch {
+        // Non-critical — must never throw
+      }
+    },
     async "tool.execute.after"(input, output) {
       try {
         const results = sessionToolResults.get(input.sessionID) ?? [];
         results.push({ tool: input.tool, output: output.output ?? "" });
+
+        // Long-running shell command handling: measure foreground duration and,
+        // when it exceeds the configured threshold, nudge the agent next turn
+        // (and optionally record a quirk) so repeated foreground runs become
+        // visible. True auto-backgrounding is an OpenCode-core feature; this is
+        // the in-plugin approximation.
+        try {
+          const toolName = String(input.tool ?? "").toLowerCase();
+          if (toolName === "shell" || toolName === "bash") {
+            const startInfo = sessionShellStart.get(String(input.callID));
+            sessionShellStart.delete(String(input.callID));
+            const cfg = getEffectiveCfg();
+            const shellCfg = cfg.openCode.shell;
+            const thresholdMs = shellCfg?.longRunningThresholdMs ?? 30000;
+            const durationMs = startInfo ? Date.now() - startInfo.start : undefined;
+            if (durationMs != null && thresholdMs > 0 && durationMs >= thresholdMs) {
+              const durSec = (durationMs / 1000).toFixed(1);
+              const cmd = startInfo?.command || "(unknown command)";
+              const nudgeText =
+                `⚠ The previous foreground shell command took ${durSec}s ` +
+                `(\`${cmd}\`). Prefer \`background: true\` or an explicit \`timeout\` for commands expected to exceed ` +
+                `${Math.round(thresholdMs / 1000)}s; press Ctrl+B to background an already-running call.`;
+              sessionPendingShellNudge.set(input.sessionID, { text: nudgeText, ts: Date.now() });
+
+              if (shellCfg?.captureLongRunningQuirk !== false) {
+                // Bound per-session recording to avoid runaway quirk spam.
+                const counterKey = `shell-long:${input.sessionID}`;
+                const current = (sessionShellLongCount.get(counterKey) ?? 0);
+                if (current < 3) {
+                  sessionShellLongCount.set(counterKey, current + 1);
+                  const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath };
+                  void addQuirk(quirkDeps, {
+                    content: `A foreground shell command took ${durSec}s: \`${cmd}\`. Prefer \`background: true\` or an explicit \`timeout\` for long commands; press Ctrl+B to background a running call.`,
+                    quirkType: "gotcha",
+                    tags: ["tool:shell", "cause:long-foreground"],
+                    sourceRef: "opencode-rag:shell-auto-background",
+                  }).catch(() => {});
+                }
+              }
+              appendDebugLog(options.logFilePath, {
+                scope: "shell.long-running",
+                message: `foreground shell took ${durSec}s (threshold ${thresholdMs}ms): ${cmd}`,
+              });
+            }
+          }
+        } catch {
+          // Non-critical — must never throw
+        }
 
         // Failed tool calls: feed the auto-capture pipeline (learning loop) and
         // recall matching quirks for injection into the next model request.
@@ -1620,7 +1688,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       }
 
       if (injectGuidance) {
-        const guidance = buildSystemGuidanceLines({ promptEnforcement: !!cfg.memory?.promptEnforcement, decisionEnabled: !!cfg.decision?.enabled, routeBeforeAsking: !!cfg.decision?.routeBeforeAsking });
+        const guidance = buildSystemGuidanceLines({ promptEnforcement: !!cfg.memory?.promptEnforcement, decisionEnabled: !!cfg.decision?.enabled, routeBeforeAsking: !!cfg.decision?.routeBeforeAsking, shell: cfg.openCode.shell });
         output.system.unshift(guidance.join("\n"));
       }
 
@@ -1719,6 +1787,13 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
                 output.system.unshift(pending.block);
               }
               sessionPendingToolErrorQuirk.delete(sessionId);
+            }
+            const shellNudge = sessionPendingShellNudge.get(sessionId);
+            if (shellNudge) {
+              if (Date.now() - shellNudge.ts < SHELL_NUDGE_TTL_MS) {
+                output.system.unshift(shellNudge.text);
+              }
+              sessionPendingShellNudge.delete(sessionId);
             }
           }
         } catch {

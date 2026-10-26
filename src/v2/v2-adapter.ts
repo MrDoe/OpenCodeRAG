@@ -47,8 +47,8 @@ type V2ToolEditor = { add(tool: V2Tool): void };
 type V2ToolDomain = {
   transform(callback: (editor: V2ToolEditor) => void): Promise<V2Registration>;
   hook(
-    name: "execute.after",
-    callback: (event: V2ToolExecuteAfterEvent) => Promise<void> | void,
+    name: "execute.before" | "execute.after",
+    callback: (event: V2ToolExecuteBeforeEvent | V2ToolExecuteAfterEvent) => Promise<void> | void,
   ): Promise<V2Registration>;
 };
 
@@ -117,6 +117,14 @@ type V2Tool = {
     input: unknown,
     context: { sessionID?: string },
   ): Promise<{ content?: string; output?: unknown; metadata?: Record<string, unknown> }>;
+};
+
+/** V2 `execute.before` hook event — fires before a tool runs. */
+type V2ToolExecuteBeforeEvent = {
+  tool: string;
+  sessionID: string;
+  id: unknown;
+  input?: unknown;
 };
 
 /** V2 `execute.after` hook event — fires for BOTH the completed and the error branch. */
@@ -459,6 +467,29 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
     registrations.push(registration);
   }
 
+  // ── tool.execute.before ──────────────────────────────────────────────────
+  // Forwards the V1 `tool.execute.before` hook so the plugin can observe tool
+  // inputs (and, e.g., time a call) before it runs. Previously dropped.
+  const toolBeforeHook = hooks["tool.execute.before"];
+  if (toolBeforeHook) {
+    const registration = await ctx.tool.hook("execute.before", async (event) => {
+      try {
+        const ev = event as V2ToolExecuteBeforeEvent;
+        await toolBeforeHook(
+          {
+            sessionID: ev.sessionID,
+            tool: ev.tool,
+            callID: ev.id,
+          } as never,
+          { args: (ev.input ?? {}) as Record<string, unknown> } as never,
+        );
+      } catch {
+        // Non-critical — must never throw
+      }
+    });
+    registrations.push(registration);
+  }
+
   // ── tool.execute.after ───────────────────────────────────────────────────
   // Forwards BOTH branches: completed calls keep the existing contract, error
   // calls additionally carry `input.status = "error"` and `output.error`, so
@@ -468,8 +499,9 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
   if (toolAfterHook) {
     const registration = await ctx.tool.hook("execute.after", async (event) => {
       try {
-        const isError = event.status === "error";
-        const result = event.result as
+        const ev = event as V2ToolExecuteAfterEvent;
+        const isError = ev.status === "error";
+        const result = ev.result as
           | { output?: unknown; content?: string | unknown[]; metadata?: unknown }
           | undefined;
         // The COMPLETED branch carries its text as an ARRAY of content parts
@@ -479,15 +511,15 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
         // — a JSON blob that does NOT contain the failure marker, so nothing
         // downstream could see it. Join the text parts instead.
         const outputText = isError
-          ? extractToolErrorText(event)
+          ? extractToolErrorText(ev as never)
           : extractContentText(result?.content) ??
             extractStructuredOutput(result?.output) ??
             (result?.output !== undefined ? JSON.stringify(result.output) : "");
         await toolAfterHook(
           {
-            sessionID: event.sessionID,
-            tool: event.tool,
-            callID: event.id,
+            sessionID: ev.sessionID,
+            tool: ev.tool,
+            callID: ev.id,
             status: isError ? "error" : "completed",
           } as never,
           {

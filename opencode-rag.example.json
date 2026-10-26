@@ -71,6 +71,12 @@
     "maxContextChunks": 10,
     "readOverride": true,
     "exploreAgentTools": true,
+    "shell": {
+      "backgroundGuidance": true,
+      "longRunningThresholdMs": 30000,
+      "foregroundTimeoutMs": 120000,
+      "captureLongRunningQuirk": true
+    },
     "autoIndex": {
       "enabled": false,
       "debounceMs": 2000,
