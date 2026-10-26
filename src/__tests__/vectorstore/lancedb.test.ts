@@ -494,6 +494,29 @@ describe("LanceDbStore (memory)", () => {
     assert.deepEqual(chunks.map((c) => c.id).sort(), ["b-1", "b-2"]);
   });
 
+  it("dedups a prior revision stored under a different drive-letter case", async () => {
+    await store.clear({ noBackup: true });
+    // Windows hands out both spellings (`c:` from a watcher event, `C:` from
+    // path.resolve); a case-sensitive delete left the other one behind forever.
+    await store.addChunks([makeChunk("case-1", "c:/Daten/x.ts", 1, "old")]);
+    assert.equal(await store.count(), 1);
+    await store.addChunks([makeChunk("case-2", "C:/Daten/x.ts", 1, "new")]);
+    assert.equal(await store.count(), 1, "the other spelling must be removed, not duplicated");
+    const chunks = await store.getChunksByFilePath("c:/Daten/x.ts");
+    assert.deepEqual(chunks.map((c) => c.id), ["case-2"]);
+  });
+
+  it("deleteByFilePath matches every casing of the same path", async () => {
+    await store.clear({ noBackup: true });
+    await store.addChunks([
+      makeChunk("case-del-1", "c:/Daten/y.ts", 1, "one"),
+      makeChunk("case-del-2", "C:/Daten/y.ts", 2, "two"),
+    ]);
+    assert.equal(await store.count(), 2);
+    await store.deleteByFilePath("C:/Daten/Y.TS");
+    assert.equal(await store.count(), 0);
+  });
+
   it("appends without dedup when dedup: false", async () => {
     await store.clear({ noBackup: true });
 
@@ -675,6 +698,81 @@ describe("sweepEmptyIndexVersionDirs", () => {
   });
 });
 
+describe("LanceDbStore index build reclaim", () => {
+	const makeChunks = (dimension: number) =>
+		Array.from({ length: 40 }, (_, i) => ({
+			id: `chunk-${i}`,
+			content: `row ${i}`,
+			embedding: new Array(dimension).fill(0).map((_, k) => Math.sin(i * (k + 1))),
+			metadata: { filePath: "src/reclaim.ts", startLine: i, endLine: i, language: "typescript" },
+		}));
+
+	it("deletes superseded index builds and rebuilds a single index", async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-reclaim-"));
+		const store = new LanceDbStore(tmpDir, 4);
+		try {
+			await store.addChunks(makeChunks(4) as never);
+			await store.optimize({ skipIndex: true });
+
+			// LanceDB never reclaims superseded builds - simulate the accumulation.
+			const indicesDir = join(tmpDir, "chunks.lance", "_indices");
+			mkdirSync(indicesDir, { recursive: true });
+			const old = new Date(Date.now() - 60 * 60 * 1000);
+			for (let i = 0; i < 4; i++) {
+				const dir = join(indicesDir, `dead-build-${i}`);
+				mkdirSync(dir, { recursive: true });
+				writeFileSync(join(dir, "auxiliary.idx"), "x".repeat(128));
+				utimesSync(join(dir, "auxiliary.idx"), old, old);
+				utimesSync(dir, old, old);
+			}
+
+			const warns: string[] = [];
+			await store.optimize({ logger: (m) => warns.push(m) });
+
+			assert.ok(
+				warns.some((w) => w.includes("reclaimed")),
+				`expected a reclaim warning, got: ${warns.join(" | ")}`,
+			);
+			const remaining = fs.readdirSync(indicesDir);
+			assert.ok(
+				remaining.length <= 3,
+				`superseded builds must be gone, still present: ${remaining.join(", ")}`,
+			);
+			assert.equal(await store.count(), 40, "reclaiming must not touch the data");
+		} finally {
+			await store.close();
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+
+	it("leaves young builds alone while another process may be writing", async () => {
+		const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-reclaim-"));
+		const store = new LanceDbStore(tmpDir, 4);
+		try {
+			await store.addChunks(makeChunks(4) as never);
+			await store.optimize({ skipIndex: true });
+
+			const indicesDir = join(tmpDir, "chunks.lance", "_indices");
+			mkdirSync(indicesDir, { recursive: true });
+			const fresh: string[] = [];
+			for (let i = 0; i < 4; i++) {
+				const dir = join(indicesDir, `fresh-build-${i}`);
+				mkdirSync(dir, { recursive: true });
+				writeFileSync(join(dir, "auxiliary.idx"), "x");
+				fresh.push(dir);
+			}
+
+			await store.optimize({});
+			for (const dir of fresh) {
+				assert.equal(fs.existsSync(dir), true, "a build younger than the age guard must survive");
+			}
+		} finally {
+			await store.close();
+			rmSync(tmpDir, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("LanceDbStore index-repair hardening", () => {
   it("skips index creation when many active index versions accumulated", async () => {
     const tmpDir = mkdtempSync(join(tmpdir(), "opencode-rag-idx-"));
@@ -732,20 +830,48 @@ describe("LanceDbStore index-repair hardening", () => {
     }
   });
 
-  it("gives up after repeated index-repair failures instead of retraining forever", async () => {
+  it("rebuilds an index whose files are gone instead of aborting the repair", async () => {
     const store = new LanceDbStore("memory://", 4);
-    let indexStatsCalls = 0;
     let createIndexCalls = 0;
-    const fakeTable = {
+    let rebuilt = false;
+    (store as unknown as { table: unknown }).table = {
       optimize: async () => {},
-      countRows: async () => 1500,
-      listIndices: async () => [],
+      countRows: async () => 5000,
+      listIndices: async () => [{ name: "embedding_idx", indexType: "IvfFlat", columns: ["embedding"] }],
+      // A pruned/dangling index dir makes indexStats throw - the repair used to
+      // bail out here and leave every query on the brute-force path.
       indexStats: async () => {
-        indexStatsCalls++;
-        throw new Error("boom");
+        if (rebuilt) return { distanceType: "cosine" };
+        throw new Error("lance error: Not found: .../_indices/abc/index.idx");
       },
       createIndex: async () => {
         createIndexCalls++;
+        rebuilt = true;
+      },
+    };
+
+    const warns: string[] = [];
+    await store.optimize({ logger: (m) => warns.push(m) });
+
+    assert.equal(createIndexCalls, 1, "an unreadable index must be rebuilt");
+    assert.ok(
+      warns.some((w) => w.includes("unreadable")),
+      `expected unreadable-index warning, got: ${warns.join(" | ")}`,
+    );
+  });
+
+  it("gives up after repeated index-repair failures instead of retraining forever", async () => {
+    const store = new LanceDbStore("memory://", 4);
+    let createIndexCalls = 0;
+    const fakeTable = {
+      optimize: async () => {},
+      countRows: async () => 5000,
+      listIndices: async () => [],
+      // Readable but wrong metric: the repair keeps trying, and every build fails.
+      indexStats: async () => ({ distanceType: "l2" }),
+      createIndex: async () => {
+        createIndexCalls++;
+        throw new Error("boom");
       },
     };
     (store as unknown as { table: unknown }).table = fakeTable;
@@ -755,8 +881,11 @@ describe("LanceDbStore index-repair hardening", () => {
       await store.optimize({ logger: (m) => warns.push(m) });
     }
 
-    assert.equal(indexStatsCalls, 3, "repair must be attempted at most MAX_INDEX_REPAIR_ATTEMPTS times");
-    assert.equal(createIndexCalls, 0, "createIndex must never run when indexStats throws");
+    assert.equal(
+      createIndexCalls,
+      3,
+      "repair must be attempted at most MAX_INDEX_REPAIR_ATTEMPTS times per session",
+    );
     assert.ok(
       warns.some((w) => w.includes("giving up")),
       `expected give-up warning, got: ${warns.join(" | ")}`,

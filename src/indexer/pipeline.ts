@@ -112,6 +112,46 @@ function isPidAlive(pid: number): boolean {
  * @param options - Configuration for the index pass.
  * @returns Aggregate statistics for the pass.
  */
+/** Minimum gap between two regular (non-aggressive) store optimize runs. */
+export const MIN_OPTIMIZE_INTERVAL_MS = 15 * 60 * 1000;
+
+/** Last time a regular optimize actually ran in this process. */
+let lastOptimizeAt = 0;
+
+/**
+ * Decide whether a regular store optimize may run now, and stamp the attempt.
+ *
+ * LanceDB's `Table.optimize()` always rewrites the ANN index (it decides the
+ * index is stale and rebuilds it), and one IVF_FLAT build is a full,
+ * uncompressed copy of the vector column - 12k chunks x 4096 float32 is about
+ * 190 MB. The watch loop optimized at the end of EVERY pass, so a busy session
+ * left one dead build per pass behind: on 2026-10-26 the store carried 15 builds
+ * (2.5 GB) against 380 MB of live data. Optimizing at most every
+ * {@link MIN_OPTIMIZE_INTERVAL_MS} bounds that to the builds of the last
+ * interval, and the version prune inside the same call reclaims the rest.
+ *
+ * Aggressive runs (a private temp store during a full rebuild) always return
+ * true.
+ *
+ * @param options - `force` bypasses the throttle; `now` overrides the clock (tests).
+ * @returns True when the caller should run the optimize.
+ */
+export function optimizeDue(options?: { force?: boolean; now?: number }): boolean {
+  const now = options?.now ?? Date.now();
+  if (options?.force) {
+    lastOptimizeAt = now;
+    return true;
+  }
+  if (now - lastOptimizeAt < MIN_OPTIMIZE_INTERVAL_MS) return false;
+  lastOptimizeAt = now;
+  return true;
+}
+
+/** Reset the optimize throttle (tests only). */
+export function resetOptimizeThrottle(): void {
+  lastOptimizeAt = 0;
+}
+
 export async function runIndexPass(options: RunIndexPassOptions): Promise<IndexRunStats> {
   const logger = createLogger(options.logger);
   const lockPath = path.join(options.storePath, LOCK_FILE);
@@ -231,11 +271,14 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   if (!options.force && manifestStatus === "ok" && Object.keys(manifest.files).length > 0) {
     try {
       const storedPaths = await options.store.getFilePaths();
-      const storedSet = new Set(storedPaths);
+      // Case-insensitive on Windows: the store may hold `c:/...` while the
+      // manifest keys `C:/...` (path.resolve keeps the drive-letter case).
+      // A case-sensitive compare re-indexes every such file on every pass.
+      const storedSet = new Set(storedPaths.map((p) => p.toLowerCase()));
       let removedCount = 0;
       for (const [p, entry] of Object.entries(manifest.files)) {
         // Path missing from store entirely (aborted before store finished)
-        if (entry.chunkCount > 0 && !storedSet.has(p)) {
+        if (entry.chunkCount > 0 && !storedSet.has(p.toLowerCase())) {
           delete manifest.files[p];
           removedCount++;
         }
@@ -1205,7 +1248,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   if (optimizeInterval > 0 && windowCount % optimizeInterval === 0) {
     const storedInWindow = await prevStore;
     prevStore = null;
-    if (storedInWindow > 0) {
+    if (storedInWindow > 0 && optimizeDue({ force: Boolean(tempStorePath) })) {
       logger.info("Optimizing vector store (mid-run compaction, pruning old versions)...");
       await effectiveStore.optimize?.(
         tempStorePath
@@ -1380,14 +1423,23 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // swapped-in store is private to this process. Skipped when the rebuild did
   // not promote (the old store is untouched and its handle may be closed).
   if (!aborted() && !keepPreviousIndexState) {
-    logger.info("Optimizing vector store (compacting fragments, pruning old versions)...");
-    const optimizeStart = Date.now();
-    try {
-      const optimizeTarget = tempStorePath ? options.store : effectiveStore;
-      await optimizeTarget.optimize?.(tempStorePath ? { aggressive: true, logger: logger.warn } : { logger: logger.warn });
-      logger.info(`Vector store optimized in ${((Date.now() - optimizeStart) / 1000).toFixed(1)}s`);
-    } catch (err) {
-      logger.warn(`Vector store optimization failed: ${(err as Error).message}`);
+    // Every optimize rebuilds the ANN index (a ~190 MB vector copy at 4096
+    // dims), so passes within the throttle window skip it; the next due pass
+    // compacts and prunes, which also reclaims the skipped builds.
+    if (!optimizeDue({ force: Boolean(tempStorePath) })) {
+      logger.debug(
+        `Skipping vector store optimize (throttled: < ${MIN_OPTIMIZE_INTERVAL_MS / 60000} min since the last run)`,
+      );
+    } else {
+      logger.info("Optimizing vector store (compacting fragments, pruning old versions)...");
+      const optimizeStart = Date.now();
+      try {
+        const optimizeTarget = tempStorePath ? options.store : effectiveStore;
+        await optimizeTarget.optimize?.(tempStorePath ? { aggressive: true, logger: logger.warn } : { logger: logger.warn });
+        logger.info(`Vector store optimized in ${((Date.now() - optimizeStart) / 1000).toFixed(1)}s`);
+      } catch (err) {
+        logger.warn(`Vector store optimization failed: ${(err as Error).message}`);
+      }
     }
   }
 

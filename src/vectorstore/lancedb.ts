@@ -45,6 +45,49 @@ const MIN_ROWS_FOR_IVF_INDEX = 4096;
 export type StoreWarn = (message: string) => void;
 
 /**
+ * When more than this many index build directories carry files, `optimize()`
+ * deletes them all and builds the ANN index once.
+ *
+ * LanceDB never reclaims superseded index builds: every `Table.optimize()` and
+ * every `createIndex()` writes a new `_indices/<uuid>/` holding an uncompressed
+ * copy of the vector column (12k chunks x 4096 float32 = ~190 MB), and the old
+ * directories stay on disk indefinitely. Three builds is the working ceiling;
+ * beyond that a single rebuild is cheaper than the dead copies.
+ */
+const MAX_INDEX_BUILDS = 3;
+
+/** Builds younger than this are treated as in-flight (another process may be writing). */
+const INDEX_BUILD_MIN_AGE_MS = 60 * 1000;
+
+/**
+ * Version retention for a regular (non-aggressive) optimize run.
+ *
+ * Matches the pipeline's optimize throttle (`MIN_OPTIMIZE_INTERVAL_MS`): long
+ * enough for an in-flight query to finish, short enough that the next due run
+ * reclaims the index build the previous one superseded.
+ */
+const REGULAR_CLEANUP_AGE_MS = 15 * 60 * 1000;
+
+/** Recursively sum the file sizes of a directory (0 when unreadable). */
+function dirSizeBytes(dir: string): number {
+  let total = 0;
+  for (const entry of fsSync.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    total += entry.isDirectory() ? dirSizeBytes(full) : fsSync.statSync(full).size;
+  }
+  return total;
+}
+
+/** Newest modification time inside a directory (its own when empty). */
+function newestMtimeMs(dir: string): number {
+  let newest = fsSync.statSync(dir).mtimeMs;
+  for (const entry of fsSync.readdirSync(dir, { withFileTypes: true })) {
+    newest = Math.max(newest, fsSync.statSync(path.join(dir, entry.name)).mtimeMs);
+  }
+  return newest;
+}
+
+/**
  * Count index-version directories in a LanceDB table directory. Each
  * `createIndex` writes a new `<uuid>/` directory under `_indices`; a healthy
  * store holds one per built index, while a store whose index commits fail
@@ -346,7 +389,11 @@ function buildFilePathMatch(filePath: string): string {
     // uuids — no LIKE metacharacters; paths never contain quotes unescaped)
     return `(filePath = '${escBase}' OR filePath LIKE '%/${escBase}')`;
   }
-  return `filePath = '${normalizeFilePath(filePath).replace(/'/g, "''")}'`;
+  // Case-insensitive on purpose: Windows paths reach the store in more than one
+  // spelling (`c:/Daten/...` from a watcher event vs `C:/Daten/...` from
+  // path.resolve), and a case-sensitive delete leaves the other spelling behind
+  // forever - that is how 262 files ended up stored twice.
+  return `lower(filePath) = lower('${normalizeFilePath(filePath).replace(/'/g, "''")}')`;
 }
 
 /** Internal row shape stored in the LanceDB table. */
@@ -784,12 +831,15 @@ export class LanceDbStore implements VectorStore {
     // keeps an abort between insert and delete from losing data.
     // Quirk paths are skipped — they were fully cleaned above.
     const byFile = this.rowsByFilePath(rows);
-    for (const [filePath, ids] of byFile) {
+    // NOT IN every id written by this call, not just the group's: two spellings
+    // of the same file can land in one batch, and a per-group list would let the
+    // first delete wipe the second group's freshly inserted rows.
+    const allIds = rows.map((row) => `'${row.id.replace(/'/g, "''")}'`).join(", ");
+    for (const filePath of byFile.keys()) {
       if (filePath.startsWith(QUIRK_FILE_PREFIX)) continue;
       const escapedPath = filePath.replace(/'/g, "''");
-      const idList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
       await table.delete(
-        `filePath = '${escapedPath}' AND id NOT IN (${idList})`,
+        `lower(filePath) = lower('${escapedPath}') AND id NOT IN (${allIds})`,
       );
     }
   }
@@ -829,12 +879,12 @@ export class LanceDbStore implements VectorStore {
     // INSERT FIRST (single add for the whole batch), then per-file dedup
     await table.add(allRows as unknown as Record<string, unknown>[]);
 
-    for (const [filePath, ids] of dedupByFile) {
+    const allBulkIds = allRows.map((row) => `'${row.id.replace(/'/g, "''")}'`).join(", ");
+    for (const filePath of dedupByFile.keys()) {
       if (filePath.startsWith(QUIRK_FILE_PREFIX)) continue;
       const escapedPath = filePath.replace(/'/g, "''");
-      const idList = ids.map((id) => `'${id.replace(/'/g, "''")}'`).join(", ");
       await table.delete(
-        `filePath = '${escapedPath}' AND id NOT IN (${idList})`,
+        `lower(filePath) = lower('${escapedPath}') AND id NOT IN (${allBulkIds})`,
       );
     }
   }
@@ -1286,9 +1336,20 @@ export class LanceDbStore implements VectorStore {
       const indices = await table.listIndices();
       const vecIndex = indices.find((i) => i.columns.includes("embedding"));
       const idxName = vecIndex?.name ?? "embedding_idx";
-      const stats = await table.indexStats(idxName);
-      if (stats && stats.distanceType === "cosine") return; // already healthy
-      if (!stats && count < MIN_ROWS_FOR_IVF_INDEX) return; // small store — brute-force is optimal, and IVF would only trip Lance's "too small for a meaningful index" KMeans warning
+      // indexStats throws when the registered index points at files that no
+      // longer exist (a dangling `_indices/<uuid>` after a prune, or a
+      // half-written build). Such an index is unusable and must be rebuilt -
+      // aborting here would leave every search on the brute-force path for the
+      // whole process lifetime. `undefined` without a throw just means "no
+      // index yet" and stays on the old path.
+      let unreadable = false;
+      const stats = await table.indexStats(idxName).catch(() => {
+        unreadable = true;
+        return undefined;
+      });
+      if (unreadable) report(`[lancedb] index '${idxName}' is unreadable - rebuilding it`);
+      if (stats?.distanceType === "cosine") return; // already healthy
+      if (!unreadable && count < MIN_ROWS_FOR_IVF_INDEX) return; // small store — brute-force is optimal, and IVF would only trip Lance's "too small for a meaningful index" KMeans warning
 
       const numPartitions = Math.max(16, Math.min(256, Math.floor(count / 256)));
       for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1352,17 +1413,25 @@ export class LanceDbStore implements VectorStore {
    * @param options - `aggressive: true` prunes every version but the current
    *   one with `deleteUnverified`. Only safe for a private store that no other
    *   process reads (e.g. a temporary rebuild store). For the shared store,
-   *   versions newer than 1 hour are retained so in-flight queries (Web UI,
-   *   background auto-index) can finish before their data files are reclaimed.
+   *   versions newer than {@link REGULAR_CLEANUP_AGE_MS} are retained so
+   *   in-flight queries (Web UI, background auto-index) can finish before their
+   *   data files are reclaimed. The window matches the pipeline's optimize
+   *   throttle, so every run can reclaim the build the previous one left behind.
    */
   async optimize(options?: { aggressive?: boolean; skipIndex?: boolean; logger?: StoreWarn }): Promise<void> {
     await this.withWriteLock(async () => {
       try {
         const table = await this.getTable();
+        // Snapshot before the optimize: table.optimize() and the index repair
+        // both write their own builds, so only the pre-existing set says which
+        // directories are dead copies worth reclaiming.
+        const preExistingDirs = this.dbPath.startsWith("memory://")
+          ? new Set<string>()
+          : this.indexBuildDirs();
         if (options?.aggressive) {
           await table.optimize({ cleanupOlderThan: new Date(), deleteUnverified: true });
         } else {
-          const threshold = new Date(Date.now() - 60 * 60 * 1000);
+          const threshold = new Date(Date.now() - REGULAR_CLEANUP_AGE_MS);
           await table.optimize({ cleanupOlderThan: threshold, deleteUnverified: false });
         }
 
@@ -1371,20 +1440,22 @@ export class LanceDbStore implements VectorStore {
         // from growing unboundedly and prevents false positives in the
         // index-repair stale-version guard.
         if (!this.dbPath.startsWith("memory://")) {
-          const swept = sweepEmptyIndexVersionDirs(path.join(this.dbPath, TABLE_NAME + ".lance"));
+          const tablePath = path.join(this.dbPath, TABLE_NAME + ".lance");
+          const swept = sweepEmptyIndexVersionDirs(tablePath);
           if (swept > 0) {
             const message = `[lancedb] swept ${swept} stale index-version directories`;
             (options?.logger ?? console.warn)(message);
           }
         }
 
-        // Build the ANN vector index — without it every vectorSearch() is a
+        // Build the ANN vector index - without it every vectorSearch() is a
         // brute-force O(N) flat scan (slow at 50k+ chunks). Skips early when
         // an index with the correct cosine metric already exists, and can be
         // skipped entirely for a private temporary store that is never
         // searched (the rebuild pipeline builds the index once at the end).
         if (!options?.skipIndex) {
           await this.ensureCosineIndex(options?.logger);
+          await this.reclaimIndexBuilds(preExistingDirs, options?.logger);
         }
       } catch (err) {
         // Optimize is best-effort — must not break indexing, but surface the
@@ -1393,6 +1464,102 @@ export class LanceDbStore implements VectorStore {
         (options?.logger ?? console.warn)(message);
       }
     });
+  }
+
+  /** Names of the index build directories that currently carry files. */
+  private indexBuildDirs(): Set<string> {
+    const indicesDir = path.join(this.dbPath, TABLE_NAME + ".lance", "_indices");
+    const builds = new Set<string>();
+    let names: string[];
+    try {
+      names = fsSync.readdirSync(indicesDir);
+    } catch {
+      return builds;
+    }
+    for (const name of names) {
+      try {
+        if (fsSync.readdirSync(path.join(indicesDir, name)).length > 0) builds.add(name);
+      } catch {
+        // unreadable/racing entry - ignore
+      }
+    }
+    return builds;
+  }
+
+  /**
+   * Delete superseded index build directories and rebuild the ANN index once.
+   *
+   * LanceDB writes a new `_indices/<uuid>/` on every `optimize()` and every
+   * `createIndex()`, each holding an uncompressed copy of the vector column
+   * (4096 x float32 = 16 KB per row, ~190 MB at 12k chunks), and it never
+   * removes the old ones. A store that optimized a few times a day reached
+   * 2.5 GB of dead builds against 380 MB of live data.
+   *
+   * Above {@link MAX_INDEX_BUILDS} builds this deletes every build directory and
+   * creates one fresh index (a `replace: true` build also replaces the dangling
+   * index versions the deleted directories leave behind). Skipped while any
+   * build is younger than {@link INDEX_BUILD_MIN_AGE_MS} so a build running in
+   * another process is never hit; if the recreate fails the index is simply
+   * rebuilt by the next repair pass.
+   *
+   * @param logger - Warning sink for the reclaimed-space message.
+   */
+  private async reclaimIndexBuilds(preExisting: Set<string>, logger?: StoreWarn): Promise<void> {
+    if (this.dbPath.startsWith("memory://")) return;
+    if (preExisting.size <= MAX_INDEX_BUILDS) return;
+    const indicesDir = path.join(this.dbPath, TABLE_NAME + ".lance", "_indices");
+
+    let names: string[];
+    try {
+      names = fsSync.readdirSync(indicesDir);
+    } catch {
+      return; // no index directories: nothing to reclaim
+    }
+
+    // Only builds that existed before this optimize and are older than the
+    // in-flight window are candidates; builds written by this call (or by
+    // another process a moment ago) are kept.
+    const deletable = new Set<string>();
+    for (const name of preExisting) {
+      try {
+        if (Date.now() - newestMtimeMs(path.join(indicesDir, name)) >= INDEX_BUILD_MIN_AGE_MS) {
+          deletable.add(name);
+        }
+      } catch {
+        // unreadable/racing entry - leave it alone
+      }
+    }
+    if (deletable.size === 0) return;
+
+    let reclaimedBytes = 0;
+    for (const name of names) {
+      if (!deletable.has(name)) continue;
+      const full = path.join(indicesDir, name);
+      try {
+        reclaimedBytes += dirSizeBytes(full);
+        fsSync.rmSync(full, { recursive: true, force: true });
+      } catch {
+        // best-effort - keep going, a rebuild fixes the metadata either way
+      }
+    }
+
+    // The deleted builds leave their index versions dangling in the manifest;
+    // a replace build re-registers the index and drops them.
+    const table = await this.getTable();
+    const count = await table.countRows().catch(() => 0);
+    const numPartitions = Math.max(16, Math.min(256, Math.floor(count / 256)));
+    await table.createIndex("embedding", {
+      config: lancedb.Index.ivfFlat({ numPartitions, distanceType: "cosine" }),
+      replace: true,
+      name: "embedding_idx",
+      waitTimeoutSeconds: 120,
+    } as never);
+
+    if (reclaimedBytes > 0) {
+      const message =
+        `[lancedb] reclaimed ${(reclaimedBytes / (1024 * 1024)).toFixed(1)} MB of superseded index builds`;
+      (logger ?? console.warn)(message);
+    }
   }
 
   /**
