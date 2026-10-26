@@ -19,7 +19,7 @@ export { LanceDbStore } from "./vectorstore/lancedb.js";
 export { InMemoryVectorStore } from "./vectorstore/memory.js";
 export { retrieve } from "./retriever/retriever.js";
 export { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "./retriever/context-optimizer.js";
-export { loadConfig, DEFAULT_CONFIG } from "./core/config.js";
+export { loadConfig, loadConfigLayers, loadWorkspaceConfig, resolveConfigPaths, configuredSections, findGlobalConfigFile, globalConfigPath, DEFAULT_CONFIG } from "./core/config.js";
 export { createBackgroundIndexer } from "./watcher.js";
 export { createWatchIgnore } from "./indexer.js";
 export { ImageChunker, createImageVisionProvider, resolveOnDemandImageConfig, getMimeType, SUPPORTED_IMAGE_EXTENSIONS } from "./chunker/image.js";

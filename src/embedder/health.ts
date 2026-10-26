@@ -23,20 +23,31 @@ export interface HealthCheckResult {
 
 /**
  * Check connectivity and model availability for all configured providers.
- * Returns one result per configured model (embedding + description + image_description if enabled).
+ *
+ * The embedding model is always checked — indexing cannot work without it.
+ * Optional models are checked only when the feature is enabled AND its section
+ * is actually configured: `configuredSections` comes from the raw config
+ * layers, so a model that is only enabled by `DEFAULT_CONFIG` is never probed
+ * (and never offered for `ollama pull`). Omit the set to check every enabled
+ * model (used by callers that are not init/setup).
  */
-export async function checkProviderHealth(config: RagConfig): Promise<HealthCheckResult[]> {
+export async function checkProviderHealth(
+  config: RagConfig,
+  configuredSections?: ReadonlySet<string>,
+): Promise<HealthCheckResult[]> {
   const timeoutMs = config.embedding.timeoutMs ?? 120000;
+  const configured = (section: string): boolean =>
+    !configuredSections || configuredSections.has(section);
 
   const checks: Promise<HealthCheckResult>[] = [
     checkEmbeddingModel(config, timeoutMs),
   ];
 
-  if (config.description?.enabled) {
+  if (config.description?.enabled && configured("description")) {
     checks.push(checkDescriptionModel(config, timeoutMs));
   }
 
-  if (config.imageDescription?.enabled) {
+  if (config.imageDescription?.enabled && configured("imageDescription")) {
     checks.push(checkImageDescriptionModel(config, timeoutMs));
     const onDemand = resolveOnDemandImageConfig(config.imageDescription);
     if (onDemand.provider !== config.imageDescription.provider || onDemand.model !== config.imageDescription.model) {
@@ -44,7 +55,7 @@ export async function checkProviderHealth(config: RagConfig): Promise<HealthChec
     }
   }
 
-  if (config.reranking?.enabled) {
+  if (config.reranking?.enabled && configured("reranking")) {
     checks.push(checkRerankModel(config));
   }
 

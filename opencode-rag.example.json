@@ -109,6 +109,14 @@
     "maxStateChars": 8000,
     "routeBeforeAsking": false
   },
+  "shellGuard": {
+    "enabled": false,
+    "threshold": 0.5,
+    "timeoutMs": 10000,
+    "onError": "allow",
+    "cacheTtlMs": 600000,
+    "maxCacheEntries": 256
+  },
   "description": {
     "enabled": true,
     "provider": "ollama",

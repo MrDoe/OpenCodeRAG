@@ -26,6 +26,8 @@ OpenCodeRAG uses three models:
 - **Description model** - generates natural-language descriptions of code chunks before embedding. Configured via `description.model` (default: `qwen2.5:3b`).
 - **Vision model** - generates natural-language descriptions of images before embedding. Configured via `imageDescription.model` (default: `minicpm-v4.6`).
 
+> **`init` / `setup` only test configured models.** The embedding model is always checked (indexing needs it). The description, vision (including its `onDemand` override), and rerank models are checked only when the corresponding section appears in your config file (`opencode-rag.json` or the global config) *and* the feature is enabled. Models that are merely on because of built-in defaults are never probed or offered for `ollama pull`.
+
 > **Tip:** Smaller embedding models (≤3B) work well on CPU. For better search results, use a larger embedding model like `qwen3-embedding:1.7b` and activate description and image descripion model usage in OpenCodeRAG config (dedicated GPU recommended). `opencode-rag init` auto-detects whether your Ollama runs on CPU or GPU and tunes the embedding batch settings accordingly — no manual tuning needed.
 
 ## Install

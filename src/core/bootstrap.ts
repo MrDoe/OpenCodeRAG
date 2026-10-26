@@ -4,7 +4,7 @@
  */
 
 import path from "node:path";
-import { loadConfig, findConfigFile, resolveLogConfig, DEFAULT_CONFIG, type RagConfig } from "./config.js";
+import { loadConfig, loadWorkspaceConfig, resolveConfigPaths, resolveLogConfig, type RagConfig } from "./config.js";
 import { resolveApiKey } from "./resolve-api-key.js";
 import { loadChunkersFromConfig } from "../chunker/loader.js";
 import { createEmbedder, probeEmbeddingDimension } from "../embedder/factory.js";
@@ -125,22 +125,24 @@ export async function resolveRagContext(
   const workDir = opts.cwd ?? process.cwd();
   let configPath: string | undefined;
 
+  let cfg: RagConfig;
   if (opts.configPath) {
     configPath = path.resolve(workDir, opts.configPath);
-  } else {
-    configPath = findConfigFile(workDir);
-  }
-
-  let cfg: RagConfig;
-  if (configPath) {
     cfg = loadConfig(configPath);
     resolveApiKey(cfg, workDir);
     await loadChunkersFromConfig(cfg, path.dirname(configPath));
   } else {
-    // Deep-clone so resolveApiKey (below) cannot mutate the shared
-    // DEFAULT_CONFIG singleton.
-    cfg = structuredClone(DEFAULT_CONFIG);
+    // Defaults < global (~/.config/opencode/opencode-rag.json) < workspace.
+    const paths = resolveConfigPaths(workDir);
+    configPath = paths.workspace;
+    cfg = loadWorkspaceConfig(workDir);
     resolveApiKey(cfg, workDir);
+    const baseDir = paths.workspace
+      ? path.dirname(paths.workspace)
+      : paths.global
+        ? path.dirname(paths.global)
+        : undefined;
+    if (baseDir) await loadChunkersFromConfig(cfg, baseDir);
   }
 
   const logFilePath = path.resolve(

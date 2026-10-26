@@ -16,9 +16,12 @@
  * | `tool.execute.after`         | `ctx.tool.hook("execute.after", ...)`    |
  * | `event`                      | `ctx.event.subscribe({ signal })`        |
  *
- * Additional V2-only registration (no V1 equivalent): the read-only RAG tools
- * are granted to the built-in `explore` agent via `ctx.agent.transform`
- * (config `openCode.exploreAgentTools`, default on).
+ * Additional V2-only registrations (no V1 equivalent):
+ * - the read-only RAG tools are granted to the built-in `explore` agent via
+ *   `ctx.agent.transform` (config `openCode.exploreAgentTools`, default on);
+ * - the optional shell guard classifies shell commands and escalates flagged
+ *   ones to the confirmation prompt via `ctx.permission.hook("evaluate", …)`
+ *   (config `shellGuard`, default off).
  *
  * The V2 prompt hook exposes the user's text as a mutable `event.prompt.text`
  * instead of V1's parts-mutation contract; the adapter shims a V1-shaped
@@ -31,8 +34,14 @@
  * - The read-tool override keeps its V1 execute contract (args + sessionID).
  */
 
-import { findConfigFile, loadConfig } from "../core/config.js";
+import { loadWorkspaceConfig, resolveConfigPaths } from "../core/config.js";
 import { ragPlugin, RAG_TOOL_NAMES } from "../plugin.js";
+import {
+  createShellGuardForDirectory,
+  formatShellGuardReason,
+  isShellToolName,
+  type ShellGuard,
+} from "../safety/shell-guard.js";
 import type { Hooks } from "@opencode-ai/plugin";
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -87,6 +96,32 @@ type V2AgentDomain = {
   reload(): Promise<void>;
 };
 
+/**
+ * Permission evaluation event (OpenCode V2 `ctx.permission.hook("evaluate")`).
+ *
+ * Runs after configured rules are evaluated and before the action runs or a
+ * prompt is published — for `allow` and `ask` decisions (`deny` is final).
+ * Mutating `effect`/`message` is the documented way to escalate an allowed
+ * action to a confirmation prompt.
+ */
+export type V2PermissionEvaluation = {
+  readonly sessionID: string;
+  readonly agent?: string;
+  readonly action: string;
+  readonly resources: readonly string[];
+  readonly metadata?: Record<string, unknown>;
+  readonly source?: { type: "tool"; messageID: string; id: string };
+  effect: "allow" | "ask" | "deny";
+  message?: string;
+};
+
+type V2PermissionDomain = {
+  hook(
+    name: "evaluate",
+    callback: (event: V2PermissionEvaluation) => Promise<void> | void,
+  ): Promise<V2Registration>;
+};
+
 /** Structural subset of the OpenCode V2 plugin context. */
 export type V2Context = {
   location: { directory: string };
@@ -95,6 +130,8 @@ export type V2Context = {
   session: V2SessionDomain;
   event: V2EventDomain;
   agent?: V2AgentDomain;
+  /** Permission surface — present in OpenCode V2 hosts; absent on older builds. */
+  permission?: V2PermissionDomain;
 };
 
 /** A registered V2 tool definition (structural subset of Tool.Info). */
@@ -360,6 +397,41 @@ export function grantExploreToolPermissions(editor: V2AgentEditor): void {
 }
 
 /**
+ * Install the optional shell-command safety guard on the V2 permission
+ * `evaluate` hook.
+ *
+ * The hook runs after rules resolve and before the shell action executes, for
+ * both `allow` and `ask` decisions (`deny` is final). A command the decision
+ * model flags is escalated to the host's confirmation prompt; a clean command
+ * keeps the resolved effect and runs normally. Any failure inside the hook is
+ * swallowed so a broken classifier can never block a permission check.
+ *
+ * Returns `undefined` when the host exposes no permission hook (older V2
+ * builds) — the guard then stays inert instead of failing plugin setup.
+ * Exported for tests.
+ */
+export async function installShellGuard(
+  ctx: Pick<V2Context, "permission">,
+  guard: ShellGuard,
+): Promise<V2Registration | undefined> {
+  const permission = ctx.permission;
+  if (!permission?.hook) return undefined;
+  return permission.hook("evaluate", async (event) => {
+    try {
+      if (!isShellToolName(event.action)) return;
+      const command = Array.isArray(event.resources) ? event.resources.join("\n").trim() : "";
+      if (command.length === 0) return;
+      const verdict = await guard.evaluate(command);
+      if (!verdict.flagged) return;
+      event.effect = "ask";
+      event.message = verdict.reason || formatShellGuardReason(verdict);
+    } catch {
+      // Never break a permission check — leave the resolved effect untouched.
+    }
+  });
+}
+
+/**
  * Run the V1 `ragPlugin` factory for the V2 context's location and register
  * all returned hooks as V2 transforms/hooks. Returns a cleanup function that
  * disposes every registration and aborts the event subscription.
@@ -385,9 +457,9 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
   // `openCode.exploreAgentTools: false` in opencode-rag.json.
   let exploreToolsEnabled = true;
   try {
-    const cfgPath = findConfigFile(ctx.location.directory);
-    if (cfgPath) {
-      exploreToolsEnabled = loadConfig(cfgPath, false).openCode.exploreAgentTools !== false;
+    const paths = resolveConfigPaths(ctx.location.directory);
+    if (paths.global || paths.workspace) {
+      exploreToolsEnabled = loadWorkspaceConfig(ctx.location.directory, false).openCode.exploreAgentTools !== false;
     }
   } catch {
     // Malformed config — the V1 factory reports it; fall back to the default
@@ -407,6 +479,24 @@ export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise
       }
     });
     registrations.push(registration);
+  }
+
+  // ── shell guard (V2-only permission evaluate hook) ───────────────────────
+  // Optional: classify every shell command with the local decision model and
+  // escalate flagged commands to OpenCode's confirmation prompt. The guard
+  // re-reads opencode-rag.json, so shellGuard.enabled/threshold/model edits
+  // take effect without a restart. Inert when the host has no permission
+  // surface or when `shellGuard.enabled` is false.
+  if (ctx.permission) {
+    try {
+      const registration = await installShellGuard(
+        ctx,
+        createShellGuardForDirectory(ctx.location.directory),
+      );
+      if (registration) registrations.push(registration);
+    } catch {
+      // Non-critical — the rest of the plugin must keep working
+    }
   }
 
   // Explore agent tool grant: hand the read-only RAG tools to the built-in

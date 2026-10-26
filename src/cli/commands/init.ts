@@ -13,7 +13,7 @@
 import type { Command } from "commander";
 import path from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, copyFileSync } from "node:fs";
-import { loadConfig, findConfigFile } from "../../core/config.js";
+import { loadConfig, findConfigFile, loadWorkspaceConfig, configuredSections } from "../../core/config.js";
 import { checkProviderHealth, pullOllamaModels } from "../../embedder/health.js";
 import { destroyAllPooledConnections } from "../../embedder/http.js";
 import { c } from "../format.js";
@@ -359,8 +359,11 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
         ? null
         : (async () => {
             console.log(`\n${c.heading("Checking provider connectivity...")}\n`);
-            const ragConfig = loadConfig(configPath);
-            return checkProviderHealth(ragConfig);
+            // Effective config (global < workspace) and the sections the user
+            // actually configured: models that are merely on by default are
+            // never probed or offered for `ollama pull`.
+            const ragConfig = loadWorkspaceConfig(cwd);
+            return checkProviderHealth(ragConfig, configuredSections(cwd));
           })();
 
       const installPromise = options.skipInstall
@@ -381,7 +384,7 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
 
         const missingOllama = results.filter((r) => r.status === "missing" && r.provider === "ollama");
         if (missingOllama.length > 0) {
-          const ragConfig = loadConfig(configPath);
+          const ragConfig = loadWorkspaceConfig(cwd);
           const pullEntries = missingOllama.map((r) => {
             if (r.type === "embedding") {
               return { model: r.model, baseUrl: ragConfig.embedding.baseUrl, proxy: ragConfig.embedding.proxy };

@@ -355,6 +355,60 @@ Controls the local decision-model tool (`make_decision`) — fast classification
 
 **Prerequisites:** Ollama ≥ 0.35 and a pulled model: `ollama pull tev1:0.8b` (812 MB) or `ollama pull tev1:4b` (4.4 GB). See [Plugin documentation](plugin.md#make_decision) for the tool contract.
 
+### `shellGuard`
+
+Optional safety guard for shell commands. Every `shell`/`bash` command is classified by the local decision model **before it runs**; a command whose `destructive` or `malicious` probability reaches `threshold` is escalated to OpenCode's confirmation prompt, while a clean command executes unchanged. **Disabled by default** — when enabled, every shell command waits for the local model first.
+
+```json
+{
+  "shellGuard": {
+    "enabled": false,
+    "threshold": 0.5,
+    "timeoutMs": 10000,
+    "onError": "allow",
+    "cacheTtlMs": 600000,
+    "maxCacheEntries": 256
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `false` | Master switch. Independent of `decision.enabled` — the guard has its own gate |
+| `threshold` | `0.5` | Flag when `p(destructive)` **or** `p(malicious)` reaches this probability. Lower = more prompts |
+| `timeoutMs` | `10000` | Abort a classification after this many ms and apply `onError`. Kept short because the check sits on the critical path of every shell command |
+| `onError` | `"allow"` | Classifier failure (timeout, endpoint down, malformed answer): `"allow"` executes the command and logs a warning (fail-open); `"ask"` escalates to the confirmation prompt |
+| `cacheTtlMs` | `600000` | Verdict cache TTL in ms (`0` disables the cache). Repeated identical commands are answered instantly |
+| `maxCacheEntries` | `256` | Maximum cached verdicts before the oldest are evicted |
+| `provider` / `baseUrl` / `model` | — | Optional backend overrides. Omitted values fall back to the `decision` section (`provider: "ollama"`, `baseUrl: "http://127.0.0.1:11434/api"`, `model: "tev1:4b"`) |
+
+**How it works:** the guard runs in OpenCode V2's permission `evaluate` hook, which fires after the configured rules are evaluated and before the action runs — for both `allow` and `ask` decisions (`deny` is final and never reaches the evaluator). A flagged command keeps its resolved effect but is upgraded to `ask`, and the confirmation prompt shows the full verdict: model name, both probabilities, and the risk category (`delete_files`, `format_disk`, `process_kill`, `network`, `config_tamper`, `privilege`, or `none`).
+
+**Machine-wide:** put the `shellGuard` block in the [global config](#config-file-discovery) (`~/.config/opencode/opencode-rag.json`) to vet commands in every workspace; a workspace `opencode-rag.json` can still override the threshold or switch it off.
+
+**Prompting behaviour:** a flagged command is confirmed **every time**. OpenCode's native "Allow always" saved approvals are keyed by rule, not by this dynamic check, so they cannot suppress it. Commands that classify as clean are not prompted again.
+
+**Backend overrides:** any endpoint that speaks the `/v1/systemone` protocol works. For a llama-swap proxy running Clef/Jev:
+
+```json
+{
+  "shellGuard": {
+    "enabled": true,
+    "baseUrl": "http://localhost:11437",
+    "model": "Clef-Flash",
+    "threshold": 0.5
+  }
+}
+```
+
+With the override above, a trailing `/api` is stripped and the request goes to `http://localhost:11437/v1/systemone`. Verdicts are cached by provider+model signature and exact command, so switching the model rebuilds the classifier instead of reusing stale answers. Cached probabilities are re-scored against the current `threshold` and `onError` on every call, so tuning either needs no restart and no cache flush. `shellGuard` edits are picked up on the next shell command (the config file is re-read when its mtime/size changes), so no restart is needed.
+
+**Notes:**
+
+- V2 only: the hook needs the host's permission surface. On hosts without it the guard stays inert; the rest of the plugin works normally.
+- Debug log lines (`scope: shell.guard`) record every verdict — `allow`/`FLAG` with both probabilities, category, model, latency, and a command preview — so the threshold can be tuned against real data. Classifier failures are logged as warnings and, under the default `onError: "allow"`, still execute the command.
+- Oversized commands are truncated to `decision.maxStateChars` (head 60% + tail), because the decision model's effective context is ~2k tokens.
+
 ### `openCode`
 
 Controls the OpenCode plugin integration.
@@ -664,10 +718,15 @@ External chunkers can be injected without modifying the source:
 
 ## Config File Discovery
 
-The CLI and plugin auto-detect the config file in this order:
-1. `--config <path>` CLI argument
-2. `./opencode-rag.json` (project root)
-3. `./.opencode/rag.json`
+The CLI and plugin resolve configuration as three layers (later layers win):
+
+1. `DEFAULT_CONFIG` (built-in defaults)
+2. **Global config** — `$XDG_CONFIG_HOME/opencode/opencode-rag.json`, falling back to `~/.config/opencode/opencode-rag.json`
+3. **Workspace config** — the first match of `./opencode-rag.json`, `./.opencode/opencode-rag.json`, `./.opencode/rag.json`
+
+Layers are deep-merged section by section, so the global file can carry machine-wide defaults (for example `shellGuard.enabled` or a decision model) that every workspace inherits; a workspace value always overrides the global one. A workspace still works with only the global file present. `--config <path>` makes that file authoritative and bypasses both layers, and the TUI config editor reads/writes the workspace layer only.
+
+> The global file is new in this release. Existing setups are unaffected until the file exists.
 
 ## API Key Auto-Resolution
 

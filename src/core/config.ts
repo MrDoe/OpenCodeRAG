@@ -5,6 +5,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { homedir } from "node:os";
 import { env } from "node:process";
 import type { EmbeddingProvider, Chunker, VectorStore } from "./interfaces.js";
 import { normalizeParserOverrides } from "./parser-overrides.js";
@@ -224,6 +225,57 @@ export interface DecisionConfig {
   retryMax?: number;
   /** Base delay in ms between retries (exponential backoff). */
   retryBaseDelayMs?: number;
+}
+
+/**
+ * Configuration for the optional shell-command safety guard.
+ *
+ * Every `shell`/`bash` command is classified by a local decision model
+ * (tev1 / Clef / Jev via `/v1/systemone`) before it runs. A command whose
+ * `destructive` or `malicious` probability reaches `threshold` is escalated to
+ * OpenCode's permission prompt; a clean command executes unchanged.
+ *
+ * The guard reuses the `decision` backend unless `provider`/`baseUrl`/`model`
+ * override it here. It is applied through OpenCode V2's permission
+ * `evaluate` hook, so it needs no rule changes in `opencode.json`.
+ */
+export interface ShellGuardConfig {
+  /**
+   * Master gate. Default false — the guard is opt-in because every shell
+   * command then waits for the local decision model.
+   */
+  enabled: boolean;
+  /** Decision provider override (defaults to `decision.provider`). */
+  provider?: string;
+  /** Endpoint override (defaults to `decision.baseUrl`). */
+  baseUrl?: string;
+  /** Model override (defaults to `decision.model`). */
+  model?: string;
+  /**
+   * Flag a command when `p(destructive)` or `p(malicious)` reaches this
+   * probability (0-1). Default 0.5. Lower = more prompts; tune against the
+   * `shell.guard` debug-log lines.
+   */
+  threshold: number;
+  /**
+   * Abort a classification after this many ms and apply `onError`. Default
+   * 10000. Kept short because the check sits on the critical path of every
+   * shell command.
+   */
+  timeoutMs: number;
+  /**
+   * What to do when the classifier fails (timeout, endpoint down, malformed
+   * answer). `"allow"` (default) executes the command and logs a warning;
+   * `"ask"` escalates to the confirmation prompt.
+   */
+  onError?: "allow" | "ask";
+  /**
+   * Verdict cache TTL in ms. Default 600000 (10 min). 0 disables the cache.
+   * Repeated identical commands are answered instantly.
+   */
+  cacheTtlMs: number;
+  /** Maximum cached verdicts before the oldest are evicted. Default 256. */
+  maxCacheEntries?: number;
 }
 
 export interface UiConfig {
@@ -678,6 +730,8 @@ export interface RagConfig {
   imageDescription?: ImageDescriptionConfig;
   /** Decision-model (tev1) config for the `make_decision` tool. */
   decision?: DecisionConfig;
+  /** Optional shell-command safety guard (decision-model vetting + confirmation prompt). */
+  shellGuard?: ShellGuardConfig;
   /** Automated documentation mode config. */
   documentationMode?: DocumentationModeConfig;
   /** Wiki mode config that instructs the AI agent to maintain a persistent knowledge wiki. */
@@ -903,6 +957,14 @@ export const DEFAULT_CONFIG: RagConfig = {
     retryMax: 2,
     retryBaseDelayMs: 500,
   },
+  shellGuard: {
+    enabled: false,
+    threshold: 0.5,
+    timeoutMs: 10000,
+    onError: "allow",
+    cacheTtlMs: 600000,
+    maxCacheEntries: 256,
+  },
   description: {
     enabled: true,
     provider: "ollama",
@@ -1098,7 +1160,7 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   const KNOWN_TOP_KEYS = new Set([
     "embedding", "indexing", "vectorStore", "retrieval", "reranking",
     "openCode", "chunkers", "chunking", "description",
-    "imageDescription", "decision", "documentationMode", "wikiMode", "mcp", "autoUpdate", "memory", "ui", "tui", "logging",
+    "imageDescription", "decision", "shellGuard", "documentationMode", "wikiMode", "mcp", "autoUpdate", "memory", "ui", "tui", "logging",
   ]);
   const topKeys = new Set(Object.keys(config as unknown as Record<string, unknown>));
   for (const key of topKeys) {
@@ -1312,6 +1374,35 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     }
   }
 
+  if (config.shellGuard) {
+    const sg = config.shellGuard;
+    if (typeof sg.threshold !== "number" || !Number.isFinite(sg.threshold) || sg.threshold < 0 || sg.threshold > 1) {
+      warnings.push("shellGuard.threshold must be a number between 0 and 1");
+    }
+    if (typeof sg.timeoutMs !== "number" || !Number.isFinite(sg.timeoutMs) || sg.timeoutMs <= 0) {
+      warnings.push("shellGuard.timeoutMs must be > 0");
+    }
+    if (sg.onError != null && sg.onError !== "allow" && sg.onError !== "ask") {
+      warnings.push(`shellGuard.onError "${sg.onError}" — expected "allow" or "ask"`);
+    }
+    if (typeof sg.cacheTtlMs !== "number" || !Number.isFinite(sg.cacheTtlMs) || sg.cacheTtlMs < 0) {
+      warnings.push("shellGuard.cacheTtlMs must be >= 0");
+    }
+    if (sg.maxCacheEntries != null && (typeof sg.maxCacheEntries !== "number" || !Number.isFinite(sg.maxCacheEntries) || sg.maxCacheEntries < 0)) {
+      warnings.push("shellGuard.maxCacheEntries must be >= 0");
+    }
+    for (const key of ["provider", "baseUrl", "model"] as const) {
+      if (sg[key] != null && typeof sg[key] !== "string") {
+        warnings.push(`shellGuard.${key} must be a string when set`);
+      }
+    }
+    if (sg.baseUrl != null) {
+      try { new URL(sg.baseUrl); } catch {
+        warnings.push(`shellGuard.baseUrl "${sg.baseUrl}" is not a valid URL`);
+      }
+    }
+  }
+
   if (config.reranking?.enabled) {
     const rr = config.reranking;
     if (!rr.baseUrl) warnings.push("reranking.baseUrl must be set when reranking.enabled is true");
@@ -1354,14 +1445,44 @@ export function findConfigFile(directory: string): string | undefined {
   return undefined;
 }
 
-/** Load and parse a JSON config file, deep-merge with defaults, optionally validate. */
-export function loadConfig(filePath: string, validate: boolean = true): RagConfig {
+/**
+ * Resolve the machine-wide config file path.
+ *
+ * `$XDG_CONFIG_HOME/opencode/opencode-rag.json`, falling back to
+ * `~/.config/opencode/opencode-rag.json`. The global file is a BASE layer:
+ * every workspace config is merged on top of it, so machine-wide defaults
+ * (e.g. `shellGuard.enabled`) do not need to be repeated per project.
+ */
+export function globalConfigPath(
+  envVars: NodeJS.ProcessEnv = env,
+  homeDir: string = homedir(),
+): string {
+  const xdg = envVars.XDG_CONFIG_HOME?.trim();
+  const base = xdg && xdg.length > 0 ? xdg : path.join(homeDir, ".config");
+  return path.join(base, "opencode", "opencode-rag.json");
+}
+
+/** Return the global config path when that file exists. */
+export function findGlobalConfigFile(
+  envVars: NodeJS.ProcessEnv = env,
+  homeDir: string = homedir(),
+): string | undefined {
+  const candidate = globalConfigPath(envVars, homeDir);
+  return existsSync(candidate) ? candidate : undefined;
+}
+
+/** Config layers that apply to a workspace (lowest precedence first). */
+export function resolveConfigPaths(directory: string): { global?: string; workspace?: string } {
+  return { global: findGlobalConfigFile(), workspace: findConfigFile(directory) };
+}
+
+/** Read and parse one config file (BOM-tolerant); throws a descriptive error. */
+function parseConfigFile(filePath: string): Partial<RagConfig> {
   let raw: string;
-  let parsed: Partial<RagConfig>;
   try {
     raw = readFileSync(filePath, "utf-8");
     if (raw.charCodeAt(0) === 0xfeff) raw = raw.slice(1);
-    parsed = JSON.parse(raw) as Partial<RagConfig>;
+    return JSON.parse(raw) as Partial<RagConfig>;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
@@ -1372,7 +1493,91 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
     }
     throw err;
   }
+}
 
+/** True for plain JSON objects (arrays and `null` are replacements, not merges). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Recursively merge `override` onto `base`; arrays and primitives replace. */
+function mergeConfigObjects(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    const current = merged[key];
+    merged[key] = isPlainObject(value) && isPlainObject(current)
+      ? mergeConfigObjects(current, value)
+      : value;
+  }
+  return merged;
+}
+
+/**
+ * Load and parse a JSON config file, deep-merge with defaults, optionally validate.
+ *
+ * This is the single-file loader: the given file is authoritative. Workspace
+ * loading with the global base layer goes through {@link loadWorkspaceConfig}.
+ */
+export function loadConfig(filePath: string, validate: boolean = true): RagConfig {
+  return buildConfig(parseConfigFile(filePath), validate);
+}
+
+/**
+ * Load several config files, later files overriding earlier ones.
+ *
+ * Raw JSON layers are deep-merged BEFORE the per-section defaults merge, so a
+ * layer that omits a section cannot reset a value supplied by a lower layer.
+ */
+export function loadConfigLayers(filePaths: readonly string[], validate: boolean = true): RagConfig {
+  let merged: Record<string, unknown> = {};
+  for (const filePath of filePaths) {
+    merged = mergeConfigObjects(merged, parseConfigFile(filePath) as Record<string, unknown>);
+  }
+  return buildConfig(merged as Partial<RagConfig>, validate);
+}
+
+/**
+ * Load the effective config for a workspace: defaults < global < workspace.
+ *
+ * A workspace with no local config still gets the global layer; with neither
+ * file present the result is `DEFAULT_CONFIG`. Explicit `--config` callers keep
+ * using {@link loadConfig} so their chosen file stays authoritative.
+ */
+export function loadWorkspaceConfig(directory: string, validate: boolean = true): RagConfig {
+  const { global, workspace } = resolveConfigPaths(directory);
+  const layers = [global, workspace].filter((p): p is string => p !== undefined);
+  return loadConfigLayers(layers, validate);
+}
+
+/**
+ * Top-level sections that a workspace actually configures.
+ *
+ * Read from the raw JSON layers (global + workspace), NOT from the merged
+ * config, so a section that exists only in `DEFAULT_CONFIG` is not reported.
+ * Health checks use this to probe only the models a user asked for: the
+ * default-on `description` / `imageDescription` models are not "configured"
+ * just because defaults enable them.
+ */
+export function configuredSections(directory: string): Set<string> {
+  const { global, workspace } = resolveConfigPaths(directory);
+  const sections = new Set<string>();
+  for (const filePath of [global, workspace]) {
+    if (!filePath) continue;
+    try {
+      const parsed = parseConfigFile(filePath) as Record<string, unknown>;
+      for (const key of Object.keys(parsed)) sections.add(key);
+    } catch {
+      // Malformed layer: loadConfig reports it; health checks stay best-effort.
+    }
+  }
+  return sections;
+}
+
+/** Merge raw config layers onto DEFAULT_CONFIG and validate. */
+function buildConfig(parsed: Partial<RagConfig>, validate: boolean): RagConfig {
   const safeObj = <T>(value: unknown): Partial<T> | undefined =>
     value && typeof value === "object" && !Array.isArray(value) ? (value as Partial<T>) : undefined;
 
@@ -1453,6 +1658,10 @@ export function loadConfig(filePath: string, validate: boolean = true): RagConfi
       ...DEFAULT_CONFIG.decision,
       ...(safeObj<DecisionConfig>((parsed as { decision?: unknown }).decision) ?? {}),
     } as DecisionConfig,
+    shellGuard: {
+      ...DEFAULT_CONFIG.shellGuard,
+      ...(safeObj<ShellGuardConfig>((parsed as { shellGuard?: unknown }).shellGuard) ?? {}),
+    } as ShellGuardConfig,
     documentationMode: {
       ...DEFAULT_CONFIG.documentationMode,
       ...(safeObj<DocumentationModeConfig>((parsed as { documentationMode?: unknown }).documentationMode) ?? {}),

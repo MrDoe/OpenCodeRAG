@@ -1,9 +1,9 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, unlinkSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig, DEFAULT_CONFIG, resolveLogConfig, validateConfig, updateConfigValue } from "../../core/config.js";
+import { loadConfig, loadConfigLayers, loadWorkspaceConfig, resolveConfigPaths, configuredSections, globalConfigPath, findGlobalConfigFile, DEFAULT_CONFIG, resolveLogConfig, validateConfig, updateConfigValue } from "../../core/config.js";
 import { getRegisteredExtensions } from "../../chunker/factory.js";
 
 describe("loadConfig", () => {
@@ -357,5 +357,129 @@ describe("validateConfig", () => {
     const result = validateConfig(cfg);
     assert.equal(result.valid, false);
     assert.ok(result.warnings.some(w => w.includes("decision.provider")));
+  });
+});
+
+describe("global config layer", () => {
+  it("merges the global file under the workspace file, section by section", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rag-layers-"));
+    try {
+      const globalFile = join(dir, "global.json");
+      const workspaceFile = join(dir, "opencode-rag.json");
+      writeFileSync(globalFile, JSON.stringify({
+        shellGuard: { enabled: true, threshold: 0.9 },
+        decision: { model: "tev1:0.8b" },
+        openCode: { autoIndex: { debounceMs: 1234 } },
+      }));
+      writeFileSync(workspaceFile, JSON.stringify({
+        shellGuard: { threshold: 0.3 },
+        openCode: { shell: { backgroundGuidance: false } },
+      }));
+
+      const cfg = loadConfigLayers([globalFile, workspaceFile]);
+      assert.equal(cfg.shellGuard?.enabled, true, "global enabled flag is inherited");
+      assert.equal(cfg.shellGuard?.threshold, 0.3, "workspace value wins");
+      assert.equal(cfg.decision?.model, "tev1:0.8b", "global decision model is inherited");
+      assert.equal(cfg.openCode.autoIndex?.debounceMs, 1234, "nested global value survives a workspace layer");
+      assert.equal(cfg.openCode.shell?.backgroundGuidance, false, "nested workspace value wins");
+      assert.equal(
+        cfg.openCode.autoIndex?.intervalMs,
+        DEFAULT_CONFIG.openCode.autoIndex?.intervalMs,
+        "untouched nested defaults are preserved",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("applies the global file when the workspace has no config", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rag-globalonly-"));
+    const xdg = mkdtempSync(join(tmpdir(), "opencode-rag-xdg-"));
+    const previous = process.env.XDG_CONFIG_HOME;
+    try {
+      mkdirSync(join(xdg, "opencode"), { recursive: true });
+      writeFileSync(
+        join(xdg, "opencode", "opencode-rag.json"),
+        JSON.stringify({ shellGuard: { enabled: true } }),
+      );
+      process.env.XDG_CONFIG_HOME = xdg;
+
+      assert.equal(resolveConfigPaths(dir).global, join(xdg, "opencode", "opencode-rag.json"));
+      assert.equal(resolveConfigPaths(dir).workspace, undefined);
+      const cfg = loadWorkspaceConfig(dir, false);
+      assert.equal(cfg.shellGuard?.enabled, true);
+      assert.equal(cfg.shellGuard?.threshold, DEFAULT_CONFIG.shellGuard?.threshold);
+    } finally {
+      if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previous;
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(xdg, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers the workspace file over the global file for the same setting", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rag-wswins-"));
+    try {
+      const globalFile = join(dir, "global.json");
+      const workspaceFile = join(dir, "opencode-rag.json");
+      writeFileSync(globalFile, JSON.stringify({ shellGuard: { enabled: true, threshold: 0.9 } }));
+      writeFileSync(workspaceFile, JSON.stringify({ shellGuard: { enabled: false } }));
+      const cfg = loadConfigLayers([globalFile, workspaceFile]);
+      assert.equal(cfg.shellGuard?.enabled, false);
+      assert.equal(cfg.shellGuard?.threshold, 0.9);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves XDG_CONFIG_HOME and falls back to ~/.config", () => {
+    assert.equal(
+      globalConfigPath({ XDG_CONFIG_HOME: "/xdg" }, "/home/user"),
+      join("/xdg", "opencode", "opencode-rag.json"),
+    );
+    assert.equal(
+      globalConfigPath({}, "/home/user"),
+      join("/home/user", ".config", "opencode", "opencode-rag.json"),
+    );
+    assert.equal(findGlobalConfigFile({}, "/definitely/not/a/home"), undefined);
+  });
+});
+
+describe("configuredSections", () => {
+  it("reports only sections present in a raw config layer", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rag-sections-"));
+    const previous = process.env.XDG_CONFIG_HOME;
+    const xdg = mkdtempSync(join(tmpdir(), "opencode-rag-sections-xdg-"));
+    try {
+      mkdirSync(join(xdg, "opencode"), { recursive: true });
+      writeFileSync(
+        join(xdg, "opencode", "opencode-rag.json"),
+        JSON.stringify({ shellGuard: { enabled: true }, decision: { model: "tev1:0.8b" } }),
+      );
+      writeFileSync(join(dir, "opencode-rag.json"), JSON.stringify({ embedding: { model: "test-model" } }));
+      process.env.XDG_CONFIG_HOME = xdg;
+
+      const sections = configuredSections(dir);
+      assert.deepEqual([...sections].sort(), ["decision", "embedding", "shellGuard"]);
+      assert.equal(sections.has("description"), false, "default-enabled sections are not configured");
+    } finally {
+      if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previous;
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(xdg, { recursive: true, force: true });
+    }
+  });
+
+  it("is empty when no config file exists", () => {
+    const dir = mkdtempSync(join(tmpdir(), "opencode-rag-sections-none-"));
+    const previous = process.env.XDG_CONFIG_HOME;
+    try {
+      process.env.XDG_CONFIG_HOME = join(dir, "missing-xdg");
+      assert.equal(configuredSections(dir).size, 0);
+    } finally {
+      if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

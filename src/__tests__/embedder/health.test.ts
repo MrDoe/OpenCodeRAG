@@ -568,3 +568,69 @@ describe("pullOllamaModels", () => {
     );
   });
 });
+
+describe("checkProviderHealth configured-model gating", () => {
+  it("skips enabled models whose section is not configured", async () => {
+    const { server, port } = await startMockServer((req, res) => {
+      if (req.url?.includes("/chat")) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ message: { content: "ok" } }));
+      } else {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ embedding: [1] }));
+      }
+    });
+
+    try {
+      const config = baseConfig({ baseUrl: `http://127.0.0.1:${port}/api` });
+      config.description = {
+        enabled: true,
+        provider: "ollama",
+        baseUrl: `http://127.0.0.1:${port}/api`,
+        model: "desc-model",
+        systemPrompt: "test",
+        timeoutMs: 5000,
+      };
+      config.imageDescription = {
+        enabled: true,
+        provider: "ollama",
+        baseUrl: `http://127.0.0.1:${port}/api`,
+        model: "vision-model",
+        timeoutMs: 5000,
+        prompt: "Describe this image",
+      };
+
+      const results = await checkProviderHealth(config, new Set(["embedding"]));
+      assert.equal(results.length, 1);
+      assert.equal(results[0]!.type, "embedding");
+
+      const all = await checkProviderHealth(config, new Set(["embedding", "description", "imageDescription"]));
+      assert.deepEqual(all.map((r) => r.type), ["embedding", "description", "image_description"]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("still skips explicitly disabled configured models", async () => {
+    const { server, port } = await startMockServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ embedding: [1] }));
+    });
+
+    try {
+      const config = baseConfig({ baseUrl: `http://127.0.0.1:${port}/api` });
+      config.description = {
+        enabled: false,
+        provider: "ollama",
+        baseUrl: `http://127.0.0.1:${port}/api`,
+        model: "desc-model",
+        systemPrompt: "test",
+      };
+      const results = await checkProviderHealth(config, new Set(["description"]));
+      assert.equal(results.length, 1);
+      assert.equal(results[0]!.type, "embedding");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

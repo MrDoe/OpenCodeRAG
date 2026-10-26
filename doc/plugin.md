@@ -537,6 +537,78 @@ plugin-exposed `session.background(callID)`. Until then, Ctrl+B remains the
 manual escape hatch. See
 [`.opencode/wiki/concepts/shell-auto-background.md`](../.opencode/wiki/concepts/shell-auto-background.md).
 
+## Shell Guard (Command Vetting)
+
+`shellGuard` (config `shellGuard`, **disabled by default**) classifies every
+`shell`/`bash` command with the local decision model *before* it executes. A
+command whose `destructive` or `malicious` probability reaches
+`shellGuard.threshold` is escalated to OpenCode's confirmation prompt; a clean
+command runs unchanged.
+
+**Registration.** The guard hooks OpenCode V2's permission evaluator
+(`ctx.permission.hook("evaluate", …)`), which runs after the configured
+permission rules resolve and before the action executes — for both `allow` and
+`ask`. A flagged command keeps its resolved effect but switches to `ask` and
+sets the prompt message to the verdict:
+
+```
+ShellGuard flagged this command with ollama/tev1:4b:
+destructive p=0.93, malicious p=0.02 (category: delete_files).
+Confirm before running.
+```
+
+**Why not `tool.execute.before`?** That hook cannot block a call — the V2
+adapter swallows throws from the V1 factory hooks. Only the permission
+evaluator can turn an allowed action into a prompt.
+
+**Design constraints:**
+
+- **`deny` is final** — the evaluator never runs for commands a rule already
+  denied, so the guard cannot downgrade an explicit policy.
+- **Saved "Allow always" approvals do not suppress it** — native approvals are
+  keyed by permission rule, not by this dynamic check, so a flagged command is
+  confirmed every time it appears.
+- **Fail-open by default** (`shellGuard.onError: "allow"`): a timeout, a down
+  endpoint, or a malformed answer executes the command and writes a warning to
+  the debug log. `onError: "ask"` requires confirmation instead.
+- **Bounded latency**: the classifier has a short timeout (default 10 s),
+  verdicts are cached for `cacheTtlMs` (default 10 min, max 256 entries,
+  keyed by provider+model signature + exact command), and failures are cached
+  for at most 30 s so a dead endpoint is not re-probed for every command.
+  Cached probabilities are re-scored against the **current** `threshold` and
+  `onError`, so editing either takes effect immediately.
+- **No restart needed**: the guard re-reads the global and workspace config
+  files when their mtime/size changes, so toggling `enabled`, changing the
+  threshold, or switching the model applies on the next command. A provider is
+  re-created only when the provider/URL/model signature changes.
+- **Inert without a permission surface** — older V2 hosts that expose no
+  `ctx.permission` keep the rest of the plugin working; the guard simply does
+  nothing.
+
+**Backend.** By default the guard reuses `decision.provider` / `baseUrl` /
+`model` and does **not** require `decision.enabled` — it has its own gate. Any
+`/v1/systemone` endpoint works, including a llama-swap proxy serving Clef/Jev.
+Put the block in the [global config](configuration.md#config-file-discovery)
+(`~/.config/opencode/opencode-rag.json`) to vet commands machine-wide; a
+workspace `opencode-rag.json` still overrides it.
+
+```json
+{
+  "shellGuard": {
+    "enabled": true,
+    "baseUrl": "http://localhost:11437",
+    "model": "Clef-Flash",
+    "threshold": 0.5
+  }
+}
+```
+
+**Observability.** Every verdict is logged with scope `shell.guard` —
+`allow`/`FLAG`, both probabilities, category, model, latency, and a truncated
+command preview — so the threshold can be tuned from real data. Classifier
+failures log a warning with the error. See
+[Configuration](configuration.md#shellguard) for all options.
+
 ## TUI Settings Menu
 
 The TUI plugin (`src/tui.ts`) registers a settings panel in the OpenCode sidebar:

@@ -8,7 +8,7 @@ import type { Plugin, PluginInput, Hooks, ToolDefinition } from "@opencode-ai/pl
 import { tool, type ToolContext } from "@opencode-ai/plugin/tool";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider, type DescriptionProvider, type KeywordIndex, type RerankProvider, type VectorStore, type SearchResult, type MetadataFilter } from "./core/interfaces.js";
 import { normalizeFileExtensions } from "./core/filters.js";
-import { loadConfig, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
+import { loadWorkspaceConfig, resolveConfigPaths, findConfigFile, DEFAULT_CONFIG, resolveLogConfig, persistProbedDimension, type RagConfig } from "./core/config.js";
 import { createEmbedder, probeEmbeddingDimension } from "./embedder/factory.js";
 import { readStoreDimension } from "./vectorstore/lancedb.js";
 import { createDescriptionProvider } from "./describer/factory.js";
@@ -95,12 +95,10 @@ const TOOL_GOTCHA_CACHE_MS = 30_000;
  * changes on disk the entry is re-read instead of being served stale.
  */
 type CachedConfig = {
-  /** The loaded configuration. */
+  /** The loaded configuration (global layer + workspace override). */
   cfg: RagConfig;
-  /** Absolute path of the config file (undefined when the workspace has none). */
-  configPath: string | undefined;
-  /** mtime of that file at load time, or -1 when there is no file. */
-  mtimeMs: number;
+  /** Identity of the config files (paths + mtimes) at load time. */
+  stamp: string;
 };
 
 /** Cache of loaded RAG configurations keyed by workspace directory. */
@@ -323,25 +321,41 @@ function configFileMtime(configPath: string | undefined): number {
   }
 }
 
+/** Identity of the config layers (global + workspace paths and mtimes). */
+function configStamp(paths: { global?: string; workspace?: string }): string {
+  return [
+    paths.global ? `${paths.global}:${configFileMtime(paths.global)}` : "",
+    paths.workspace ? `${paths.workspace}:${configFileMtime(paths.workspace)}` : "",
+  ].join("|");
+}
+
 /**
- * Load the RAG configuration for a directory, searching in order:
- * opencode-rag.json, .opencode/opencode-rag.json, .opencode/rag.json.
+ * Load the RAG configuration for a directory: DEFAULT_CONFIG, then the global
+ * layer (`~/.config/opencode/opencode-rag.json`), then the first workspace
+ * config found (`opencode-rag.json`, `.opencode/opencode-rag.json`,
+ * `.opencode/rag.json`).
  *
- * The result is cached per directory and re-read whenever the config file
- * changes on disk, so an edited API key or baseUrl does not require a restart.
+ * The result is cached per directory and re-read whenever either config file
+ * changes on disk, so an edited API key, baseUrl, or global `shellGuard` switch
+ * does not require a restart.
  */
 export async function getConfig(directory: string): Promise<RagConfig> {
-  const configPath = findConfigFile(directory);
-  const mtimeMs = configFileMtime(configPath);
+  const paths = resolveConfigPaths(directory);
+  const stamp = configStamp(paths);
   const cached = configCache.get(directory);
-  if (cached && cached.configPath === configPath && cached.mtimeMs === mtimeMs) {
+  if (cached && cached.stamp === stamp) {
     return cached.cfg;
   }
 
-  if (configPath) {
+  if (paths.global || paths.workspace) {
     try {
-      const cfg = loadConfig(configPath);
-      await loadChunkersFromConfig(cfg, path.dirname(configPath));
+      const cfg = loadWorkspaceConfig(directory);
+      const baseDir = paths.workspace
+        ? path.dirname(paths.workspace)
+        : paths.global
+          ? path.dirname(paths.global)
+          : directory;
+      await loadChunkersFromConfig(cfg, baseDir);
       const hadKey = !!cfg.embedding.apiKey;
       resolveApiKey(cfg, directory);
       if (!hadKey && cfg.embedding.apiKey) {
@@ -350,12 +364,12 @@ export async function getConfig(directory: string): Promise<RagConfig> {
           message: `Resolved embedding API key from ${process.env.OPENAI_API_KEY ? "OPENAI_API_KEY env var" : "OpenCode provider config"}`,
         });
       }
-      configCache.set(directory, { cfg, configPath, mtimeMs });
+      configCache.set(directory, { cfg, stamp });
       return cfg;
     } catch (err) {
       appendDebugLog(path.resolve(directory, ".opencode", "opencode-rag.log"), {
         scope: "config",
-        message: `Failed to load config from ${configPath}`,
+        message: `Failed to load config from ${paths.workspace ?? paths.global}`,
         error: err,
       });
     }
@@ -364,20 +378,22 @@ export async function getConfig(directory: string): Promise<RagConfig> {
   // Deep-clone so a later resolveApiKey() cannot mutate the shared
   // DEFAULT_CONFIG singleton.
   const cfg = structuredClone(DEFAULT_CONFIG);
-  configCache.set(directory, { cfg, configPath, mtimeMs });
+  configCache.set(directory, { cfg, stamp });
   return cfg;
 }
 
 /**
- * Re-read a workspace's config file when it changed on disk.
+ * Re-read a workspace's config when either the global or workspace file
+ * changed on disk.
  *
  * Only a config that this module loaded from a file is refreshed — the cache
- * entry is the proof that the file is the source of truth for that workspace.
- * A caller that supplies its own configuration (tests, embedders) keeps it.
+ * entry is the proof that the files are the source of truth for that
+ * workspace. A caller that supplies its own configuration (tests, embedders)
+ * keeps it.
  *
  * Synchronous on purpose: this runs on the hot path (every effective-config
- * lookup) and `loadConfig` is synchronous. The pluggable-chunker side effect
- * (`loadChunkersFromConfig`) mutates a global registry and is therefore
+ * lookup) and `loadWorkspaceConfig` is synchronous. The pluggable-chunker side
+ * effect (`loadChunkersFromConfig`) mutates a global registry and is therefore
  * re-applied asynchronously — it is not needed by the embedding path this
  * refresh exists to fix.
  *
@@ -392,25 +408,30 @@ export function refreshConfig(directory: string, fallback: RagConfig): RagConfig
     return fallback;
   }
 
-  const configPath = findConfigFile(directory);
-  const mtimeMs = configFileMtime(configPath);
-  if (cached.configPath === configPath && cached.mtimeMs === mtimeMs) {
+  const paths = resolveConfigPaths(directory);
+  const stamp = configStamp(paths);
+  if (cached.stamp === stamp) {
     return cached.cfg;
   }
-  if (!configPath) {
-    // The config file was removed — keep serving the last known config.
+  if (!paths.global && !paths.workspace) {
+    // The config files were removed — keep serving the last known config.
     return cached.cfg;
   }
   try {
-    const cfg = loadConfig(configPath);
+    const cfg = loadWorkspaceConfig(directory);
     resolveApiKey(cfg, directory);
-    void loadChunkersFromConfig(cfg, path.dirname(configPath)).catch(() => { /* best-effort */ });
-    configCache.set(directory, { cfg, configPath, mtimeMs });
+    const baseDir = paths.workspace
+      ? path.dirname(paths.workspace)
+      : paths.global
+        ? path.dirname(paths.global)
+        : directory;
+    void loadChunkersFromConfig(cfg, baseDir).catch(() => { /* best-effort */ });
+    configCache.set(directory, { cfg, stamp });
     return cfg;
   } catch (err) {
     appendDebugLog(path.resolve(directory, ".opencode", "opencode-rag.log"), {
       scope: "config",
-      message: `Failed to reload config from ${configPath}`,
+      message: `Failed to reload config from ${paths.workspace ?? paths.global}`,
       error: err,
     });
     return cached.cfg;

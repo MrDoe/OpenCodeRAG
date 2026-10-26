@@ -121,6 +121,16 @@ See [doc/chunking.md](chunking.md) for the full language matrix.
 | `validate.ts` | Shared request validation (ids, 2–24 options/levels, `state` length) |
 | `format.ts` | Shared markdown formatting for decision answers |
 
+### Safety (`src/safety/`)
+
+| File | Role |
+|---|---|
+| `shell-guard.ts` | `ShellGuard` — classifies `shell`/`bash` commands with the decision model (destructive/malicious `noul` + risk `choice`), caches verdicts by provider+model+command, and resolves live `shellGuard` config (re-read on config mtime change) |
+
+The guard is installed by the V2 adapter on OpenCode's permission `evaluate`
+hook, not by the V1 hook factory. See
+[Plugin documentation](plugin.md#shell-guard-command-vetting).
+
 ### Retrieval (`src/retriever/`)
 
 | File | Role |

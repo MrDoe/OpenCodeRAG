@@ -729,6 +729,13 @@ export function generateDefaultConfigJson(
         keepAlive: DEFAULT_CONFIG.decision!.keepAlive,
         routeBeforeAsking: DEFAULT_CONFIG.decision!.routeBeforeAsking,
       },
+      shellGuard: {
+        enabled: DEFAULT_CONFIG.shellGuard!.enabled,
+        threshold: DEFAULT_CONFIG.shellGuard!.threshold,
+        timeoutMs: DEFAULT_CONFIG.shellGuard!.timeoutMs,
+        onError: DEFAULT_CONFIG.shellGuard!.onError,
+        cacheTtlMs: DEFAULT_CONFIG.shellGuard!.cacheTtlMs,
+      },
       description: {
         enabled: DEFAULT_CONFIG.description!.enabled,
         provider: DEFAULT_CONFIG.description!.provider,

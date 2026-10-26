@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +6,26 @@ import path from "node:path";
 import { createLiveEmbedder, getConfig, refreshConfig } from "../plugin.js";
 import { DEFAULT_CONFIG, type RagConfig } from "../core/config.js";
 import type { EmbeddingProvider } from "../core/interfaces.js";
+
+/**
+ * Isolate from the machine's global config
+ * (`$XDG_CONFIG_HOME/opencode/opencode-rag.json`).
+ *
+ * These tests assert workspace-layer behaviour: a real global file would be
+ * merged under every temp workspace and make the results machine-dependent.
+ */
+let isolatedXdg: string | undefined;
+let previousXdg: string | undefined;
+before(() => {
+  previousXdg = process.env.XDG_CONFIG_HOME;
+  isolatedXdg = mkdtempSync(path.join(tmpdir(), "opencode-rag-no-global-"));
+  process.env.XDG_CONFIG_HOME = isolatedXdg;
+});
+after(() => {
+  if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+  else process.env.XDG_CONFIG_HOME = previousXdg;
+  if (isolatedXdg) rmSync(isolatedXdg, { recursive: true, force: true });
+});
 
 /**
  * Write a config file and force a distinct mtime.

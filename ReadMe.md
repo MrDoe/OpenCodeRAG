@@ -50,6 +50,7 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 | **Hybrid search** | Vector similarity + TF×IDF keyword fusion — the keyword index is repaired from the store whenever it drifts behind it, so the BM25 half never covers only part of the corpus |
 | **Retrieval calibration** | `opencode-rag eval:tune` sweeps the fusion weights against the labelled golden set and reports (or writes) the best configuration for your embedder and corpus |
 | **Decision model** | Local [tev1](https://ollama.com/library/tev1) classification — `make_decision` labels, routes, and scores short text with probabilities (40–150 ms warm); optional pre-ask routing so the agent asks fewer questions |
+| **Shell guard** | Optional pre-execution vetting of every `shell`/`bash` command by the local decision model — flagged commands ask for confirmation, clean ones run normally (fail-open by default) |
 | **OpenCode plugin** | Auto-inject context, read-tool override, TUI settings, Ctrl+Enter to add RAG context, MCP registration on `init` |
 | **Incremental indexing** | File-hash manifest, background watcher, auto-rebuild on corruption |
 | **Privacy-first** | All processing stays local (when using Ollama) |
@@ -77,7 +78,7 @@ Launch with `opencode-rag ui`. See [Web UI documentation](doc/webui.md) for deta
 |---|---|
 | [Architecture](doc/architecture.md) | Module design, data flow, tech stack |
 | [Installation](doc/installation.md) | Full install guide, global setup, uninstall |
-| [Configuration](doc/configuration.md) | All options: embedding, indexing, retrieval, description, image description, decision, plugin |
+| [Configuration](doc/configuration.md) | All options: embedding, indexing, retrieval, description, image description, decision, shell guard, plugin |
 | [Chunking](doc/chunking.md) | Language matrix, adding new chunkers, custom chunkers |
 | [Embedding](doc/embedding.md) | Providers, model recommendations, proxy, dimension probing |
 | [Retrieval](doc/retrieval.md) | Pipeline, hybrid search, score fusion, caching |
@@ -145,6 +146,30 @@ ollama pull tev1:4b     # 4.4 GB, more accurate — recommended when scoring
 **Pre-ask routing (optional):** with `decision.routeBeforeAsking: true`, the injected agent guidance tells the agent to resolve option choices through `make_decision` before asking you — proceeding on a confident answer and asking only when the model is undecided or the choice is preference-based. Off by default.
 
 `opencode-rag decide` exposes the same engine from the CLI, and `init` creates a dedicated `make-decision` agent skill. See [Plugin documentation](doc/plugin.md#make_decision) and [Configuration](doc/configuration.md#decision).
+
+## Shell Guard (Optional)
+
+The same local decision model can vet **every shell command before it runs**. With `shellGuard.enabled: true`, each `shell`/`bash` call is classified for destructive and malicious intent; a command whose `p(destructive)` or `p(malicious)` reaches the threshold is escalated to OpenCode's confirmation prompt with the full verdict — otherwise it executes unchanged.
+
+```json
+{
+  "shellGuard": {
+    "enabled": true,
+    "threshold": 0.5,
+    "timeoutMs": 10000,
+    "onError": "allow"
+  }
+}
+```
+
+- **Off by default** — enabling adds one local model call to the critical path of every shell command.
+- **Machine-wide** — put the block in `~/.config/opencode/opencode-rag.json` (the global layer, see [Configuration](doc/configuration.md#config-file-discovery)) and every workspace inherits it; a workspace config can still override or disable it.
+- **Fail-open by default** (`onError: "allow"`): if the classifier is down or times out, the command runs and a warning is logged. Set `onError: "ask"` to require confirmation instead.
+- **Verdict cache** (10 min, 256 entries): repeated identical commands are answered instantly; the key includes the provider/model, so switching models invalidates it, and cached probabilities are re-scored against the current threshold on every call.
+- **Config edits apply without a restart** — the guard re-reads `opencode-rag.json` when it changes.
+- **Backend** defaults to the `decision` section, and any `/v1/systemone` endpoint works — e.g. llama-swap with `"baseUrl": "http://localhost:11437", "model": "Clef-Flash"`.
+
+Every verdict is logged under `scope: shell.guard`, so you can tune the threshold against real commands. See [Configuration](doc/configuration.md#shellguard) and [Plugin documentation](doc/plugin.md#shell-guard-command-vetting).
 
 ## Image Indexing
 
@@ -326,7 +351,7 @@ Retrieval quality has its own harness: `opencode-rag eval:gate` runs the labelle
 
 ## Privacy & Security
 
-**100% local by default.** By default, embeddings are generated locally via Ollama. The vector database stays in your project directory. **No source code or embeddings leave your machine** unless you explicitly configure to use a third-party API.
+**100% local by default.** By default, embeddings are generated locally via Ollama. The vector database stays in your project directory. **No source code or embeddings leave your machine** unless you explicitly configure to use a third-party API. The optional [Shell Guard](#shell-guard-optional) likewise sends command text only to the decision-model endpoint you configure (local Ollama or a local proxy).
 
 ## License
 
