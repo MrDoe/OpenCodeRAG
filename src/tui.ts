@@ -118,20 +118,18 @@ const DEFAULT_STATUS: RagStatus = {
 function loadWatcherStatus(storePath: string): WatcherState {
   const statusPath = join(storePath, "watcher-status.json");
   if (!existsSync(statusPath)) return { running: false, lastRunAt: undefined, disabled: true };
-  try {
-    const raw: Record<string, unknown> = JSON.parse(readFileSync(statusPath, "utf-8"));
-    return {
-      running: raw.running === true,
-      lastRunAt: typeof raw.lastRunAt === "number" ? raw.lastRunAt : undefined,
-      lastSuccessAt: typeof raw.lastSuccessAt === "number" ? raw.lastSuccessAt : undefined,
-      lastChangeAt: typeof raw.lastChangeAt === "number" ? raw.lastChangeAt : undefined,
-      consecutiveFailures:
-        typeof raw.consecutiveFailures === "number" ? raw.consecutiveFailures : undefined,
-      lastError: typeof raw.lastError === "string" ? raw.lastError : undefined,
-    };
-  } catch {
-    return { running: false, lastRunAt: undefined, disabled: true };
-  }
+  // BOM-tolerant read (readJsonFile) - a BOM'd status file must not report "disabled".
+  const raw = readJsonFile(statusPath);
+  if (!raw) return { running: false, lastRunAt: undefined, disabled: true };
+  return {
+    running: raw.running === true,
+    lastRunAt: typeof raw.lastRunAt === "number" ? raw.lastRunAt : undefined,
+    lastSuccessAt: typeof raw.lastSuccessAt === "number" ? raw.lastSuccessAt : undefined,
+    lastChangeAt: typeof raw.lastChangeAt === "number" ? raw.lastChangeAt : undefined,
+    consecutiveFailures:
+      typeof raw.consecutiveFailures === "number" ? raw.consecutiveFailures : undefined,
+    lastError: typeof raw.lastError === "string" ? raw.lastError : undefined,
+  };
 }
 
 /** True when the watched index may be stale (failed passes or pending changes). */
@@ -151,7 +149,10 @@ function loadRagStatus(worktree: string): RagStatus {
     const configPath = join(worktree, loc);
     if (!existsSync(configPath)) continue;
     try {
-      const cfg: Record<string, unknown> = JSON.parse(readFileSync(configPath, "utf-8"));
+      // BOM-tolerant read - a leading U+FEFF must not throw and silently skip
+      // every config candidate (leaving the sidebar stuck on DEFAULT_STATUS).
+      const cfg = readJsonFile<Record<string, unknown>>(configPath);
+      if (!cfg) continue; // unparseable (e.g. malformed JSON) - try next candidate
       const embedding = cfg.embedding as Record<string, unknown> | undefined;
       if (embedding) {
         status.provider = (embedding.provider as string) ?? status.provider;
@@ -163,16 +164,18 @@ function loadRagStatus(worktree: string): RagStatus {
 
       const manifestPath = join(storePath, "manifest.json");
       if (existsSync(manifestPath)) {
-        const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<string, unknown>;
-        const files = manifest.files as Record<string, { chunkCount?: number }> | undefined;
-        if (files && typeof files === "object") {
-          status.chunkCount = Object.values(files).reduce(
-            (sum: number, entry) => sum + (entry.chunkCount ?? 0),
-            0
-          );
+        const manifest = readJsonFile<Record<string, unknown>>(manifestPath);
+        if (manifest) {
+          const files = manifest.files as Record<string, { chunkCount?: number }> | undefined;
+          if (files && typeof files === "object") {
+            status.chunkCount = Object.values(files).reduce(
+              (sum: number, entry) => sum + (entry.chunkCount ?? 0),
+              0
+            );
+          }
+          status.lastIndexedAt = manifest.lastIndexedAt as number | undefined;
+          status.indexed = status.chunkCount > 0;
         }
-        status.lastIndexedAt = manifest.lastIndexedAt as number | undefined;
-        status.indexed = status.chunkCount > 0;
       }
 
       status.watcher = loadWatcherStatus(storePath);
