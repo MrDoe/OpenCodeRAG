@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { resolve } from "node:path";
 import {
   ShellGuard,
   buildShellGuardState,
@@ -349,9 +350,13 @@ describe("resolveShellGuardRuntimeConfig", () => {
       resolveShellGuardRuntimeConfig(cfg)?.logging.logFilePath,
       "./.opencode/opencode-rag.log",
     );
+    // Compare against path.resolve: on Windows a POSIX-looking workspace path
+    // resolves to a drive-letter path, and the assertion is about the join,
+    // not about the separator style.
+    const workspace = "/work/space";
     assert.equal(
-      resolveShellGuardRuntimeConfig(cfg, "/work/space")?.logging.logFilePath,
-      "/work/space/.opencode/opencode-rag.log",
+      resolveShellGuardRuntimeConfig(cfg, workspace)?.logging.logFilePath,
+      resolve(workspace, ".opencode", "opencode-rag.log"),
     );
   });
 });
