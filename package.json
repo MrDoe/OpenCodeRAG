@@ -151,7 +151,11 @@
     "web-tree-sitter": "$web-tree-sitter",
     "@babel/core": "^7.29.7",
     "@opentelemetry/core": "^2.8.0",
-    "seroval": "^1.6.8"
+    "seroval": "^1.6.8",
+    "@opencode-ai/plugin": {
+      "effect": "^4.0.6"
+    },
+    "zod": "^4.6.7"
   },
   "allowScripts": {
     "opencode-rag-plugin": true,
