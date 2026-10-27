@@ -11,7 +11,9 @@ import { createEmbedder, probeEmbeddingDimension } from "../embedder/factory.js"
 import { createDescriptionProvider } from "../describer/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { getRerankerFor } from "../reranker/factory.js";
-import { readStoreDimension } from "../vectorstore/lancedb.js";
+import { readConfiguredStoreDimension } from "../vectorstore/dimension.js";
+import { loadRuntimeOverrides, applyRuntimeOverrides } from "./runtime-overrides.js";
+import { StateSync } from "./state-sync.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import { reconcileQuirks } from "../quirks/quirk-store.js";
 import type {
@@ -58,6 +60,12 @@ export interface RagContext {
   logFilePath: string;
   /** Resolved path to the config file, or undefined when built-in defaults are used. */
   configPath?: string;
+  /**
+   * Durable-state synchronizer. For ClickHouse this hydrates the local cache
+   * from `state_<namespace>` and flushes changes back; for LanceDB it is a
+   * no-op, so the local directory stays the source of truth.
+   */
+  stateSync?: StateSync;
 }
 
 /**
@@ -79,7 +87,9 @@ async function resolveDimension(
   embedder: EmbeddingProvider,
   storePath: string,
   skipProbe: boolean,
-  configured?: number,
+  configured: number | undefined,
+  config: RagConfig,
+  workspaceDir: string,
 ): Promise<number> {
   if (configured && configured > 0) {
     return configured;
@@ -90,7 +100,7 @@ async function resolveDimension(
     if (probe.dimension !== undefined) {
       return probe.dimension;
     }
-    const storeDimension = await readStoreDimension(storePath);
+    const storeDimension = await readConfiguredStoreDimension(config, storePath, workspaceDir);
     if (storeDimension !== undefined) {
       console.warn(
         `[bootstrap] Could not probe embedding dimension (${probe.error?.message ?? "unknown error"}) — ` +
@@ -105,7 +115,7 @@ async function resolveDimension(
     return 384;
   }
 
-  return (await readStoreDimension(storePath)) ?? 384;
+  return (await readConfiguredStoreDimension(config, storePath, workspaceDir)) ?? 384;
 }
 
 /** Load the keyword index from disk, or create a new empty one if loading fails. */
@@ -150,19 +160,39 @@ export async function resolveRagContext(
     resolveLogConfig(cfg).logFilePath,
   );
 
-  const embedder = createEmbedder(cfg);
+  // Apply runtime overrides (the store's runtime-overrides.json) BEFORE
+  // building the embedder/store, exactly like the plugin does at startup.
+  // Without this the CLI's effective config diverges from the plugin's:
+  // `status` printed "off" while a live watcher ran, and `query` searched
+  // with different retrieval settings than the agent's tools. vectorStore
+  // has no override keys, so storePath is safe to resolve first.
   const storePath = path.resolve(workDir, cfg.vectorStore.path);
+  try {
+    const overrides = loadRuntimeOverrides(storePath);
+    if (Object.keys(overrides).length > 0) {
+      cfg = applyRuntimeOverrides(cfg, overrides);
+      // Overrides can change embedding.baseUrl/provider — re-run the key
+      // resolution in the same order the plugin uses (apply → resolve).
+      resolveApiKey(cfg, workDir);
+    }
+  } catch {
+    // Overrides are best-effort; a corrupt file must not break the CLI.
+  }
+
+  const embedder = createEmbedder(cfg);
   const dimension = await resolveDimension(
     embedder,
     storePath,
     opts.skipProbe ?? false,
     cfg.embedding.vectorDimension,
+    cfg,
+    workDir,
   );
 
   // Warn (but do not block) when the existing store schema disagrees with the
   // resolved dimension: the next index pass rebuilds automatically, and search
-  // callers would otherwise see only cryptic LanceDB errors.
-  const storeDimension = await readStoreDimension(storePath);
+  // callers would otherwise see only cryptic backend errors.
+  const storeDimension = await readConfiguredStoreDimension(cfg, storePath, workDir);
   if (storeDimension !== undefined && storeDimension !== dimension) {
     console.warn(
       `[bootstrap] Store was built with vector dimension ${storeDimension} but the current embedder produces ${dimension} — ` +
@@ -170,7 +200,18 @@ export async function resolveRagContext(
     );
   }
 
-  const store = createVectorStore(cfg, storePath, dimension);
+  const store = createVectorStore(cfg, storePath, dimension, workDir);
+
+  // Durable-state sync: no-op for LanceDB (the local directory is the source
+  // of truth); for ClickHouse the local directory is a disposable cache that
+  // is hydrated from `state_<namespace>` before anything reads it.
+  const stateSync = new StateSync({ store, storePath, config: cfg });
+  try {
+    await stateSync.hydrate();
+  } catch (err) {
+    console.warn(`[bootstrap] State hydration failed: ${(err as Error).message}`);
+  }
+
   const keywordIndex = opts.skipKeywordIndex
     ? new KeywordIndex(storePath)
     : await loadKeywordIndex(storePath);
@@ -218,5 +259,6 @@ export async function resolveRagContext(
     dimension,
     logFilePath,
     configPath,
+    stateSync,
   };
 }

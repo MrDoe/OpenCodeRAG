@@ -449,7 +449,7 @@ export function registerEvalDecideCommand(program: Command): void {
         }
         if (!decisionCfg) {
           console.error(
-            c.error("\nNo enabled decision config. Set `decision.enabled` in opencode-rag.json or pass --base-url/--model.\n"),
+            c.error("\nNo enabled decision config. Set `decision.enabled` in .opencode/opencode-rag.json or pass --base-url/--model.\n"),
           );
           await cleanupContext(ctx);
           process.exit(2);

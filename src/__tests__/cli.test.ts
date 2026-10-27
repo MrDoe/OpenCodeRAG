@@ -28,14 +28,14 @@ describe("opencode-rag init", () => {
     process.cwd = originalCwd;
   });
 
-  it("creates opencode-rag.json and .opencode/.gitignore and .opencode/ dir", async () => {
+  it("creates .opencode/opencode-rag.json and .opencode/.gitignore and .opencode/ dir", async () => {
     process.cwd = () => tmpDir;
 
     // Dynamic import so commander registers the 'init' command
     const { runCli } = await import("../cli.js");
     await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
 
-    const configPath = join(tmpDir, "opencode-rag.json");
+    const configPath = join(tmpDir, ".opencode", "opencode-rag.json");
     const opencodeDir = join(tmpDir, ".opencode");
     const gitignorePath = join(opencodeDir, ".gitignore");
     const opencodeConfigPath = join(opencodeDir, "opencode.json");
@@ -53,7 +53,8 @@ describe("opencode-rag init", () => {
     assert.equal(existsSync(join(opencodeDir, "plugins", "rag-plugin.js")), false);
     assert.equal(existsSync(join(opencodeDir, "plugins", "rag-tui.js")), false);
     assert.equal(existsSync(join(opencodeDir, "tui.json")), false);
-    assert.ok(existsSync(configPath), "opencode-rag.json should exist");
+    assert.ok(existsSync(configPath), ".opencode/opencode-rag.json should exist");
+    assert.equal(existsSync(join(tmpDir, "opencode-rag.json")), false, "config must not be created at the project root");
 
     // Check opencode-rag.json is valid JSON
     const configContent = readFileSync(configPath, "utf-8");
@@ -95,8 +96,8 @@ describe("opencode-rag init", () => {
   it("does not overwrite existing files without --force", async () => {
     process.cwd = () => tmpDir;
 
-    // Replace opencode-rag.json with custom content
-    const configPath = join(tmpDir, "opencode-rag.json");
+    // Replace .opencode/opencode-rag.json with custom content
+    const configPath = join(tmpDir, ".opencode", "opencode-rag.json");
     const customContent = JSON.stringify({ embedding: { provider: "openai" } });
     const { writeFileSync } = await import("node:fs");
     writeFileSync(configPath, customContent, "utf-8");
@@ -108,6 +109,31 @@ describe("opencode-rag init", () => {
     // Content should be unchanged (still our custom content)
     const afterContent = readFileSync(configPath, "utf-8");
     assert.equal(afterContent, customContent, "should not overwrite without --force");
+  });
+
+  it("moves a legacy root-level opencode-rag.json into .opencode/", async () => {
+    const legacyDir = join(tmpdir(), `opencode-rag-legacy-${Date.now()}`);
+    mkdirSync(legacyDir, { recursive: true });
+    try {
+      writeFileSync(join(legacyDir, "opencode-rag.json"), JSON.stringify({ embedding: { model: "legacy-model" } }), "utf-8");
+      process.cwd = () => legacyDir;
+
+      const { runCli } = await import("../cli.js");
+      await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+
+      assert.equal(existsSync(join(legacyDir, "opencode-rag.json")), false, "root file moved away");
+      const moved = join(legacyDir, ".opencode", "opencode-rag.json");
+      assert.ok(existsSync(moved), ".opencode/opencode-rag.json should exist");
+      const parsed = JSON.parse(readFileSync(moved, "utf-8"));
+      assert.equal(parsed.embedding.model, "legacy-model", "existing config preserved, not overwritten");
+    } finally {
+      process.cwd = originalCwd;
+      try {
+        rmSync(legacyDir, { recursive: true, force: true });
+      } catch {
+        // ignore cleanup failures
+      }
+    }
   });
 
   it("does not overwrite opencode-rag.json even with --force in non-interactive shell", async () => {

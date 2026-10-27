@@ -17,15 +17,18 @@ export { formatDecisionAnswers } from "./decision/format.js";
 export { createVectorStore } from "./vectorstore/factory.js";
 export { LanceDbStore } from "./vectorstore/lancedb.js";
 export { InMemoryVectorStore } from "./vectorstore/memory.js";
+export { ClickHouseStore, resolveClickHouseOptions, sanitizeNamespace, deriveNamespace } from "./vectorstore/clickhouse.js";
+export type { ResolvedClickHouseOptions } from "./vectorstore/clickhouse.js";
 export { retrieve } from "./retriever/retriever.js";
 export { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "./retriever/context-optimizer.js";
 export { loadConfig, loadConfigLayers, loadWorkspaceConfig, resolveConfigPaths, configuredSections, findGlobalConfigFile, globalConfigPath, DEFAULT_CONFIG } from "./core/config.js";
-export { createBackgroundIndexer } from "./watcher.js";
+export { createBackgroundIndexer, deriveWatcherHealth, readWatcherState, discoverWatcherStates } from "./watcher.js";
+export type { WatcherStatus, ObservedWatcher } from "./watcher.js";
 export { createWatchIgnore } from "./indexer.js";
 export { ImageChunker, createImageVisionProvider, resolveOnDemandImageConfig, getMimeType, SUPPORTED_IMAGE_EXTENSIONS } from "./chunker/image.js";
 export { DescriptionCache } from "./core/desc-cache.js";
 export type { RagConfig, DescriptionConfig, ImageDescriptionConfig, ImageDescriptionOnDemandConfig, DecisionConfig } from "./core/config.js";
-export type { Chunk, SearchResult, OptimizedSearchResult, Chunker, DescriptionProvider, EmbeddingProvider, VectorStore, DecisionProvider, DecisionQuestion, DecisionQuestionType, DecisionAnswer, DecisionRequest, DecisionResult } from "./core/interfaces.js";
+export type { Chunk, SearchResult, OptimizedSearchResult, Chunker, DescriptionProvider, EmbeddingProvider, VectorStore, ChunkBrowseStore, DecisionProvider, DecisionQuestion, DecisionQuestionType, DecisionAnswer, DecisionRequest, DecisionResult } from "./core/interfaces.js";
 export type { ContextOptimizationConfig, ContextOptimizationOptions } from "./retriever/context-optimizer.js";
 
 /**

@@ -188,7 +188,8 @@ await table.add(rows as unknown as Record<string, unknown>[]);
 
 ### Config File Loading
 - `loadConfig()` deep-merges per section (not recursive)
-- CLI auto-detects `./opencode-rag.json` and `./.opencode/rag.json`
+- Workspace config is canonical at `.opencode/opencode-rag.json`; legacy `./opencode-rag.json` and `./.opencode/rag.json` are still read (root file migrated by `init`)
+- Global base layer: `~/.config/opencode/opencode-rag.json`; the TUI saves provider options there only
 - Default config is the fallback when no file is found
 
 ### Ollama Response Quirks

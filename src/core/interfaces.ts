@@ -374,6 +374,49 @@ export interface VectorStore {
    * writes, so the pipeline rebuilds the index instead.
    */
   getVectorDimension?(): Promise<number | undefined>;
+
+  /**
+   * Start a full rebuild into a private target and return the handle that
+   * should receive the new chunks. Stores that support atomic promotion
+   * (ClickHouse epochs) implement this; stores that do not keep the
+   * pipeline's temporary-directory path. `promoteRebuild` makes the new data
+   * visible, `discardRebuild` leaves the current data untouched.
+   */
+  beginRebuild?(): Promise<VectorStore>;
+  /** Make the target created by `beginRebuild` visible (atomic where supported). */
+  promoteRebuild?(): Promise<void>;
+  /** Abandon the target created by `beginRebuild`, keeping the current data. */
+  discardRebuild?(): Promise<void>;
+
+  /**
+   * Advisory single-writer lease for a workspace namespace, used to keep two
+   * machines from running an index pass (or watcher) against the same store
+   * at the same time. Machines without a lease primitive keep their local
+   * file locks.
+   */
+  acquireLease?(owner: string, kind: string, ttlMs: number): Promise<boolean>;
+  /** Extend a lease held by `owner`. Returns false when it was lost. */
+  renewLease?(owner: string, kind: string, ttlMs: number): Promise<boolean>;
+  /** Release a lease held by `owner` (best effort). */
+  releaseLease?(owner: string, kind: string): Promise<void>;
+  /** Read the current lease holder for diagnostics. */
+  getLease?(kind: string): Promise<{ owner: string; expiresAt: number } | undefined>;
+}
+
+/**
+ * A `VectorStore` that can also serve the web UI's browse endpoints. The
+ * methods are separate from `VectorStore` so lightweight test doubles and the
+ * in-memory store do not have to implement pagination/count queries.
+ */
+export interface ChunkBrowseStore extends VectorStore {
+  /** Retrieve a paginated list of chunks, optionally filtered by language or file-path prefix. */
+  getChunksFiltered(offset: number, limit: number, lang?: string, filePrefix?: string): Promise<{ chunks: ChunkSummary[]; total: number }>;
+  /** Look up a single chunk by its ID. Returns undefined when not found. */
+  getChunkById(id: string): Promise<ChunkSummary | undefined>;
+  /** Fetch chunks by their IDs (bounded to 100 ids). */
+  getChunksByIds(ids: string[]): Promise<ChunkSummary[]>;
+  /** Fetch chunks with their embedding vectors included (for embedding projection). */
+  getChunksWithEmbeddings(limit: number): Promise<{ id: string; filePath: string; language: string; startLine: number; endLine: number; description: string; embedding: number[] }[]>;
 }
 
 /** Filter criteria for narrowing search results by file path, language, kind, or extension. */

@@ -52,6 +52,14 @@ the logged `cause=` is authoritative; do not infer the cause from the `ref=` alo
 3. No matching code found — refine your query or run `opencode-rag index` to (re)index the workspace
 4. Index is stale — run `opencode-rag index --force` for a full rebuild
 
+### RAG Settings Dialog Does Not Open (VS Code / PowerShell)
+
+**Symptom:** the settings hotkey does nothing in the PowerShell prompt inside VS Code's integrated terminal. The shipped default `alt+s` is not affected — this happens when `tui.settingsKeybinding` is set to a `ctrl+shift+<letter>` chord.
+
+**Cause:** Legacy terminal encodings cannot carry `ctrl+shift+<letter>`. VS Code's terminal (xterm.js) emits **no bytes at all** for that chord until the Kitty keyboard protocol is negotiated; VTE/gnome-terminal sends the plain control byte instead. The key never reaches OpenCode, so no keybinding can fire.
+
+**Fix:** set `tui.settingsKeybinding` to `"alt+s"` (the default) or another legacy-safe chord in `opencode-rag.json` — `alt+<letter>` (ESC + letter) works on every layout; `ctrl+alt+<letter>` also works but is AltGr on Windows. The plugin binds exactly the configured chord and adds no fallback. Terminals with Kitty keyboard support (kitty, WezTerm, Ghostty, foot, Alacritty, newer VS Code with the protocol enabled) deliver `ctrl+shift+<letter>` itself, so a custom chord remains valid there.
+
 ### Embedding Timeouts
 
 **Symptom:** Indexing fails with `Global embedding failed: Request timed out after Nms`. All files show as "Removed".

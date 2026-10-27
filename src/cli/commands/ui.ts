@@ -38,10 +38,10 @@ export function registerUiCommand(program: Command): void {
         const openBrowser = options.open !== false && (config.ui?.openBrowser ?? true);
 
         const { startWebUi } = await import("../../web/server.js");
-        const { findConfigFile } = await import("../../core/config.js");
+        const { findConfigFile, projectConfigPath } = await import("../../core/config.js");
         const configPath = options.config
           ? path.resolve(cwd, options.config)
-          : findConfigFile(cwd);
+          : findConfigFile(cwd) ?? projectConfigPath(cwd);
         const server = await startWebUi(
           storePath,
           port,

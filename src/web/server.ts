@@ -6,7 +6,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, extname, join, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { createVectorStore } from "../vectorstore/factory.js";
 import { LanceDbStore } from "../vectorstore/lancedb.js";
+import { StateSync } from "../core/state-sync.js";
+import type { ChunkBrowseStore, VectorStore } from "../core/interfaces.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import { createApiHandler } from "./api.js";
 import { getStaticHtml, resolveDistAsset } from "./static.js";
@@ -28,9 +31,20 @@ const MIME_TYPES: Record<string, string> = {
   ".bmp": "image/bmp",
 };
 
+/**
+ * Narrow a store to the browse-capable interface used by the Web UI.
+ * The in-memory store does not implement pagination/count queries.
+ */
+function asBrowseStore(store: VectorStore): ChunkBrowseStore {
+  const candidate = store as Partial<ChunkBrowseStore>;
+  if (typeof candidate.getChunksFiltered !== "function") {
+    throw new Error("The Web UI requires a vector store with browse support (lancedb or clickhouse).");
+  }
+  return store as ChunkBrowseStore;
+}
+
 /** Serve an HTML string as the HTTP response with UTF-8 content type. */
-function serveStatic(res: ServerResponse, html: string): void {
-  res.writeHead(200, {
+function serveStatic(res: ServerResponse, html: string): void {  res.writeHead(200, {
     "Content-Type": "text/html; charset=utf-8",
     "Cache-Control": "no-cache",
     "X-Content-Type-Options": "nosniff",
@@ -91,8 +105,20 @@ export async function startWebUi(
   cfg?: import("../core/config.js").RagConfig,
   configPath?: string
 ): Promise<WebUiServer> {
-  const store = new LanceDbStore(storePath, vectorDimension);
+  const store = cfg
+    ? createVectorStore(cfg, storePath, vectorDimension, cwd ?? process.cwd())
+    : new LanceDbStore(storePath, vectorDimension);
+  if (cfg) {
+    // ClickHouse: pull the durable manifest/keyword-index/quirks into the
+    // local cache before loading the keyword index below.
+    try {
+      await new StateSync({ store, storePath, config: cfg }).hydrate();
+    } catch (err) {
+      console.warn(`[web] State hydration failed: ${(err as Error).message}`);
+    }
+  }
   const keywordIndex = await KeywordIndex.load(storePath);
+  const browseStore = asBrowseStore(store);
 
   // Lazy embedder for /api/retrieve — initialized on first use
   let embedderPromise: Promise<import("../core/interfaces.js").EmbeddingProvider> | null = null;
@@ -106,7 +132,7 @@ export async function startWebUi(
 
   const html = getStaticHtml();
   const token = randomBytes(24).toString("hex");
-  const apiHandler = createApiHandler(store, keywordIndex, storePath, cwd, cfg, getEmbedder, token, configPath);
+  const apiHandler = createApiHandler(browseStore, keywordIndex, storePath, cwd, cfg, getEmbedder, token, configPath);
 
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {

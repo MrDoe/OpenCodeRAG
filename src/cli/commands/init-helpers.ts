@@ -321,7 +321,7 @@ export function generateSkillFile(): string {
     "- `find_usages` is essential before refactoring — it shows every reference",
     "- Pass `systemPrompt` to `describe_image` when you need specific details (e.g. `\"focus on the chart's axes and values\"`)",
     "- If no results appear, the workspace may not be indexed yet — run `opencode-rag index`",
-    "- Image descriptions are generated at index time using the configured vision provider; ensure `imageDescription` is configured in `opencode-rag.json` if your project includes images",
+    "- Image descriptions are generated at index time using the configured vision provider; ensure `imageDescription` is configured in `.opencode/opencode-rag.json` (its provider/model options live in the global config) if your project includes images",
     "",
   ].join("\n");
 }
@@ -347,7 +347,7 @@ export function generateDecisionSkillFile(): string {
     "",
     "### Prerequisites",
     "",
-    "- `decision.enabled` must be `true` in `opencode-rag.json` (off by default).",
+    "- `decision.enabled` must be `true` in `.opencode/opencode-rag.json` (off by default).",
     "- Requires Ollama >= 0.35 with a pulled tev1 model (`ollama pull tev1` or `ollama pull tev1:0.8b`).",
     "- Keep `state` short — the effective context is ~2k tokens. Pass the relevant excerpt, not a whole file.",
     "",

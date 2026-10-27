@@ -92,6 +92,23 @@ wrote for them are swept at the end of any pass that changed the index
 (`Orphan cleanup: removed …`); `status` reports the current count as
 `Orphan chunks`.
 
+**Progress lines:** every progress line reports the percentage of the **whole
+pass** completed — one number that rises monotonically from 0 to 100 across
+all stages and processing windows. It is never a per-chunk or per-stage
+fraction; the stage-local counters ride along as a plain done/total count:
+
+```
+Chunking — 9.1% overall (40/440 files)
+Describing src/foo.ts — 46.3% overall (55/200 texts)
+Embedding — 61.2% overall (64/350 texts)
+Storing src/foo.ts — 98.0% overall (12/50 files)
+```
+
+Each active (new/modified) file weighs equally and earns one quarter of its
+credit per stage (chunk, describe, embed, store), so the number is an honest
+estimate of how far through the run you are, not a precise work-meter. An
+interrupted pass simply stops short of 100.
+
 **Watch mode (`--watch`):** Uses chokidar to monitor file changes. Re-indexes debounced changes automatically.
 
 **Exit codes:** `0` = complete; `3` = completed with problems (some files failed
@@ -137,6 +154,7 @@ opencode-rag status [options]
 | Flag | Default | Description |
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
+| `--quick` | off | Skip the workspace scan. `Up-to-date files` / `Pending files` then print `n/a (not scanned)` — they are unknown, never zero |
 
 **Shows:**
 - Total chunk count
@@ -145,17 +163,24 @@ opencode-rag status [options]
 - Number of indexed extensions
 - Manifest status (ok/missing/corrupt)
 - Last indexed timestamp
-- Up-to-date files vs. pending files
+- Up-to-date files vs. pending files (from a real workspace scan — the default)
 - Expected chunks (sum of the chunk counts the manifest records)
 - Orphan chunks — stored chunks no manifest entry owns (files whose embedding
   never completed). The next full `index` pass sweeps them.
+- Quirk chunks — rows owned by `quirks.jsonl`, so they belong to neither
+  expected nor orphan: `Indexed = Expected + Orphan + Quirk` always reconciles.
+- Watch mode and watcher health. A live watcher found in a *different* store
+  dir than the configured `vectorStore.path` is printed as `Watcher elsewhere`
+  with its PID — that is the running OpenCode plugin indexing the old store
+  after a config switch; restart OpenCode to fix it.
 - Keyword index chunk count
 
 > **Reading the numbers:** `New files` / `Modified files` / `Unchanged files`
 > count **files**, while `Indexed chunks` / `Expected chunks` count **chunks** —
 > one file produces several chunks, so the two groups are never expected to be
 > equal. `Consistency check: OK` means every manifest entry has at least one row
-> in the store.
+> in the store. `status` also applies the store's `runtime-overrides.json`, so
+> it reports the same effective config the plugin uses.
 
 ### `list`
 

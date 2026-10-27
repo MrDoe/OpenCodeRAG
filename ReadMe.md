@@ -36,7 +36,7 @@ echo '{ "shellGuard": { "enabled": true } }' > ~/.config/opencode/opencode-rag.j
 
 `opencode-rag setup` installs/verifies the machine-level runtime and, when
 run inside a project, initializes the workspace (`.opencode/`, plugin entries,
-skill file, `opencode-rag.json`) in one step. When the installed version is
+skill file, `.opencode/opencode-rag.json`) in one step. When the installed version is
 outdated, it fetches and installs the latest published version from npm.
 `opencode-rag init` remains available for re-syncing an already initialized
 workspace, and `opencode-rag update` upgrades to a newer release.
@@ -62,8 +62,9 @@ workspace, and `opencode-rag update` upgrades to a newer release.
 | **Decision model** | Local [tev1](https://ollama.com/library/tev1) classification — `make_decision` labels, routes, and scores short text with probabilities (40–150 ms warm); optional pre-ask routing so the agent asks fewer questions |
 | **OpenCode plugin** | Auto-inject context, read-tool override, TUI settings, Ctrl+Enter to add RAG context, MCP registration on `init` |
 | **Incremental indexing** | File-hash manifest, background watcher, auto-rebuild on corruption |
+| **Central vector store** | Optional ClickHouse backend (`vectorStore.provider: "clickhouse"`) — one shared index for many machines/workspaces with HNSW ANN, epoch rebuilds and state sync; `opencode-rag clickhouse setup` configures it ([docs](doc/clickhouse.md)) |
 | **Privacy-first** | All processing stays local (when using Ollama) |
-| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `decide`, `ui`, `mcp`, `setup`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare`, `eval:gate`, `eval:decide`, `eval:tune` |
+| **CLI Tools** | `init`, `index`, `query`, `status`, `list`, `show`, `dump`, `clear`, `describe-image`, `decide`, `ui`, `mcp`, `setup`, `clickhouse`, `quirk`, `eval:sessions`, `eval:analyze`, `eval:compare`, `eval:gate`, `eval:decide`, `eval:tune` |
 | **Proxy-aware** | Corporate proxy support with raw-socket localhost bypass |
 | **OpenAI / Anthropic / Cohere** | Use alternate embedding providers with API key auto-resolution |
 | **Evaluation** | Session-level token tracking, RAG-on vs RAG-off comparison, tiktoken BPE counting |
@@ -115,6 +116,7 @@ Launch with `opencode-rag ui`. See [Web UI documentation](doc/webui.md) for deta
 | [Configuration](doc/configuration.md) | All options: embedding, indexing, retrieval, description, image description, decision, shell guard, plugin |
 | [Chunking](doc/chunking.md) | Language matrix, adding new chunkers, custom chunkers |
 | [Embedding](doc/embedding.md) | Providers, model recommendations, proxy, dimension probing |
+| [ClickHouse store](doc/clickhouse.md) | Central vector store backend: setup, epochs, ANN, multi-machine sync |
 | [Retrieval](doc/retrieval.md) | Pipeline, hybrid search, score fusion, caching |
 | [Plugin](doc/plugin.md) | OpenCode integration, tools, hooks, TUI, troubleshooting |
 | [CLI Reference](doc/cli.md) | All commands, options, examples |

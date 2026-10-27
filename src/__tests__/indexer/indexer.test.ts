@@ -472,6 +472,48 @@ describe("indexer", () => {
     assert.equal(summary.orphanChunks, 1);
   });
 
+  it("marks the status summary as unscanned when the scan is skipped", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+    await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+    });
+
+    const quick = await getIndexStatusSummary(workspaceDir, storeDir, testConfig(), store, true);
+    assert.equal(quick.scanned, false, "skipScan must be visible in the summary");
+
+    const full = await getIndexStatusSummary(workspaceDir, storeDir, testConfig(), store);
+    assert.equal(full.scanned, true);
+    assert.equal(full.upToDateFiles, 1);
+    assert.equal(full.pendingFiles, 0);
+  });
+
+  it("counts quirk-owned rows separately so the chunk accounting reconciles", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+    await runIndexPass({
+      cwd: workspaceDir,
+      storePath: storeDir,
+      config: testConfig(),
+      store,
+      embedder,
+    });
+
+    // A quirk row (quirks.jsonl owns it) seeded after the pass.
+    await store.addChunks([seededChunk("quirk:11111111-1111-4111-8111-111111111111", [1, 0, 0, 0])]);
+
+    const summary = await getIndexStatusSummary(workspaceDir, storeDir, testConfig(), store, true);
+    assert.equal(summary.quirkChunks, 1, "the quirk row is counted as quirk-owned");
+    assert.equal(summary.orphanChunks, 0, "a quirk row is NOT an orphan");
+    assert.equal(
+      summary.storeChunkCount,
+      summary.manifestExpectedChunks + summary.orphanChunks + (summary.quirkChunks ?? 0),
+      "Indexed = Expected + Orphan + Quirk",
+    );
+  });
+
   it("rebuilds safely when manifest is missing but store has data", async () => {
     const filePath = path.join(workspaceDir, "src", "a.ts");
     await writeFile(filePath, "function alpha() { return 1; }\n");

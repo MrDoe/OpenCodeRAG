@@ -2,6 +2,7 @@
  * @fileoverview Orchestrates the full indexing pipeline: scan, chunk, embed, and store.
  */
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import pLimit from "p-limit";
 import { scanWorkspaceFiles } from "../content/reader.js";
@@ -20,8 +21,10 @@ import type { ImageVisionProvider } from "../chunker/image.js";
 import { embedBatch, probeEmbeddingDimension } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { swapStoreDirectories } from "../vectorstore/lancedb.js";
+import type { StateSync } from "../core/state-sync.js";
 import { reconcileQuirks, QUIRK_FILE_PREFIX } from "../quirks/quirk-store.js";
 import { rehydrateKeywordIndex } from "./keyword-rehydration.js";
+import { PassProgress, type WindowProgress } from "./progress.js";
 import { createIndexStats, type IndexRunStats, type IndexStatusSummary } from "./stats.js";
 import { prepareFile, buildTextsToEmbed, type WorkerResult, type PreparedFile } from "./worker.js";
 import { tagChunksRole } from "../core/chunk-role.js";
@@ -62,6 +65,11 @@ export interface RunIndexPassOptions {
    * provider is created from the imageDescription config as usual.
    */
   imageVisionProvider?: ImageVisionProvider;
+  /**
+   * Durable-state synchronizer. When present (ClickHouse), the manifest,
+   * keyword index and quirk log are uploaded at the end of the pass.
+   */
+  stateSync?: StateSync;
 }
 
 /** Minimal logger interface for indexing pipeline diagnostics. */
@@ -186,9 +194,39 @@ export async function runIndexPass(options: RunIndexPassOptions): Promise<IndexR
     logger.debug(`Could not write index lock file: ${(err as Error).message} — concurrent-pass protection disabled`);
   }
 
+  // Cross-machine lease: central stores have no local directory in common, so
+  // the file lock above only protects this machine. The lease is advisory
+  // (ClickHouse has no CAS) but stops a second machine from re-embedding the
+  // same workspace concurrently.
+  const leaseOwner = `${os.hostname()}:${process.pid}`;
+  const leaseKind = "index";
+  const leaseTtlMs = Math.max(10, options.config.vectorStore.clickhouse?.lease?.ttlSeconds ?? 90) * 1000;
+  let leaseHeld = false;
+  let leaseTimer: NodeJS.Timeout | undefined;
+  if (typeof options.store.acquireLease === "function") {
+    try {
+      leaseHeld = await options.store.acquireLease(leaseOwner, leaseKind, leaseTtlMs);
+    } catch (err) {
+      // Do not leak the local lock file when the central store is unreachable.
+      try { await fs.unlink(lockPath); } catch { /* best effort */ }
+      throw err;
+    }
+    if (!leaseHeld) {
+      logger.warn("Another machine holds the central store's index lease. Skipping.");
+      try { await fs.unlink(lockPath); } catch { /* best effort */ }
+      return { ...createIndexStats(0, "missing"), skipped: true };
+    }
+    leaseTimer = setInterval(() => {
+      void options.store.renewLease?.(leaseOwner, leaseKind, leaseTtlMs).catch(() => {});
+    }, Math.max(5_000, Math.floor(leaseTtlMs / 3)));
+    leaseTimer.unref();
+  }
+
   try {
     return await runIndexPassInner(options, logger);
   } finally {
+    if (leaseTimer) clearInterval(leaseTimer);
+    if (leaseHeld) await options.store.releaseLease?.(leaseOwner, leaseKind).catch(() => {});
     try { await fs.unlink(lockPath); } catch {}
   }
 }
@@ -382,6 +420,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // Effective store used throughout the pass — may be a temp store for atomic rebuild.
   let effectiveStore: VectorStore = options.store;
   let tempStorePath: string | undefined;
+  /** True when the rebuild writes into a private epoch of a central store. */
+  let rebuildTarget = false;
   /** Set when the temporary rebuild store actually received rows. */
   let tempStoreWroteChunks = false;
 
@@ -399,10 +439,17 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     // Build the new index into a temporary store first, then atomically
     // swap on completion.  Original data stays untouched if the process
     // is aborted (Ctrl+C, crash) before the swap completes.
-    if (options.dimension) {
+    if (typeof options.store.beginRebuild === "function") {
+      // Central stores (ClickHouse) rebuild into a private epoch and promote
+      // atomically; no local temp directory and no directory swap.
+      effectiveStore = await options.store.beginRebuild();
+      rebuildTarget = true;
+      logger.debug("Rebuilding index in a private store epoch");
+      options.keywordIndex?.clear();
+    } else if (options.dimension) {
       tempStorePath = options.storePath + "_tmp";
       try { await fs.rm(tempStorePath, { recursive: true, force: true }); } catch { /* may not exist */ }
-      effectiveStore = createVectorStore(options.config, tempStorePath, options.dimension);
+      effectiveStore = createVectorStore(options.config, tempStorePath, options.dimension, options.cwd);
       logger.debug(`Rebuilding index in temporary store at ${tempStorePath}`);
       // Only clear the shared in-memory keyword index once the rebuild is
       // guaranteed to proceed — the guard below may still bail out, and
@@ -588,24 +635,28 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   const limit = pLimit(options.config.indexing.concurrency);
   const deferDescriptions = !!options.descriptionProvider;
 
-  const activeCount = workspaceFiles.filter(
-    (f) => !f.isEmpty && !f.isTooSmall && (!manifest.files[f.normalizedPath] || manifest.files[f.normalizedPath]!.hash !== f.hash),
-  ).length;
+  const isActiveFile = (f: import("../content/reader.js").WorkspaceFile): boolean =>
+    !f.isEmpty && !f.isTooSmall && (!manifest.files[f.normalizedPath] || manifest.files[f.normalizedPath]!.hash !== f.hash);
+
+  const activeCount = workspaceFiles.filter(isActiveFile).length;
   logger.info(`Chunking ${activeCount} file(s)...`);
+
+  // Whole-pass progress in file units: every progress line reports this
+  // tracker's percentage, never a per-chunk or per-stage fraction.
+  const passProgress = new PassProgress(activeCount);
 
   let chunkedDone = 0;
   const chunkProgressInterval = Math.max(1, Math.floor(activeCount / 20));
   const chunkPhaseStart = Date.now();
 
   /** Chunk one window of files (used by the windowed pipeline loop below). */
-  async function prepareWindow(windowFiles: import("../content/reader.js").WorkspaceFile[]): Promise<PreparedFile[]> {
+  async function prepareWindow(windowFiles: import("../content/reader.js").WorkspaceFile[], winProgress: WindowProgress): Promise<PreparedFile[]> {
     const prepared = await Promise.all(
       windowFiles.map((file) =>
         limit(async () => {
           const fileLabel = path.relative(options.cwd, file.normalizedPath).replace(/\\/g, "/");
 
-          const isActive = !file.isEmpty && !file.isTooSmall &&
-            (!manifest.files[file.normalizedPath] || manifest.files[file.normalizedPath]!.hash !== file.hash);
+          const isActive = isActiveFile(file);
           if (isActive) {
             options.progress?.startFile(fileLabel);
           }
@@ -630,9 +681,9 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
           if (isActive) {
             chunkedDone++;
+            winProgress.chunkFile();
             if (chunkedDone % chunkProgressInterval === 0 || chunkedDone === activeCount) {
-              const pct = ((chunkedDone / activeCount) * 100).toFixed(1);
-              logger.info(`  Chunking: ${chunkedDone}/${activeCount} files (${pct}%)`);
+              logProgress("Chunking", "", chunkedDone, activeCount, "files");
             }
           }
 
@@ -649,18 +700,20 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
   const aborted = (): boolean => options.abortSignal?.aborted ?? false;
 
-  // Shared progress logger: "stage <file> (chunk i/n) — X/total remaining (P%)".
-  const logChunkProgress = (
+  // Progress line shared by all four stages: "<Stage> [file] — NN.N% overall (done/total unit)".
+  // The percentage is ALWAYS the fraction of the WHOLE pass completed
+  // (PassProgress across all windows and stages) — never a per-chunk or
+  // per-stage fraction. The stage-local counters ride along as a plain
+  // done/total count in parentheses.
+  const logProgress = (
     stage: string,
     fileLabel: string,
-    index: number,
-    count: number,
-    completed: number,
+    done: number,
     total: number,
+    unit: string,
   ): void => {
-    const remaining = total - completed;
-    const pct = total > 0 ? ((remaining / total) * 100).toFixed(1) : "0.0";
-    logger.info(`${stage} ${fileLabel} (chunk ${index}/${count}) — ${remaining}/${total} remaining (${pct}%)`);
+    const detail = total > 0 ? ` (${done}/${total} ${unit})` : "";
+    logger.info(`${stage}${fileLabel ? ` ${fileLabel}` : ""} — ${passProgress.label} overall${detail}`);
   };
 
   // File metadata look-up for manifest entries
@@ -700,10 +753,13 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
    * version-manifest accumulation (K+2 versions per file) that made the
    * store phase degrade quadratically as the index grew.
    */
-  async function storeWindow(prepared: PreparedFile[], windowEarlyResults: ReadonlyMap<number, WorkerResult>): Promise<number> {
+  async function storeWindow(prepared: PreparedFile[], windowEarlyResults: ReadonlyMap<number, WorkerResult>, winProgress: WindowProgress): Promise<number> {
     const filesToStore = prepared.filter((p) => !windowEarlyResults.has(prepared.indexOf(p)) && p.chunks && (p.textToEmbed?.length ?? 0) > 0).length;
     const storePhaseStart = Date.now();
     logger.info(`Store phase: storing ${filesToStore} file(s) into vector database...`);
+    // Nothing to store (every file in this window had an early result or no
+    // chunks) — the store stage is trivially done, credit it immediately.
+    if (filesToStore === 0) winProgress.fill("store");
     let storedFiles = 0;
     // Files whose chunks ALL failed to embed while no manifest entry exists.
     // Rows an earlier pass wrote for them would otherwise never be removed:
@@ -853,7 +909,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
       options.progress?.finishFile(prep.fileLabel);
       storedFiles++;
-      logChunkProgress("Storing", prep.fileLabel, storedFiles, filesToStore, storedFiles, filesToStore);
+      winProgress.stage("store", storedFiles, filesToStore);
+      logProgress("Storing", prep.fileLabel, storedFiles, filesToStore, "files");
       storeResults.push(result);
     }
 
@@ -909,7 +966,11 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     }
     windowCount++;
     const windowFiles = workspaceFiles.slice(windowStart, windowStart + WINDOW_SIZE);
-    const prepared = await prepareWindow(windowFiles);
+    // This window's credit handle. The active-file count is taken here, up
+    // front: manifest entries for THIS window's files only appear once its
+    // store phase runs, so the count stays stable across the window.
+    const winProgress = passProgress.beginWindow(windowFiles.filter(isActiveFile).length);
+    const prepared = await prepareWindow(windowFiles, winProgress);
     if (windowStart === 0) {
       const chunkPhaseSec = ((Date.now() - chunkPhaseStart) / 1000).toFixed(1);
       logger.info(`Chunking complete: ${activeCount} files in ${chunkPhaseSec}s`);
@@ -938,31 +999,17 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         chunk.description = buildFallbackDescription(chunk);
       }
 
-      // Per-file chunk index + label for clear progress reporting, plus a shared
-      // progress logger emitting "stage <file> (chunk i/n) — X/total remaining (P%)".
+      // chunk.id → file label for the progress lines. The overall
+      // percentage comes from PassProgress; the per-chunk index inside the
+      // file is deliberately NOT shown.
       const chunkToFileLabel = new Map<string, string>();
       for (const prep of deferredPreps) {
         for (const chunk of prep.chunks ?? []) {
           chunkToFileLabel.set(chunk.id, prep.fileLabel);
         }
       }
-      const chunkMeta = new Map<string, { fileLabel: string; index: number; count: number }>();
-      {
-        const perFileCount = new Map<string, number>();
-        for (const chunk of allChunks) {
-          perFileCount.set(chunk.metadata.filePath, (perFileCount.get(chunk.metadata.filePath) ?? 0) + 1);
-        }
-        const perFileSeen = new Map<string, number>();
-        for (const chunk of allChunks) {
-          const seen = perFileSeen.get(chunk.metadata.filePath) ?? 0;
-          perFileSeen.set(chunk.metadata.filePath, seen + 1);
-          chunkMeta.set(chunk.id, {
-            fileLabel: chunkToFileLabel.get(chunk.id) ?? chunk.metadata.filePath,
-            index: seen + 1,
-            count: perFileCount.get(chunk.metadata.filePath) ?? 1,
-          });
-        }
-      }
+      const describeFileLabel = (chunk: Chunk): string =>
+        chunkToFileLabel.get(chunk.id) ?? chunk.metadata.filePath;
 
       // Advance progress to Description stage before descriptions start
       for (const prep of deferredPreps) {
@@ -991,6 +1038,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
           for (const { chunk, desc } of cacheHits) {
             chunk.description = desc;
           }
+          // Cache hits are already-described chunks of this window.
+          winProgress.stage("describe", cacheHits.length, allChunks.length);
         }
 
         // Build chunkId → prep map for tracking description failures per-file
@@ -1028,8 +1077,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
                     total: totalMisses,
                     onProgress: (chunk) => {
                       describedDone++;
-                      const meta = chunkMeta.get(chunk.id);
-                      if (meta) logChunkProgress("Describing", meta.fileLabel, meta.index, meta.count, describedDone, totalMisses);
+                      winProgress.stage("describe", cacheHits.length + describedDone, allChunks.length);
+                      logProgress("Describing", describeFileLabel(chunk), describedDone, totalMisses, "texts");
                     },
                   });
                   const newCacheEntries: Array<[string, string]> = [];
@@ -1076,8 +1125,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
             total: allChunks.length,
             onProgress: (chunk) => {
               describedDone++;
-              const meta = chunkMeta.get(chunk.id);
-              if (meta) logChunkProgress("Describing", meta.fileLabel, meta.index, meta.count, describedDone, allChunks.length);
+              winProgress.stage("describe", describedDone, allChunks.length);
+              logProgress("Describing", describeFileLabel(chunk), describedDone, allChunks.length, "texts");
             },
           });
           for (const chunk of allChunks) {
@@ -1110,6 +1159,11 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       logger.info(`Description phase complete: ${totalDescribedChunks} chunks across ${deferredPreps.length} files`);
     }
   }
+  // The describe stage of this window is finished — or was skipped entirely
+  // (no description provider, nothing to describe, or a global description
+  // failure). Credit the remaining fraction so the overall percentage keeps
+  // moving toward 100.
+  winProgress.fill("describe");
 
   // Cross-file embedding batch: collect this window's texts into a single queue,
   // embed in one batched call (with concurrency), then distribute back.
@@ -1119,7 +1173,6 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
   // ── Phase 1: Collect embed queue + handle early results ────────────────
   const embedQueue: Array<{ fileIdx: number; chunkIdx: number; text: string }> = [];
-  let totalEmbedChunks = 0;
   earlyWorkerResults.clear();
 
   for (let fi = 0; fi < prepared.length; fi++) {
@@ -1152,7 +1205,6 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     for (let ci = 0; ci < prep.textToEmbed.length; ci++) {
       embedQueue.push({ fileIdx: fi, chunkIdx: ci, text: prep.textToEmbed[ci]! });
     }
-    totalEmbedChunks += prep.textToEmbed.length;
   }
 
   // ── Phase 2: Embed all texts in a single batched call ──────────────────
@@ -1160,7 +1212,6 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     ? Math.min(options.config.indexing.ollamaMaxBatchSize ?? 500, defaultBatchSize)
     : defaultBatchSize;
 
-  let embeddedDone = 0;
   const allTexts = embedQueue.map(item => item.text);
   let allEmbeddings: number[][] = [];
   const embedPhaseStart = Date.now();
@@ -1175,8 +1226,8 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         "document",
         defaultConcurrency,
         (completed, total) => {
-          embeddedDone = completed;
-          logChunkProgress("Embedding", "", completed, total, embeddedDone, totalEmbedChunks);
+          winProgress.stage("embed", completed, total);
+          logProgress("Embedding", "", completed, total, "texts");
         },
       );
       logger.info(`Embedding complete: ${allTexts.length} texts in ${((Date.now() - embedPhaseStart) / 1000).toFixed(1)}s`);
@@ -1217,6 +1268,10 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       }
     }
   }
+  // Embed stage done for this window — worked, skipped (nothing to embed),
+  // or globally failed (a failed embed leaves nothing to store, so holding
+  // the credit back would stall the percentage without helping anyone).
+  winProgress.fill("embed");
 
   // ── Distribute embeddings back to per-file chunks ─────────────────────
   for (let i = 0; i < embedQueue.length; i++) {
@@ -1239,7 +1294,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // asynchronously (overlapped with the next window's prepare/embed), so a
   // shared mutable map would make its per-file loop read the WRONG window's
   // entries and skip every file ("Store phase: storing N → 0 files stored").
-  prevStore = storeWindow(prepared, new Map(earlyWorkerResults));
+  prevStore = storeWindow(prepared, new Map(earlyWorkerResults), winProgress);
 
   // Periodically compact fragments and prune old versions so the store
   // phase doesn't slow down as the index grows during long runs. Skipped on
@@ -1331,9 +1386,36 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     tryUpdateLastGitCommit(options.cwd, manifest);
   }
 
-  // ── Atomically promote temp store if a full rebuild was performed ──
+  // ── Atomically promote a rebuilt epoch / temp store ──
   let tempStorePromoted = false;
-  if (tempStorePath) {
+  if (rebuildTarget) {
+    if (!aborted()) {
+      if (!tempStoreWroteChunks) {
+        // Nothing was written (e.g. every embedding request failed). Keep the
+        // existing epoch rather than promoting an empty one over good data.
+        logger.warn("Rebuild produced no chunks — keeping the existing index and manifest unchanged.");
+        try { await options.store.discardRebuild?.(); } catch { /* best effort */ }
+      } else {
+        try {
+          await options.store.promoteRebuild?.();
+          tempStorePromoted = true;
+          logger.debug("Promoted rebuilt store epoch");
+        } catch (err) {
+          logger.warn(`Could not promote the rebuilt epoch: ${(err as Error).message}`);
+          try { await options.store.discardRebuild?.(); } catch { /* best effort */ }
+        }
+      }
+      try { await effectiveStore.close(); } catch { /* separate client handle */ }
+    } else {
+      // Aborted — discard the epoch, keep the active data intact.
+      try { await options.store.discardRebuild?.(); } catch { /* best effort */ }
+      effectiveStore.close().catch(() => {});
+      logger.debug("Index pass cancelled; discarded the rebuild epoch.");
+      // Skip the final manifest/keyword save: the old state is still valid.
+      await descCache.save();
+      return stats;
+    }
+  } else if (tempStorePath) {
     if (!aborted()) {
       if (!tempStoreWroteChunks) {
         // Nothing was written (e.g. every embedding request failed). Keep the
@@ -1379,7 +1461,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // for the new store. When the rebuild did not promote (empty temp store or
   // failed swap), keep the previous manifest/keyword index on disk — saving
   // the cleared state would orphan the existing store's data.
-  const keepPreviousIndexState = tempStorePath !== undefined && !tempStorePromoted;
+  const keepPreviousIndexState = (tempStorePath !== undefined || rebuildTarget) && !tempStorePromoted;
   if (keepPreviousIndexState) {
     logger.warn("Rebuild did not complete — keeping the previous manifest and keyword index.");
   } else {
@@ -1414,6 +1496,13 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     // a successful swap this points to the new data).
     await saveManifest(options.storePath, manifest);
     await options.keywordIndex?.save(options.storePath);
+    // ClickHouse: upload the durable state bundle (manifest, keyword index,
+    // quirk log) so a fresh clone on another machine needs no re-embedding.
+    try {
+      await options.stateSync?.flush(["manifest", "keyword-index", "quirks", "runtime-overrides", "doc-progress", ".desc-cache"]);
+    } catch (err) {
+      logger.warn(`State upload failed: ${(err as Error).message}`);
+    }
   }
 
   // Compact fragments and prune old version manifests so countRows() can't
@@ -1426,7 +1515,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     // Every optimize rebuilds the ANN index (a ~190 MB vector copy at 4096
     // dims), so passes within the throttle window skip it; the next due pass
     // compacts and prunes, which also reclaims the skipped builds.
-    if (!optimizeDue({ force: Boolean(tempStorePath) })) {
+    if (!optimizeDue({ force: Boolean(tempStorePath || rebuildTarget) })) {
       logger.debug(
         `Skipping vector store optimize (throttled: < ${MIN_OPTIMIZE_INTERVAL_MS / 60000} min since the last run)`,
       );
@@ -1434,7 +1523,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       logger.info("Optimizing vector store (compacting fragments, pruning old versions)...");
       const optimizeStart = Date.now();
       try {
-        const optimizeTarget = tempStorePath ? options.store : effectiveStore;
+        const optimizeTarget = (tempStorePath || rebuildTarget) ? options.store : effectiveStore;
         await optimizeTarget.optimize?.(tempStorePath ? { aggressive: true, logger: logger.warn } : { logger: logger.warn });
         logger.info(`Vector store optimized in ${((Date.now() - optimizeStart) / 1000).toFixed(1)}s`);
       } catch (err) {
@@ -1528,6 +1617,7 @@ export async function getIndexStatusSummary(
       storeChunkCount: storeCount,
       manifestExpectedChunks: 0,
       orphanChunks: 0,
+      scanned: false,
     };
   }
 
@@ -1569,22 +1659,30 @@ export async function getIndexStatusSummary(
   }
 
   // Rows without a manifest entry (partial-embedding leftovers). Quirk chunks
-  // live in quirks.jsonl and are deliberately not counted as orphans. A store
-  // that cannot enumerate files simply reports 0.
+  // live in quirks.jsonl and are deliberately not counted as orphans — they
+  // are counted separately so `Indexed = Expected + Orphan (+ Quirk)` actually
+  // reconciles. A store that cannot enumerate files reports 0 orphans and
+  // leaves quirkChunks undefined (unknown, not zero).
   let orphanChunks = 0;
+  let quirkChunks: number | undefined = 0;
   try {
     const manifestKeysLower = new Set(
       Object.keys(manifest.files).map((k) => k.toLowerCase()),
     );
+    quirkChunks = 0;
     for (const file of await store.listFiles()) {
       const key = normalizeFilePath(file.filePath);
+      if (path.basename(key).startsWith(QUIRK_FILE_PREFIX)) {
+        quirkChunks += file.chunkCount;
+        continue;
+      }
       if (manifest.files[key]) continue;
       if (manifestKeysLower.has(key.toLowerCase())) continue;
-      if (path.basename(key).startsWith(QUIRK_FILE_PREFIX)) continue;
       orphanChunks += file.chunkCount;
     }
   } catch {
     orphanChunks = 0;
+    quirkChunks = undefined;
   }
 
   return {
@@ -1597,5 +1695,7 @@ export async function getIndexStatusSummary(
     storeChunkCount: storeCount,
     manifestExpectedChunks,
     orphanChunks,
+    scanned: !skipScan,
+    quirkChunks,
   };
 }

@@ -190,7 +190,7 @@
   "tui": {
     "fileListKeybinding": "ctrl+enter",
     "chunksKeybinding": "ctrl+alt+enter",
-    "settingsKeybinding": "ctrl+shift+r"
+    "settingsKeybinding": "alt+s"
   },
   "logging": {
     "level": "none",

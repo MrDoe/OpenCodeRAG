@@ -1,11 +1,12 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { LanceDbStore } from "../../vectorstore/lancedb.js";
 import { KeywordIndex } from "../../retriever/keyword-index.js";
-import { addQuirk, updateQuirk, listQuirks, reconcileQuirks, type QuirkReconcileDeps } from "../../quirks/quirk-store.js";
+import { addQuirk, updateQuirk, recallQuirks, listQuirks, reconcileQuirks, removeQuirk, getQuirk, isTombstone, type QuirkReconcileDeps } from "../../quirks/quirk-store.js";
+import type { Quirk } from "../../quirks/types.js";
 import type { EmbeddingProvider, Chunk } from "../../core/interfaces.js";
 import type { RagConfig } from "../../core/config.js";
 import type { QuirkStoreDeps } from "../../quirks/quirk-store.js";
@@ -281,6 +282,109 @@ describe("reconcileQuirks", () => {
     const rows = await env.store.getChunksByFilePath(raw);
     assert.equal(rows.length, 1, "update's delete collapsed the legacy copy");
     assert.equal(rows[0]?.content, "update cleans legacy: v2 final");
+    await env.store.close();
+  });
+
+  it("removeQuirk leaves a tombstone instead of dropping the record", async () => {
+    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "delete me: tombstone probe" });
+
+    await removeQuirk(env.deps, q.id);
+
+    const records = readFileSync(join(env.dir, "quirks.jsonl"), "utf-8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Quirk);
+    const rec = records.find((r) => r.id === q.id);
+    assert.ok(rec, "the record must stay in the audit log as a tombstone");
+    assert.ok(rec!.deletedAt, "tombstone carries deletedAt");
+    assert.equal(isTombstone(rec!), true);
+
+    assert.equal(await getQuirk(env.deps, q.id), undefined, "a tombstone is not a quirk");
+    assert.equal((await listQuirks(env.deps)).length, 0, "list hides tombstones");
+    await assert.rejects(
+      () => removeQuirk(env.deps, q.id),
+      /Quirk not found/,
+      "a second delete must fail, not resurrect the record",
+    );
+    await env.store.close();
+  });
+
+  it("never restores a tombstoned quirk and prunes its surviving row as an orphan", async () => {    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "tombstone vs reconcile: probe" });
+    await removeQuirk(env.deps, q.id);
+
+    // Simulate a row that survived the delete: a crash between the jsonl
+    // tombstone and the store delete, or a rebuild that re-added it.
+    await env.store.addChunks([rawQuirkChunk(q.id, new Date().toISOString(), `quirk:${q.id}`)]);
+    assert.equal((await env.store.getChunksByFilePath(`quirk:${q.id}`)).length, 1, "setup: surviving row");
+
+    const first = await reconcileQuirks(env.reconcileDeps);
+    assert.equal(first.restoredToStore, 0, "a tombstone must never be re-embedded");
+    assert.equal(first.addedToKeywordIndex, 0, "a tombstone must never enter the keyword index");
+
+    // First sighting only records the suspect; fast-forward past the grace window.
+    writeFileSync(
+      join(env.dir, "quirk-orphans.json"),
+      JSON.stringify({ [q.id]: Date.now() - 2 * 60 * 60 * 1000 }),
+    );
+    const second = await reconcileQuirks(env.reconcileDeps);
+    assert.equal(second.removedOrphans, 1, "the surviving row is pruned as an orphan");
+    assert.equal((await env.store.getChunksByFilePath(`quirk:${q.id}`)).length, 0, "row deleted");
+    await env.store.close();
+  });
+
+  it("cannot resurrect a tombstoned id through a surviving store row", async () => {
+    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "resurrect via surviving row: probe" });
+    await removeQuirk(env.deps, q.id);
+
+    // Crash window: the marker is durable but the row delete never landed.
+    await env.store.addChunks([rawQuirkChunk(q.id, new Date().toISOString(), `quirk:${q.id}`)]);
+
+    assert.equal(
+      await getQuirk(env.deps, q.id),
+      undefined,
+      "getQuirk must short-circuit on the tombstone, not read the surviving row",
+    );
+    await assert.rejects(
+      () => updateQuirk(env.deps, q.id, { content: "resurrected by update" }),
+      /Quirk not found/,
+      "updateQuirk must not turn a tombstone back into a live record",
+    );
+    const rec = readFileSync(join(env.dir, "quirks.jsonl"), "utf-8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Quirk)
+      .find((r) => r.id === q.id);
+    assert.ok(rec?.deletedAt, "the tombstone survives the failed update");
+    await env.store.close();
+  });
+
+  it("excludes a tombstoned id from recall while its row survives", async () => {
+    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "recall must forget the deleted quirk probe" });
+
+    const before = await recallQuirks(env.deps, "recall must forget the deleted quirk probe");
+    assert.ok(before.some((r) => r.chunk.id === q.id), "setup: the live quirk is recallable");
+
+    await removeQuirk(env.deps, q.id);
+    // Surviving row + keyword entry: the exact window the id filter covers.
+    await env.store.addChunks([rawQuirkChunk(q.id, new Date().toISOString(), `quirk:${q.id}`)]);
+    env.ki.addChunks([rawQuirkChunk(q.id, new Date().toISOString(), `quirk:${q.id}`)]);
+
+    const after = await recallQuirks(env.deps, "recall must forget the deleted quirk probe");
+    assert.equal(after.some((r) => r.chunk.id === q.id), false, "a tombstoned id is never recalled");
+    await env.store.close();
+  });
+
+  it("treats a missing quirks.jsonl as no tombstone knowledge, not filter-everything", async () => {
+    const env = await makeEnv();
+    const q = await addQuirk(env.deps, { content: "missing log must not hide live quirks" });
+    rmSync(join(env.dir, "quirks.jsonl"), { force: true });
+
+    const hits = await recallQuirks(env.deps, "missing log must not hide live quirks");
+    assert.ok(hits.some((r) => r.chunk.id === q.id), "recall still works without the audit log");
     await env.store.close();
   });
 });

@@ -68,6 +68,20 @@ export interface IndexStatusSummary {
    * reachable through any accounting. The next full index pass sweeps them.
    */
   orphanChunks: number;
+  /**
+   * Whether {@link upToDateFiles} and {@link pendingFiles} were actually
+   * computed from a workspace scan. When false the two counters are zero
+   * because no scan ran — never because every file is current.
+   */
+  scanned: boolean;
+  /**
+   * Stored chunks owned by quirks (`quirk:` file paths). quirks.jsonl owns
+   * them, so they belong to neither {@link manifestExpectedChunks} nor
+   * {@link orphanChunks}; without this line `Indexed chunks` does not
+   * reconcile against `Expected + Orphan`. Undefined when the store cannot
+   * enumerate its files.
+   */
+  quirkChunks?: number;
 }
 
 /**

@@ -10,7 +10,7 @@
 
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { loadConfig, DEFAULT_CONFIG } from "../core/config.js";
+import { loadConfig, findConfigFile, DEFAULT_CONFIG } from "../core/config.js";
 import { createEmbedder } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
 import { retrieve } from "../retriever/retriever.js";
@@ -38,7 +38,7 @@ const QUERIES = [
 ];
 
 function getConfig() {
-  const configPath = path.join(WORKTREE, "opencode-rag.json");
+  const configPath = findConfigFile(WORKTREE) ?? path.join(WORKTREE, "opencode-rag.json");
   let cfg;
   try { cfg = loadConfig(configPath); } catch { cfg = DEFAULT_CONFIG; }
   const overrides = loadRuntimeOverrides(STORE_PATH);

@@ -25,6 +25,7 @@ import {
   registerShowCommand,
   registerDumpCommand,
   registerInitCommand,
+  registerClickHouseCommand,
   registerUiCommand,
   registerMcpCommand,
   registerSetupCommand,
@@ -85,6 +86,7 @@ registerEvalGateCommand(program);
 registerEvalDecideCommand(program);
 registerEvalTuneCommand(program);
 registerInitCommand(program);
+registerClickHouseCommand(program);
 registerQuirkCommand(program);
 
 // ── Auto-run detection ──────────────────────────────────────────

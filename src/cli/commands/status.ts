@@ -12,9 +12,10 @@ import fs from "node:fs";
 import { c, resolveCliContext, logCliError, logCliInfo, formatTimestamp, formatRelativeAge } from "../format.js";
 import { getIndexStatusSummary } from "../../indexer.js";
 import { findKeywordIndexGaps } from "../../indexer/keyword-rehydration.js";
-import { deriveWatcherHealth, type WatcherStatus } from "../../watcher.js";
+import { deriveWatcherHealth, discoverWatcherStates, type WatcherStatus } from "../../watcher.js";
 import { getPackageMetadata } from "../helpers.js";
 import { checkForUpdate } from "../../core/version-check.js";
+import { deriveNamespace, sanitizeNamespace } from "../../vectorstore/clickhouse.js";
 import type { CliOptions } from "../types.js";
 
 /**
@@ -68,6 +69,7 @@ export function registerStatusCommand(program: Command): void {
     .command("status")
     .description("Show indexing status")
     .option("-c, --config <path>", "path to config file")
+    .option("--quick", "skip the workspace scan (Up-to-date/Pending files are then unknown, not zero)")
     .action(async (options: CliOptions) => {
       try {
         const cwd = process.cwd();
@@ -79,16 +81,58 @@ export function registerStatusCommand(program: Command): void {
         checkStaleLock(storePath, logFilePath);
 
         const count = await store.count();
+        // Scan by default: a skipped scan used to print "Up-to-date files: 0 /
+        // Pending files: 0" — two numbers that were never computed. With
+        // --quick the summary's `scanned` flag makes the display say so.
         const summary = await getIndexStatusSummary(
           cwd,
           storePath,
           config,
           store,
-          true, // skipScan — don't walk the workspace tree, just use manifest stats
+          options.quick === true,
         );
 
         logCliInfo(logFilePath, "status", `\n${c.heading("Indexed chunks:")}    ${c.num(count)}`);
-        logCliInfo(logFilePath, "status", `${c.label("Store path:")}        ${c.file(storePath)}`);
+        const provider = config.vectorStore.provider ?? "lancedb";
+        if (provider === "clickhouse") {
+          const ch = config.vectorStore.clickhouse;
+          const namespace = ch?.namespace?.trim()
+            ? sanitizeNamespace(ch.namespace)
+            : deriveNamespace(cwd);
+          const annMode = ch?.ann === "hnsw" ? "hnsw ANN" : "exact scans";
+          logCliInfo(
+            logFilePath,
+            "status",
+            `${c.label("Vector store:")}      ${c.value("clickhouse")} ${c.file(`${ch?.url ?? ""}/${ch?.database ?? ""}`)} ` +
+            `(namespace ${c.value(namespace)}, ${annMode})`,
+          );
+          if (ch?.ann === "hnsw") {
+            const hasIndex = (store as unknown as { hasVectorIndex?: () => Promise<boolean> }).hasVectorIndex;
+            if (hasIndex) {
+              const present = await hasIndex.call(store).catch(() => false);
+              logCliInfo(
+                logFilePath,
+                "status",
+                `${c.label("ANN index:")}       ${present ? c.success("present") : c.warn("missing")} (vector_similarity)`,
+              );
+            }
+          }
+          logCliInfo(logFilePath, "status", `${c.label("Local cache:")}       ${c.file(storePath)} (disposable)`);
+          try {
+            const lease = await store.getLease?.("index");
+            if (lease) {
+              logCliInfo(
+                logFilePath,
+                "status",
+                `${c.label("Index lease:")}       ${c.value(lease.owner)} (expires ${formatTimestamp(lease.expiresAt)})`,
+              );
+            }
+          } catch {
+            // lease diagnostics are best effort
+          }
+        } else {
+          logCliInfo(logFilePath, "status", `${c.label("Store path:")}        ${c.file(storePath)}`);
+        }
         logCliInfo(logFilePath, "status", `${c.label("Embedding provider:")} ${c.value(config.embedding.provider)}`);
         logCliInfo(logFilePath, "status", `${c.label("Embedding model:")}   ${c.value(config.embedding.model)}`);
         const storeDimension = await store.getVectorDimension?.();
@@ -118,11 +162,22 @@ export function registerStatusCommand(program: Command): void {
         logCliInfo(logFilePath, "status", `${c.label("Manifest status:")}   ${summary.manifestStatus}`);
         logCliInfo(logFilePath, "status", `${c.label("Manifest entries:")}  ${c.num(summary.manifestEntries)}`);
         logCliInfo(logFilePath, "status", `${c.label("Last indexed:")}      ${c.value(formatTimestamp(summary.lastIndexedAt))}`);
-        logCliInfo(logFilePath, "status", `${c.label("Up-to-date files:")}  ${c.num(summary.upToDateFiles)}`);
-        logCliInfo(logFilePath, "status", `${c.label("Pending files:")}     ${c.num(summary.pendingFiles)}`);
+        if (summary.scanned) {
+          logCliInfo(logFilePath, "status", `${c.label("Up-to-date files:")}  ${c.num(summary.upToDateFiles)}`);
+          logCliInfo(logFilePath, "status", `${c.label("Pending files:")}     ${c.num(summary.pendingFiles)}`);
+        } else {
+          logCliInfo(logFilePath, "status", `${c.label("Up-to-date files:")}  ${c.dim("n/a (not scanned)")}`);
+          logCliInfo(logFilePath, "status", `${c.label("Pending files:")}     ${c.dim("n/a (not scanned — rerun without --quick)")}`);
+        }
         logCliInfo(logFilePath, "status", `${c.label("Indexed chunks:")}    ${c.num(summary.storeChunkCount)}`);
         logCliInfo(logFilePath, "status", `${c.label("Expected chunks:")}   ${c.num(summary.manifestExpectedChunks)}`);
         logCliInfo(logFilePath, "status", `${c.label("Orphan chunks:")}    ${c.num(summary.orphanChunks)}`);
+        if (summary.quirkChunks !== undefined) {
+          // Quirk rows are owned by quirks.jsonl — count them so
+          // Indexed = Expected + Orphan + Quirk reconciles and the reader can
+          // tell a sweepable orphan from a legitimately owned row.
+          logCliInfo(logFilePath, "status", `${c.label("Quirk chunks:")}     ${c.num(summary.quirkChunks)} ${c.dim("(owned by quirks.jsonl)")}`);
+        }
         if (summary.orphanChunks > 0) {
           logCliInfo(
             logFilePath,
@@ -130,7 +185,10 @@ export function registerStatusCommand(program: Command): void {
             `${c.label("Unaccounted rows:")}  ${c.warn("yes")} — stored chunks no manifest entry owns (files whose embedding never completed). Run 'opencode-rag index' to sweep them.`,
           );
         }
-        // Read watcher status from the background auto-indexer
+        // Read watcher status from the background auto-indexer. The watcher
+        // writes into ITS OWN store dir, so also discover watchers running in
+        // other store dirs (a plugin whose store was changed under it after
+        // load keeps watching elsewhere — this is where that shows up).
         const watcherStatusPath = path.join(storePath, "watcher-status.json");
         let watchModeDisplay: string;
         let watcherWarning: string | undefined;
@@ -161,6 +219,29 @@ export function registerStatusCommand(program: Command): void {
             "status",
             `${c.label("Watcher health:")}   ${c.warn(`stale — ${watcherWarning}`)} ${c.dim("(run 'opencode-rag index' or check .opencode/opencode-rag.log)")}`,
           );
+        }
+        try {
+          const others = discoverWatcherStates(storePath, cwd).filter(
+            (w) => path.resolve(w.storePath) !== path.resolve(storePath),
+          );
+          for (const w of others) {
+            if (w.alive && w.lock) {
+              logCliInfo(
+                logFilePath,
+                "status",
+                `${c.label("Watcher elsewhere:")} ${c.warn("active")} pid ${w.lock.pid} in ${c.file(w.storePath)} ${c.dim("(the running OpenCode plugin indexes THAT store — restart OpenCode after a vectorStore/embedding config change)")}`,
+              );
+            } else if (w.status?.lastRunAt || w.status?.lastSuccessAt) {
+              const last = w.status.lastSuccessAt ?? w.status.lastRunAt!;
+              logCliInfo(
+                logFilePath,
+                "status",
+                `${c.label("Watcher (old):")}   ${c.dim(`stopped — last run ${formatRelativeAge(last)} in ${w.storePath}`)}`,
+              );
+            }
+          }
+        } catch {
+          // watcher discovery is best effort
         }
         const kiCount = config.retrieval.hybridSearch?.enabled
           ? keywordIndex?.count() ?? 0

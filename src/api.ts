@@ -163,6 +163,7 @@ export async function indexWorkspace(
       force: options.force ?? false,
       keywordIndex: ctx.keywordIndex,
       descriptionProvider: ctx.descriptionProvider,
+      stateSync: ctx.stateSync,
     });
 
     return stats;

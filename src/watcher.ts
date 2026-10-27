@@ -6,11 +6,12 @@
 
 import chokidar from "chokidar";
 import path from "node:path";
-import { writeFileSync, unlinkSync, existsSync, readFileSync, openSync, closeSync } from "node:fs";
+import { writeFileSync, unlinkSync, existsSync, readFileSync, openSync, closeSync, readdirSync } from "node:fs";
 import { appendDebugLog } from "./core/fileLogger.js";
 import type { RagConfig } from "./core/config.js";
 import type { DescriptionProvider, EmbeddingProvider, KeywordIndex, VectorStore } from "./core/interfaces.js";
 import { isCorruptionError } from "./vectorstore/lancedb.js";
+import type { StateSync } from "./core/state-sync.js";
 import {
   createWatchPassScheduler,
   createWatchIgnore,
@@ -45,6 +46,8 @@ export interface CreateBackgroundIndexerOptions {
   descriptionProvider?: DescriptionProvider;
   /** Embedding vector dimension — enables atomic rebuilds instead of destructive clear. */
   dimension?: number;
+  /** Durable-state synchronizer (ClickHouse); flushed at the end of each pass. */
+  stateSync?: StateSync;
 }
 
 /** The current operational status of the background indexer watcher. */
@@ -174,6 +177,104 @@ export function releaseWatcherLock(storePath: string): void {
   }
 }
 
+// ── Watcher observation for read-only diagnostics (`status`, TUI) ───────────
+// A watcher writes its lock + status into ITS OWN store dir. When the running
+// OpenCode plugin and the CLI disagree about `vectorStore.path` (the config
+// changed after the plugin loaded), the live watcher is invisible to a reader
+// that only checks the configured store dir. These helpers let readers answer
+// "is a watcher running, and in which store dir?" from disk alone.
+
+/** A watcher observed on disk: its lock, its persisted status, and liveness. */
+export interface ObservedWatcher {
+  /** Store directory holding `watcher.lock` / `watcher-status.json`. */
+  storePath: string;
+  /** Contents of `watcher.lock`, when present and parseable. */
+  lock?: { pid: number; startedAt: number };
+  /** PID in the lock is alive — the watcher process is currently running. */
+  alive: boolean;
+  /** Parsed `watcher-status.json`, when present and parseable. */
+  status?: WatcherStatus;
+}
+
+/** Read one store directory's watcher lock + status. Returns undefined when the dir holds neither. */
+export function readWatcherState(storePath: string): ObservedWatcher | undefined {
+  let lock: WatcherLock | undefined;
+  try {
+    lock = readWatcherLock(storePath);
+  } catch {
+    /* unreadable dir */
+  }
+  let status: WatcherStatus | undefined;
+  try {
+    const statusPath = path.join(storePath, "watcher-status.json");
+    if (existsSync(statusPath)) {
+      status = JSON.parse(readFileSync(statusPath, "utf-8")) as WatcherStatus;
+    }
+  } catch {
+    /* corrupt status file — ignore */
+  }
+  if (!lock && !status) return undefined;
+  return {
+    storePath,
+    lock,
+    alive: lock ? isPidAlive(lock.pid) : false,
+    status,
+  };
+}
+
+/**
+ * Find every watcher observable for a workspace — including one running in a
+ * DIFFERENT store dir than the configured `vectorStore.path` (the classic
+ * symptom of a config change the already-running plugin never picked up).
+ *
+ * Scans the configured store dir, its sibling directories, and every child of
+ * `<workspaceRoot>/.opencode/` for `watcher.lock` / `watcher-status.json`.
+ * Results are sorted live-first, then by most recent activity.
+ */
+export function discoverWatcherStates(
+  configuredStorePath: string,
+  workspaceRoot: string,
+): ObservedWatcher[] {
+  const candidates = new Set<string>();
+  const add = (dir: string): void => {
+    try {
+      if (existsSync(dir)) candidates.add(path.resolve(dir));
+    } catch {
+      /* skip unreadable candidate */
+    }
+  };
+  add(configuredStorePath);
+  add(path.dirname(configuredStorePath));
+  const dotDir = path.join(workspaceRoot, ".opencode");
+  add(dotDir);
+  try {
+    if (existsSync(dotDir)) {
+      for (const entry of readdirSync(dotDir, { withFileTypes: true })) {
+        if (entry.isDirectory()) add(path.join(dotDir, entry.name));
+      }
+    }
+  } catch {
+    /* unreadable .opencode dir */
+  }
+
+  const found: ObservedWatcher[] = [];
+  for (const dir of candidates) {
+    const state = readWatcherState(dir);
+    if (state) found.push(state);
+  }
+  const lastActivity = (w: ObservedWatcher): number =>
+    Math.max(
+      w.status?.lastSuccessAt ?? 0,
+      w.status?.lastRunAt ?? 0,
+      w.status?.lastChangeAt ?? 0,
+      w.lock?.startedAt ?? 0,
+    );
+  found.sort((a, b) =>
+    (b.alive ? 1 : 0) - (a.alive ? 1 : 0) || lastActivity(b) - lastActivity(a),
+  );
+  return found;
+}
+
 /**
  * Create a background file watcher that automatically re-indexes the
  * workspace when files change. Uses chokidar for file system events and
@@ -184,7 +285,7 @@ export function releaseWatcherLock(storePath: string): void {
  * @returns A BackgroundIndexer handle with a close() method for shutdown.
  */
 export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions): BackgroundIndexer {
-  const { cwd, storePath, config, store, embedder, logFilePath, logLevel, keywordIndex, descriptionProvider, dimension } = options;
+  const { cwd, storePath, config, store, embedder, logFilePath, logLevel, keywordIndex, descriptionProvider, dimension, stateSync } = options;
   const autoIndexCfg = config.openCode.autoIndex ?? { enabled: false, debounceMs: 5000, intervalMs: 300000 };
 
   let active = false;
@@ -231,6 +332,7 @@ export function createBackgroundIndexer(options: CreateBackgroundIndexerOptions)
           embedder,
           keywordIndex,
           descriptionProvider,
+          stateSync,
           dimension,
           abortSignal: ac.signal,
           logger: {

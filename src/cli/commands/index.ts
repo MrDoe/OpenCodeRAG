@@ -10,6 +10,7 @@ export { registerListCommand } from "./list.js";
 export { registerShowCommand } from "./show.js";
 export { registerDumpCommand } from "./dump.js";
 export { registerInitCommand } from "./init.js";
+export { registerClickHouseCommand } from "./clickhouse.js";
 export { registerUiCommand } from "./ui.js";
 export { registerMcpCommand } from "./mcp.js";
 export { registerSetupCommand } from "./setup.js";

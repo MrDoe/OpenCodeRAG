@@ -45,7 +45,7 @@
 
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { DEFAULT_CONFIG, loadConfig } from "../core/config.js";
+import { DEFAULT_CONFIG, loadConfig, findConfigFile } from "../core/config.js";
 import type { RagConfig } from "../core/config.js";
 import { createEmbedder } from "../embedder/factory.js";
 import { createVectorStore } from "../vectorstore/factory.js";
@@ -65,7 +65,7 @@ import {
 } from "./golden-set.js";
 
 const WORKTREE = process.cwd();
-const CONFIG_PATH = path.join(WORKTREE, "opencode-rag.json");
+const CONFIG_PATH = findConfigFile(WORKTREE) ?? path.join(WORKTREE, "opencode-rag.json");
 const STORE_PATH = path.join(WORKTREE, ".opencode", "rag_db");
 const DEFAULT_LABELS_PATH = path.join(WORKTREE, "src", "eval", "rerank-labels.json");
 const DEFAULT_REPORT_PATH = path.join(WORKTREE, "doc", "rerank-eval-report.md");

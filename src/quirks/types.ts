@@ -28,4 +28,11 @@ export interface Quirk {
   confidence: number;
   lastObserved: string;
   sourceRef?: string;
+  /**
+   * Set when the quirk was deleted. The record is kept in `quirks.jsonl` as a
+   * tombstone so the deletion survives `mergeQuirkJsonl` (which is a union by
+   * id with no negative records) and therefore propagates to the central store
+   * on both hydrate and flush. Tombstones are filtered out of every read path.
+   */
+  deletedAt?: string;
 }

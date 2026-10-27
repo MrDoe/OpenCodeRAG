@@ -110,6 +110,49 @@ export function saveRuntimeOverride(
   }
 }
 
+/**
+ * Remove a runtime override at a dotted path.
+ *
+ * Used when an option's persisted home moves (provider options now live in
+ * the global config file): a stale override here would silently shadow the
+ * file value forever. Prunes parent objects left empty; tolerates missing
+ * intermediate keys.
+ */
+export function deleteRuntimeOverride(storePath: string, path: string[]): void {
+  const overridePath = join(storePath, "runtime-overrides.json");
+  if (!existsSync(overridePath) || path.length === 0) return;
+  const overrides = loadRuntimeOverrides(storePath) as unknown as Record<string, unknown>;
+
+  const ancestors: Record<string, unknown>[] = [];
+  let target: Record<string, unknown> = overrides;
+  for (const key of path.slice(0, -1)) {
+    const next = target[key];
+    if (!next || typeof next !== "object" || Array.isArray(next)) return; // nothing to delete
+    ancestors.push(target);
+    target = next as Record<string, unknown>;
+  }
+  const leaf = path[path.length - 1]!;
+  if (!(leaf in target)) return;
+  delete target[leaf];
+
+  // Prune containers that became empty, deepest first (never the root).
+  for (let i = ancestors.length - 1; i >= 0; i--) {
+    const parent = ancestors[i]!;
+    const child = ancestors[i + 1] ? parent[path[i]!] : target;
+    if (child && typeof child === "object" && Object.keys(child).length === 0) {
+      delete parent[path[i]!];
+    } else {
+      break;
+    }
+  }
+
+  try {
+    writeFileSync(overridePath, JSON.stringify(overrides, null, 2), "utf-8");
+  } catch {
+    // silently ignore write errors
+  }
+}
+
 /** Deep-merge runtime overrides into a config object. Returns a new object without mutating the original. */
 export function applyRuntimeOverrides(
   cfg: RagConfig,

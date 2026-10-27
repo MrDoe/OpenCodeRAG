@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, statSync, writeFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { EmbeddingProvider, VectorStore, KeywordIndex, SearchResult } from "../core/interfaces.js";
@@ -14,6 +14,8 @@ export interface QuirkStoreDeps {
   keywordIndex: KeywordIndex;
   cfg: RagConfig;
   storePath: string;
+  /** Upload the durable quirk log after a write (ClickHouse state bundle). */
+  flushState?: () => Promise<void>;
 }
 
 export const QUIRK_FILE_PREFIX = "quirk:";
@@ -53,6 +55,46 @@ function readJsonl(filePath: string): Quirk[] {
     }
   }
   return quirks;
+}
+
+/**
+ * True when a JSONL record is a deletion tombstone rather than a live quirk.
+ *
+ * Tombstones exist so a deletion survives `mergeQuirkJsonl`, which is a union
+ * by id and would otherwise resurrect the record from the central store on the
+ * next hydrate/flush. Every read path must filter them out.
+ */
+export function isTombstone(q: Quirk): boolean {
+  return typeof q.deletedAt === "string" && q.deletedAt.length > 0;
+}
+
+const NO_TOMBSTONES: ReadonlySet<string> = new Set<string>();
+
+/**
+ * Tombstone ids for a store, cached on `quirks.jsonl` mtime + size.
+ *
+ * `recallQuirks` runs on every turn (auto-inject) and on every tool error, so it
+ * must not parse the whole audit log per call. A missing or unreadable log means
+ * "no tombstone knowledge" — never an error and never filter-everything:
+ * `removeQuirk`'s atomic rewrite has a direct-write fallback, and a momentary
+ * unreadable file must not change recall behaviour.
+ */
+const tombstoneIdsCache = new Map<string, { mtimeMs: number; size: number; ids: Set<string> }>();
+
+function tombstoneIds(storePath: string): ReadonlySet<string> {
+  if (isMemoryStore(storePath)) return NO_TOMBSTONES; // memory stores delete outright
+  const jp = jsonlPath(storePath);
+  try {
+    const st = statSync(jp);
+    const hit = tombstoneIdsCache.get(storePath);
+    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.ids;
+    const ids = new Set(readJsonl(jp).filter(isTombstone).map((q) => q.id));
+    if (tombstoneIdsCache.size > 16) tombstoneIdsCache.clear(); // bounded: keyed by store path
+    tombstoneIdsCache.set(storePath, { mtimeMs: st.mtimeMs, size: st.size, ids });
+    return ids;
+  } catch {
+    return NO_TOMBSTONES;
+  }
 }
 
 function appendJsonl(filePath: string, q: Quirk): void {
@@ -95,8 +137,14 @@ export async function getQuirk(deps: QuirkStoreDeps, id: string): Promise<Quirk 
   if (!isMemoryStore(deps.storePath)) {
     const jp = jsonlPath(deps.storePath);
     if (existsSync(jp)) {
-      const found = readJsonl(jp).find((q) => q.id === id);
-      if (found) return found;
+      const records = readJsonl(jp).filter((q) => q.id === id);
+      const live = records.find((q) => !isTombstone(q));
+      if (live) return live;
+      // A tombstone is authoritative: never fall through to a surviving store
+      // row (crash between the marker and the row delete, or a delete that
+      // threw) and report a deleted id as live — updateQuirk would rewrite the
+      // marker as a live record.
+      if (records.some((q) => isTombstone(q))) return undefined;
     }
     const chunks = await deps.store.getChunksByFilePath(QUIRK_FILE_PREFIX + id);
     const c = chunks[0];
@@ -200,6 +248,8 @@ export async function updateQuirk(deps: QuirkStoreDeps, id: string, patch: Parti
     memQuirksFor(deps.storePath).set(id, updated);
   }
 
+  try { await deps.flushState?.(); } catch { /* durable-state upload is best effort */ }
+
   return updated;
 }
 
@@ -243,6 +293,8 @@ export async function addQuirk(deps: QuirkStoreDeps, input: QuirkInput): Promise
     memQuirksFor(deps.storePath).set(id, quirk);
   }
 
+  try { await deps.flushState?.(); } catch { /* durable-state upload is best effort */ }
+
   return quirk;
 }
 
@@ -281,17 +333,39 @@ export async function removeQuirk(deps: QuirkStoreDeps, id: string): Promise<voi
     throw new Error(`Quirk not found: ${id}`);
   }
 
-  const filePath = QUIRK_FILE_PREFIX + id;
-  await deps.store.deleteByFilePath(filePath);
-  deps.keywordIndex.removeByFilePath(filePath);
-
+  // Persist the deletion intent BEFORE touching the index. The tombstone is the
+  // durable record that survives the union merge, so a crash between the two
+  // steps must leave the marker behind — the reverse order (delete rows first)
+  // lets reconcile re-embed the quirk and makes the deletion look undone.
+  const deletedAt = nowISO();
   if (!isMemoryStore(deps.storePath)) {
     const jp = jsonlPath(deps.storePath);
-    const all = readJsonl(jp).filter((q) => q.id !== id);
+    const all = readJsonl(jp);
+    const idx = all.findIndex((q) => q.id === id);
+    if (idx >= 0) {
+      all[idx] = { ...all[idx]!, deletedAt, lastObserved: deletedAt };
+    } else {
+      // The record was only in the vector store (legacy row): keep a tombstone
+      // so the deletion still propagates.
+      all.push({ ...existing, deletedAt, lastObserved: deletedAt });
+    }
     rewriteJsonl(jp, all);
   } else {
     memQuirksFor(deps.storePath).delete(id);
   }
+
+  const filePath = QUIRK_FILE_PREFIX + id;
+  // Best-effort: the marker is already durable and reconcileQuirks prunes a
+  // surviving row as an orphan, so a store error here must not report the
+  // deletion as failed — the record is gone from every read path regardless.
+  try {
+    await deps.store.deleteByFilePath(filePath);
+  } catch {
+    /* reconcile prune */
+  }
+  deps.keywordIndex.removeByFilePath(filePath);
+
+  try { await deps.flushState?.(); } catch { /* durable-state upload is best effort */ }
 }
 
 /** List all quirks sorted by lastObserved descending. */
@@ -299,7 +373,7 @@ export async function listQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
   if (!isMemoryStore(deps.storePath)) {
     const jp = jsonlPath(deps.storePath);
     if (existsSync(jp)) {
-      const all = readJsonl(jp);
+      const all = readJsonl(jp).filter((q) => !isTombstone(q));
       all.sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
       return all;
     }
@@ -329,7 +403,7 @@ export async function listQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
     result.sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
     return result;
   }
-  const all = [...memQuirksFor(deps.storePath).values()];
+  const all = [...memQuirksFor(deps.storePath).values()].filter((q) => !isTombstone(q));
   all.sort((a, b) => b.lastObserved.localeCompare(a.lastObserved));
   return all;
 }
@@ -404,7 +478,11 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
   const jsonlFile = jsonlPath(deps.storePath);
   const jsonlExists = existsSync(jsonlFile);
   const quirks = jsonlExists ? readJsonl(jsonlFile) : [];
-  const jsonlIds = new Set(quirks.map((q) => q.id));
+  // Tombstones are deletion markers, not live quirks: they must never be
+  // restored, re-embedded, or counted as "the jsonl still has this id" — their
+  // store rows (if any survived) belong on the orphan path below.
+  const liveQuirks = quirks.filter((q) => !isTombstone(q));
+  const jsonlIds = new Set(liveQuirks.map((q) => q.id));
 
   // Exact enumeration of quirk chunks in the table. The store normalizes
   // filePaths to absolute on write (chunkToRow → normalizeFilePath), so quirk
@@ -429,7 +507,7 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
   //    per id with the variant-aware lookup. The jsonl content is authoritative:
   //    delete every row, re-embed one raw row below.
   const dupIds: string[] = [];
-  for (const q of quirks) {
+  for (const q of liveQuirks) {
     if (!storeIds.has(q.id)) continue; // absent → the restore path below covers it
     const rows = await deps.store.getChunksByFilePath(QUIRK_FILE_PREFIX + q.id);
     if (rows.length > 1) dupIds.push(q.id);
@@ -442,7 +520,7 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
   }
 
   // 1. Restore jsonl quirks the table is missing (the rebuild-wipe direction).
-  const missing = quirks.filter((q) => !storeIds.has(q.id));
+  const missing = liveQuirks.filter((q) => !storeIds.has(q.id));
   const restoredIds = new Set(missing.map((q) => q.id));
   if (missing.length > 0) {
     const prefix = deps.cfg.embedding.documentPrefix ?? "";
@@ -463,7 +541,7 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
   //    content may predate the collapse.
   let kiDirty = false;
   if (deps.keywordIndex) {
-    for (const q of quirks) {
+    for (const q of liveQuirks) {
       if (deps.keywordIndex.hasChunk(q.id) && !restoredIds.has(q.id)) continue;
       deps.keywordIndex.addChunks([quirkChunk(q, [])]);
       result.addedToKeywordIndex++;
@@ -536,6 +614,8 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
     }
   }
 
+  try { await deps.flushState?.(); } catch { /* durable-state upload is best effort */ }
+
   return result;
 }
 
@@ -601,7 +681,12 @@ export async function recallQuirks(
   // Confidence + semantic-similarity + type/tag filtering. The similarity gate
   // is `(cosine + 1) / 2` in [0,1] — the same domain the vector stores report.
   // A keyword-only candidate has rawVectorScore 0 and never passes minScore > 0.
+  // Deleted ids are excluded on the FINAL candidate list, so a surviving store
+  // row — or a keyword-index entry that removeByFilePath has not dropped yet —
+  // cannot be recalled or auto-injected during the orphan grace window.
+  const dead = tombstoneIds(deps.storePath);
   const filtered = raw.filter((r) => {
+    if (dead.has(r.chunk.id)) return false;
     const conf = r.chunk.metadata.confidence ?? 1;
     if (conf < minConfidence) return false;
     const similarity = r.explanation?.scoreBreakdown?.rawVectorScore ?? 0;
@@ -646,7 +731,7 @@ export async function recallQuirks(
  * @returns The tool-error quirks, newest `lastObserved` first.
  */
 export async function listToolErrorQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
-  const tagged = (q: Quirk) => (q.tags ?? []).includes(TOOL_ERROR_QUIRK_TAG);
+  const tagged = (q: Quirk) => !isTombstone(q) && (q.tags ?? []).includes(TOOL_ERROR_QUIRK_TAG);
   if (isMemoryStore(deps.storePath)) {
     return [...memQuirksFor(deps.storePath).values()]
       .filter(tagged)

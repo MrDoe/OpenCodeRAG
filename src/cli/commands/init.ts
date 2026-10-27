@@ -13,7 +13,7 @@
 import type { Command } from "commander";
 import path from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, copyFileSync } from "node:fs";
-import { loadConfig, findConfigFile, loadWorkspaceConfig, configuredSections } from "../../core/config.js";
+import { loadConfig, findConfigFile, loadWorkspaceConfig, configuredSections, migrateLegacyProjectConfig, projectConfigPath } from "../../core/config.js";
 import { checkProviderHealth, pullOllamaModels } from "../../embedder/health.js";
 import { destroyAllPooledConnections } from "../../embedder/http.js";
 import { c } from "../format.js";
@@ -68,6 +68,12 @@ export function registerInitCommand(program: Command): void {
     .option("-f, --force", "overwrite existing files")
     .option("--skip-install", "skip installing workspace-local plugin dependencies")
     .option("--skip-health-check", "skip provider connectivity and model availability check")
+    .option("--vector-store <provider>", "vector store backend to write (lancedb | clickhouse)")
+    .option("--clickhouse-url <url>", "ClickHouse endpoint (default http://localhost:8123)")
+    .option("--clickhouse-database <name>", "ClickHouse database (default OpenCodeRAG)")
+    .option("--clickhouse-user <name>", "ClickHouse user (default default)")
+    .option("--clickhouse-password-env <name>", "env var holding the ClickHouse password")
+    .option("--clickhouse-namespace <name>", "project namespace / table suffix")
     .action((options: InitOptions) => runWorkspaceInit(options));
 }
 
@@ -85,10 +91,13 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
   try {
       const cwd = process.cwd();
       const packageMetadata = getPackageMetadata();
-      // Use findConfigFile so an existing config in .opencode/rag.json (or
-      // .opencode/opencode-rag.json) is respected instead of being shadowed
-      // by a new root-level opencode-rag.json.
-      const configPath = findConfigFile(cwd) ?? path.join(cwd, "opencode-rag.json");
+      // The workspace config now lives in `.opencode/`: move a legacy
+      // root-level opencode-rag.json there (only when the canonical file is
+      // absent), then respect whatever config exists — `.opencode/rag.json`
+      // included — instead of shadowing it with a new file.
+      const migratedConfigPath = migrateLegacyProjectConfig(cwd);
+      const configPath = findConfigFile(cwd) ?? projectConfigPath(cwd);
+      const configLabel = path.relative(cwd, configPath).replace(/\\/g, "/");
       const opencodeDir = path.join(cwd, ".opencode");
       const gitignorePath = path.join(opencodeDir, ".gitignore");
       const opencodeConfigPath = path.join(opencodeDir, "opencode.json");
@@ -102,6 +111,10 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
       const opencodePackagePath = path.join(opencodeDir, "package.json");
 
       console.log(`\n${c.heading("Initializing OpenCodeRAG in workspace...")}\n`);
+
+      if (migratedConfigPath) {
+        console.log(`  ${c.updated("Moved:")}     opencode-rag.json → .opencode/opencode-rag.json\n`);
+      }
 
       if (!existsSync(opencodeDir)) {
         mkdirSync(opencodeDir, { recursive: true });
@@ -323,9 +336,11 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
         return generateDefaultConfigJson(detectedTuning, existingRaw);
       };
 
+      let configWritten = false;
       if (!configExists) {
         writeFileSync(configPath, await configContent(), "utf-8");
-        console.log(`  ${c.created("Created:")} opencode-rag.json`);
+        configWritten = true;
+        console.log(`  ${c.created("Created:")} ${configLabel}`);
       } else {
         // NEVER overwrite existing config without interactive confirmation
         let overwrite = false;
@@ -334,7 +349,7 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
           const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
           const answer = await new Promise<string>((resolve) => {
             rl.question(
-              `  ${c.warn("opencode-rag.json already exists.")} Overwrite with default config? A backup will be saved. (y/N) `,
+              `  ${c.warn(`${configLabel} already exists.`)} Overwrite with default config? A backup will be saved. (y/N) `,
               resolve,
             );
           });
@@ -343,15 +358,42 @@ export async function runWorkspaceInit(options: InitOptions = {}): Promise<void>
         }
         if (overwrite) {
           copyFileSync(configPath, `${configPath}.bak`);
-          console.log(`  ${c.dim("Backup:")}        opencode-rag.json.bak`);
+          console.log(`  ${c.dim("Backup:")}        ${configLabel}.bak`);
           writeFileSync(configPath, await configContent(), "utf-8");
-          console.log(`  ${c.updated("Updated:")}  opencode-rag.json`);
+          configWritten = true;
+          console.log(`  ${c.updated("Updated:")}  ${configLabel}`);
         } else {
-          console.log(`  ${c.exists("Exists:")}   opencode-rag.json (preserved)`);
+          console.log(`  ${c.exists("Exists:")}   ${configLabel} (preserved)`);
           if (!process.stdin.isTTY && options.force) {
-            console.log(`  ${c.warn("Skipped overwrite:")} non-interactive shell. Edit opencode-rag.json manually or re-run in a TTY.`);
+            console.log(`  ${c.warn("Skipped overwrite:")} non-interactive shell. Edit ${configLabel} manually or re-run in a TTY.`);
           }
         }
+      }
+
+      // ── Optional central ClickHouse backend ──
+      if (configWritten && options.vectorStore === "clickhouse") {
+        const raw = readJsonObject(configPath) ?? {};
+        const current = (raw.vectorStore ?? {}) as Record<string, unknown>;
+        const currentClickhouse =
+          current.clickhouse && typeof current.clickhouse === "object"
+            ? (current.clickhouse as Record<string, unknown>)
+            : {};
+        raw.vectorStore = {
+          ...current,
+          provider: "clickhouse",
+          clickhouse: {
+            ...currentClickhouse,
+            url: options.clickhouseUrl ?? "http://localhost:8123",
+            database: options.clickhouseDatabase ?? "OpenCodeRAG",
+            username: options.clickhouseUser ?? "default",
+            passwordEnv: options.clickhousePasswordEnv ?? "OPENCODERAG_CLICKHOUSE_PASSWORD",
+            ...(options.clickhouseNamespace ? { namespace: options.clickhouseNamespace } : {}),
+          },
+        };
+        writeJsonFile(configPath, raw);
+        console.log(
+          `  ${c.created("Configured:")} clickhouse backend (${options.clickhouseUrl ?? "http://localhost:8123"})`,
+        );
       }
 
       // ── Provider health check + dependency install (parallel) ──
@@ -482,6 +524,7 @@ export function isLikelyProjectRoot(cwd: string): boolean {
     "Cargo.toml",
     "go.mod",
     "opencode-rag.json",
+    ".opencode/opencode-rag.json",
   ];
   return markers.some((marker) => existsSync(path.join(cwd, marker)));
 }

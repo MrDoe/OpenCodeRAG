@@ -5,16 +5,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, join, resolve as resolvePathModule } from "node:path";
 import { createHash } from "node:crypto";
-import { LanceDbStore } from "../vectorstore/lancedb.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import { listSessions, getSession, deleteSession, compareSessions, validateSessionID } from "../eval/storage.js";
 import { analyzeTokenUsage, compareTokenAnalyses, projectTokenSavings } from "../eval/token-analysis.js";
 import { listQuirks, lintQuirks, removeQuirk, type QuirkStoreDeps } from "../quirks/quirk-store.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
 import { getRerankerFor } from "../reranker/factory.js";
-import { updateConfigValue, type RagConfig } from "../core/config.js";
+import { updateConfigValue, ensureConfigFile, type RagConfig } from "../core/config.js";
 import { createExcludeMatcher } from "../core/exclude.js";
-import { CODE_SEARCH_FILTER, type EmbeddingProvider } from "../core/interfaces.js";
+import { CODE_SEARCH_FILTER, type ChunkBrowseStore, type EmbeddingProvider } from "../core/interfaces.js";
 
 const FILE_MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -106,7 +105,7 @@ function sendJson(res: ServerResponse, response: ApiResponse, origin: string | n
  * - `/api/eval/sessions`, `/api/eval/sessions/:id`, `/api/eval/compare`
  * - `/api/eval/sessions/:id/analysis`, `/api/eval/token-compare`, `/api/eval/project-savings`
  *
- * @param store       - The LanceDB vector store instance.
+ * @param store       - The vector store instance (LanceDB or ClickHouse).
  * @param keywordIndex - The keyword-index instance for text search.
  * @param storePath    - Filesystem path to the store directory (used by eval endpoints).
  * @param cwd          - Optional workspace root for resolving file paths.
@@ -117,7 +116,7 @@ function sendJson(res: ServerResponse, response: ApiResponse, origin: string | n
  * @returns An async handler that returns `true` when a route matched or `false` otherwise.
  */
 export function createApiHandler(
-  store: LanceDbStore,
+  store: ChunkBrowseStore,
   keywordIndex: KeywordIndex,
   storePath: string,
   cwd?: string,
@@ -301,7 +300,7 @@ export function createApiHandler(
 }
 
 /** Respond with total chunk/file counts and a breakdown by programming language. */
-async function handleStats(store: LanceDbStore): Promise<ApiResponse> {
+async function handleStats(store: ChunkBrowseStore): Promise<ApiResponse> {
   const totalChunks = await store.count();
   const files = await store.listFiles();
 
@@ -325,7 +324,7 @@ async function handleStats(store: LanceDbStore): Promise<ApiResponse> {
 }
 
 /** Respond with the list of all indexed files from the store. */
-async function handleFiles(store: LanceDbStore): Promise<ApiResponse> {
+async function handleFiles(store: ChunkBrowseStore): Promise<ApiResponse> {
   const files = await store.listFiles();
   return { status: 200, body: files };
 }
@@ -414,7 +413,7 @@ async function handleQuirkDelete(deps: QuirkStoreDeps, id: string): Promise<ApiR
  * blowup on large stores.
  */
 async function handleChunks(
-  store: LanceDbStore,
+  store: ChunkBrowseStore,
   params: URLSearchParams
 ): Promise<ApiResponse> {
   const rawOffset = parseInt(params.get("offset") ?? "0", 10);
@@ -434,7 +433,7 @@ async function handleChunks(
 
 /** Respond with a single chunk identified by its ID, or 404 if not found. */
 async function handleChunkById(
-  store: LanceDbStore,
+  store: ChunkBrowseStore,
   id: string
 ): Promise<ApiResponse> {
   const chunk = await store.getChunkById(id);
@@ -486,7 +485,7 @@ async function handleSearch(
  * The embedder is lazily initialized on the first call; returns 202 if still initializing.
  */
 async function handleRetrieve(
-  store: LanceDbStore,
+  store: ChunkBrowseStore,
   keywordIndex: KeywordIndex,
   getEmbedder: (() => Promise<EmbeddingProvider>) | undefined,
   cfg: RagConfig,
@@ -583,7 +582,7 @@ async function handleRetrieve(
 
 /** Fetch multiple chunks by their comma-separated IDs (`ids` query param) for side-by-side comparison. */
 async function handleCompare(
-  store: LanceDbStore,
+  store: ChunkBrowseStore,
   params: URLSearchParams
 ): Promise<ApiResponse> {
   const idsParam = params.get("ids") ?? "";
@@ -681,7 +680,7 @@ async function handleReindex(
   cwd: string,
   cfg: import("../core/config.js").RagConfig,
   storePath: string,
-  store: LanceDbStore,
+  store: ChunkBrowseStore,
   getEmbedder?: () => Promise<EmbeddingProvider>
 ): Promise<ApiResponse> {
   if (reindexInFlight) {
@@ -695,10 +694,16 @@ async function handleReindex(
     }
     reindexInFlight = true;
     runIndexPass({ cwd, storePath, config: cfg, store, embedder })
-      .then(() => {
+      .then(async () => {
         reindexInFlight = false;
         statusCache = null; // invalidate the status cache after a pass
         projectionCache = null;
+        try {
+          const { StateSync } = await import("../core/state-sync.js");
+          await new StateSync({ store, storePath, config: cfg }).flush(["manifest", "keyword-index", "quirks", "runtime-overrides", "doc-progress", ".desc-cache"]);
+        } catch {
+          // durable-state upload is best effort; the pass itself succeeded
+        }
       })
       .catch((err: Error) => {
         reindexInFlight = false;
@@ -821,6 +826,14 @@ export function handleConfigUpdate(
     }
   }
 
+  // Writers target the canonical `.opencode/opencode-rag.json`; a workspace
+  // without any config file yet gets one created on the first write.
+  try {
+    ensureConfigFile(configPath);
+  } catch {
+    // fall through — updateConfigValue below reports the failure as 500
+  }
+
   if (indexingPatch) {
     for (const [key, value] of Object.entries(indexingPatch)) {
       const ok = updateConfigValue(configPath, ["indexing", key], value);
@@ -861,7 +874,7 @@ export function handleConfigUpdate(
  */
 let projectionCache: { key: string; body: unknown } | null = null;
 
-async function handleEmbeddingProjection(store: LanceDbStore, params: URLSearchParams): Promise<ApiResponse> {
+async function handleEmbeddingProjection(store: ChunkBrowseStore, params: URLSearchParams): Promise<ApiResponse> {
   const rawMaxChunks = parseInt(params.get("maxChunks") ?? "5000", 10);
   const maxChunks = Number.isFinite(rawMaxChunks) ? Math.min(5000, Math.max(1, rawMaxChunks)) : 5000;
   const dims: 2 | 3 = parseInt(params.get("dims") ?? "2", 10) === 3 ? 3 : 2;

@@ -6,7 +6,7 @@ import type { Connection, Table, Version } from "@lancedb/lancedb";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
-import type { VectorStore, Chunk, ChunkSummary, SearchResult, MetadataFilter } from "../core/interfaces.js";
+import type { Chunk, ChunkSummary, SearchResult, MetadataFilter, ChunkBrowseStore } from "../core/interfaces.js";
 import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
 import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
 
@@ -428,7 +428,7 @@ export interface BulkChunkWrite {
  * and chunk metadata queries. Supports automatic corruption recovery by falling
  * back to prior table versions or dropping and rebuilding the table.
  */
-export class LanceDbStore implements VectorStore {
+export class LanceDbStore implements ChunkBrowseStore {
   private dbPath: string;
   private readonly vectorDimension: number;
   private db: Connection | null = null;

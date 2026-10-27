@@ -3,7 +3,7 @@
  * all sub-config interfaces, DEFAULT_CONFIG, validateConfig, and loadConfig.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
 import { env } from "node:process";
@@ -28,6 +28,63 @@ export interface ProxyConfig {
   password?: string;
   /** Comma-separated list of hosts that bypass the proxy. */
   noProxy?: string;
+}
+
+/**
+ * ClickHouse vector-store settings (used when `vectorStore.provider` is
+ * `"clickhouse"`). The local `vectorStore.path` remains a disposable cache
+ * for manifest/keyword-index/quirks files; the durable copies live in the
+ * project's `state_<namespace>` table.
+ */
+export interface ClickHouseConfig {
+  /** HTTP(S) endpoint of the ClickHouse server (default `http://localhost:8123`). */
+  url: string;
+  /** Database that holds the per-project tables; created on first use. */
+  database: string;
+  /** ClickHouse user name. */
+  username: string;
+  /** Password. Prefer `passwordEnv` so the secret stays out of the repo file. */
+  password?: string;
+  /** Name of the environment variable holding the password (wins over `password` when set). */
+  passwordEnv?: string;
+  /**
+   * Project namespace appended to the table names (`chunks_<ns>`, `state_<ns>`).
+   * Defaults to a sanitized workspace directory name plus a short path hash;
+   * set it explicitly when several machines must share one project index.
+   */
+  namespace?: string;
+  /** Request timeout in milliseconds (default 30 000). */
+  requestTimeoutMs?: number;
+  /** Maximum HTTP connections in the client pool (default 10). */
+  maxOpenConnections?: number;
+  /** Enable gzip request/response compression (default true). */
+  compression?: boolean;
+  /** Durable workspace state bundled into `state_<ns>`. */
+  state?: {
+    /** Also sync `.desc-cache.json`. It is only a cache, so this defaults to false. */
+    syncDescCache?: boolean;
+  };
+  /** Advisory single-writer lease shared by all machines using this namespace. */
+  lease?: {
+    /** Default true. */
+    enabled?: boolean;
+    /** Lease lifetime; renewed at a third of the TTL (default 90 seconds). */
+    ttlSeconds?: number;
+  };
+  /** Refuse a full rebuild when the server has less free space than this (default 5 GiB). */
+  diskFreeFloorBytes?: number;
+  /**
+   * Vector index mode. `"off"` (default) uses exact `cosineDistance` scans.
+   * `"hnsw"` creates a `vector_similarity` index — requires ClickHouse >= 25.8
+   * (26.x is verified). The index is bound to the dimension it was created
+   * with; changing the embedding model then requires dropping the project
+   * tables and re-indexing.
+   */
+  ann?: "off" | "hnsw";
+  /** Over-fetch factor for filtered ANN searches (default 4, max 1000). */
+  annFetchMultiplier?: number;
+  /** Recompute final distances from the full-precision vectors (default true). */
+  annWithRescoring?: boolean;
 }
 
 /** Configuration for automatic background re-indexing on file changes. */
@@ -431,7 +488,13 @@ export interface TuiConfig {
   fileListKeybinding: string;
   /** Keybinding to toggle the chunk viewer panel. */
   chunksKeybinding: string;
-  /** Keybinding to open the RAG settings dialog. Must be distinguishable by the terminal (see docs). */
+  /**
+   * Keybinding to open the RAG settings dialog. Defaults to `alt+s`, which
+   * every terminal delivers (ESC + `s`), including VS Code's PowerShell
+   * terminal. A `ctrl+shift+<letter>` chord only works where the Kitty
+   * keyboard protocol is negotiated; when one is configured, the TUI also
+   * registers `ctrl+alt+s` / `alt+s` fallbacks (see docs).
+   */
   settingsKeybinding: string;
 }
 
@@ -630,10 +693,17 @@ export interface RagConfig {
   };
   /** Vector storage backend configuration. */
   vectorStore: {
-    /** Filesystem path or memory:// URI for the vector database. */
+    /**
+     * Filesystem path or `memory://` URI for a local vector database. With
+     * `provider: "clickhouse"` this is only a **disposable local cache** for
+     * the manifest, keyword index, quirks and other workspace state — the
+     * durable copies live in ClickHouse.
+     */
     path: string;
-    /** Backend provider ("lancedb" or "memory"). */
-    provider?: "lancedb" | "memory";
+    /** Backend provider ("lancedb", "memory", or "clickhouse"). */
+    provider?: "lancedb" | "memory" | "clickhouse";
+    /** ClickHouse connection settings (required when provider is "clickhouse"). */
+    clickhouse?: ClickHouseConfig;
   };
   /** Retrieval settings for query-time search. */
   retrieval: {
@@ -881,6 +951,23 @@ export const DEFAULT_CONFIG: RagConfig = {
   vectorStore: {
     path: "./.opencode/rag_db",
     provider: "lancedb",
+    clickhouse: {
+      url: "http://localhost:8123",
+      database: "OpenCodeRAG",
+      username: "default",
+      password: "",
+      passwordEnv: "OPENCODERAG_CLICKHOUSE_PASSWORD",
+      namespace: "",
+      requestTimeoutMs: 30_000,
+      maxOpenConnections: 10,
+      compression: true,
+      state: { syncDescCache: false },
+      lease: { enabled: true, ttlSeconds: 90 },
+      diskFreeFloorBytes: 5 * 1024 * 1024 * 1024,
+      ann: "off",
+      annFetchMultiplier: 4,
+      annWithRescoring: true,
+    },
   },
   retrieval: {
     topK: 20,
@@ -1117,7 +1204,7 @@ export const DEFAULT_CONFIG: RagConfig = {
   tui: {
     fileListKeybinding: "ctrl+enter",
     chunksKeybinding: "ctrl+alt+enter",
-    settingsKeybinding: "ctrl+shift+r",
+    settingsKeybinding: "alt+s",
   },
   logging: {
     level: "info",
@@ -1178,6 +1265,42 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   }
   try { new URL(config.embedding.baseUrl); } catch {
     warnings.push(`embedding.baseUrl "${config.embedding.baseUrl}" is not a valid URL`);
+  }
+
+  const vectorProvider = config.vectorStore.provider ?? "lancedb";
+  if (!["lancedb", "memory", "clickhouse"].includes(vectorProvider)) {
+    warnings.push(`vectorStore.provider "${vectorProvider}" — expected "lancedb", "memory" or "clickhouse"`);
+  }
+  if (vectorProvider === "clickhouse") {
+    const ch = config.vectorStore.clickhouse;
+    if (!ch) {
+      warnings.push("vectorStore.clickhouse settings are required when provider is \"clickhouse\"");
+    } else {
+      try { new URL(ch.url); } catch {
+        warnings.push(`vectorStore.clickhouse.url "${ch.url}" is not a valid URL`);
+      }
+      if (!ch.database) warnings.push("vectorStore.clickhouse.database must not be empty");
+      if (!ch.username) warnings.push("vectorStore.clickhouse.username must not be empty");
+      if (ch.password && !ch.passwordEnv) {
+        warnings.push("vectorStore.clickhouse.password is stored in plaintext — prefer passwordEnv");
+      }
+      if (ch.namespace && !/^[A-Za-z0-9_]{1,40}$/.test(ch.namespace)) {
+        warnings.push("vectorStore.clickhouse.namespace may only contain letters, digits and underscores (max 40)");
+      }
+      if (ch.ann === "hnsw") {
+        // The index is dimension-bound; the store refuses to switch dimensions
+        // until its tables are dropped and rebuilt.
+        if (ch.annFetchMultiplier != null && (ch.annFetchMultiplier < 1 || ch.annFetchMultiplier > 1000)) {
+          warnings.push("vectorStore.clickhouse.annFetchMultiplier must be between 1 and 1000");
+        }
+      }
+      if (ch.requestTimeoutMs != null && ch.requestTimeoutMs <= 0) {
+        warnings.push("vectorStore.clickhouse.requestTimeoutMs must be > 0");
+      }
+      if (ch.lease?.ttlSeconds != null && ch.lease.ttlSeconds < 10) {
+        warnings.push("vectorStore.clickhouse.lease.ttlSeconds must be >= 10");
+      }
+    }
   }
 
   if (config.indexing.chunkOverlap < 0) {
@@ -1424,10 +1547,18 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   return { valid: warnings.length === 0, warnings };
 }
 
-/** Config file locations to search, in order of precedence. */
+/**
+ * Config file locations to search, in order of precedence.
+ *
+ * `.opencode/opencode-rag.json` is the canonical workspace location — every
+ * writer (TUI, `init`, `clickhouse setup`, the Web UI) creates and updates it
+ * there. The root-level `opencode-rag.json` is the legacy location, still read
+ * for compatibility (and migrated into `.opencode/` by `opencode-rag init`);
+ * `.opencode/rag.json` is a legacy alias inside `.opencode/`.
+ */
 export const CONFIG_FILE_CANDIDATES = [
-  "opencode-rag.json",
   ".opencode/opencode-rag.json",
+  "opencode-rag.json",
   ".opencode/rag.json",
 ];
 
@@ -1469,6 +1600,98 @@ export function findGlobalConfigFile(
 ): string | undefined {
   const candidate = globalConfigPath(envVars, homeDir);
   return existsSync(candidate) ? candidate : undefined;
+}
+
+/**
+ * The canonical workspace config path `<directory>/.opencode/opencode-rag.json`.
+ * Exists or not — this is where writers CREATE the workspace config, keeping
+ * the project root clean. Use {@link findConfigFile} to read the effective one.
+ */
+export function projectConfigPath(directory: string): string {
+  return path.join(directory, ".opencode", "opencode-rag.json");
+}
+
+/**
+ * Move a legacy root-level `opencode-rag.json` into `.opencode/`.
+ *
+ * Only runs when the legacy file exists and the canonical file does not — an
+ * existing `.opencode/opencode-rag.json` always wins, so the legacy file is
+ * left alone rather than silently merged.
+ *
+ * @returns The new path when the file was moved, otherwise undefined.
+ */
+export function migrateLegacyProjectConfig(directory: string): string | undefined {
+  const legacy = path.join(directory, "opencode-rag.json");
+  const target = projectConfigPath(directory);
+  if (!existsSync(legacy) || existsSync(target)) return undefined;
+  try {
+    mkdirSync(path.dirname(target), { recursive: true });
+    renameSync(legacy, target);
+    return target;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Create an empty (`{}`) config file — and its parent directory — when absent. */
+export function ensureConfigFile(filePath: string): void {
+  if (existsSync(filePath)) return;
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, "{}", "utf-8");
+}
+
+/**
+ * Write a value into the machine-global config file, creating it on demand.
+ *
+ * Provider options (embedding/description/... provider, model, baseUrl,
+ * apiKey) describe which models THIS MACHINE serves, not what the repository
+ * is, so they belong here rather than in a per-project file — and the global
+ * file is never committed, making it safe for API keys. The plugin re-reads
+ * this layer by mtime, so changes apply without a restart.
+ */
+export function updateGlobalConfigValue(path_: readonly string[], value: unknown): boolean {
+  try {
+    ensureConfigFile(globalConfigPath());
+  } catch {
+    return false;
+  }
+  return updateConfigValue(globalConfigPath(), [...path_], value);
+}
+
+/** Config sections whose model/endpoint settings are machine-global provider options. */
+const PROVIDER_OPTION_SECTIONS = new Set([
+  "embedding",
+  "description",
+  "imageDescription",
+  "decision",
+  "reranking",
+]);
+
+/** Leaf keys that select or authenticate a provider/model. */
+const PROVIDER_OPTION_LEAVES = new Set([
+  "provider",
+  "model",
+  "baseUrl",
+  "apiKey",
+  "vectorDimension",
+]);
+
+/**
+ * Whether a dotted config path is a machine-global provider option
+ * (section ∈ {@link PROVIDER_OPTION_SECTIONS}, leaf ∈ {@link PROVIDER_OPTION_LEAVES};
+ * `imageDescription.onDemand.*` counts via the `onDemand` group).
+ *
+ * Writers route these to {@link updateGlobalConfigValue} so provider/model/
+ * key/baseUrl never land in a per-project config file; every other path stays
+ * project-scoped.
+ */
+export function isProviderScopedPath(path_: readonly string[]): boolean {
+  if (path_.length < 2) return false;
+  if (!PROVIDER_OPTION_SECTIONS.has(path_[0]!)) return false;
+  const segments = path_[0] === "imageDescription" && path_[1] === "onDemand" ? path_.slice(2) : path_.slice(1);
+  const leaf = segments[segments.length - 1];
+  return leaf !== undefined && segments.every((s) => PROVIDER_OPTION_LEAVES.has(s) || s === "onDemand")
+    && PROVIDER_OPTION_LEAVES.has(leaf);
 }
 
 /** Config layers that apply to a workspace (lowest precedence first). */
@@ -1553,6 +1776,27 @@ export function loadWorkspaceConfig(directory: string, validate: boolean = true)
 }
 
 /**
+ * Raw JSON layers (global < workspace) deep-merged WITHOUT defaults.
+ *
+ * For display surfaces (TUI sidebar/settings dialog) that must show what the
+ * USER configured rather than what `DEFAULT_CONFIG` contains. Malformed
+ * layers are skipped here — `loadWorkspaceConfig` reports the error elsewhere.
+ */
+export function loadWorkspaceRawConfig(directory: string): Record<string, unknown> {
+  const { global, workspace } = resolveConfigPaths(directory);
+  let merged: Record<string, unknown> = {};
+  for (const filePath of [global, workspace]) {
+    if (!filePath) continue;
+    try {
+      merged = mergeConfigObjects(merged, parseConfigFile(filePath) as Record<string, unknown>);
+    } catch {
+      // skip a malformed layer; keep whatever the healthy layers contributed
+    }
+  }
+  return merged;
+}
+
+/**
  * Top-level sections that a workspace actually configures.
  *
  * Read from the raw JSON layers (global + workspace), NOT from the merged
@@ -1590,10 +1834,28 @@ function buildConfig(parsed: Partial<RagConfig>, validate: boolean): RagConfig {
       ...DEFAULT_CONFIG.indexing,
       ...parsed.indexing,
     },
-    vectorStore: {
-      ...DEFAULT_CONFIG.vectorStore,
-      ...parsed.vectorStore,
-    },
+    vectorStore: (() => {
+      const base = DEFAULT_CONFIG.vectorStore;
+      const user = (safeObj<Partial<typeof base>>(parsed.vectorStore) ?? {});
+      const chBase = base.clickhouse!;
+      const chUser = (safeObj<Partial<typeof chBase>>(user.clickhouse) ?? {});
+      return {
+        ...base,
+        ...user,
+        clickhouse: {
+          ...chBase,
+          ...chUser,
+          state: {
+            ...chBase.state,
+            ...(safeObj<NonNullable<typeof chBase.state>>(chUser.state) ?? {}),
+          },
+          lease: {
+            ...chBase.lease,
+            ...(safeObj<NonNullable<typeof chBase.lease>>(chUser.lease) ?? {}),
+          },
+        },
+      };
+    })(),
     retrieval: {
       ...DEFAULT_CONFIG.retrieval,
       ...parsed.retrieval,

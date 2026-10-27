@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   loadRuntimeOverrides,
   saveRuntimeOverride,
+  deleteRuntimeOverride,
   applyRuntimeOverrides,
   type RuntimeOverrides,
 } from "../../core/runtime-overrides.js";
@@ -338,4 +339,45 @@ describe("applyRuntimeOverrides", () => {
     assert.deepStrictEqual(result.chunking?.nodeTypes, { ts: ["function_declaration"] });
   });
 
+});
+
+describe("deleteRuntimeOverride", () => {
+  let tmpDir: string;
+  const overridePath = () => join(tmpDir, "runtime-overrides.json");
+
+  before(() => {
+    tmpDir = join(tmpdir(), `rag-delete-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  after(() => {
+    try { unlinkSync(overridePath()); } catch { /* ignore */ }
+  });
+
+  it("deletes the leaf and prunes the emptied section", () => {
+    writeFileSync(overridePath(), JSON.stringify({ embedding: { provider: "ollama", model: "m" } }), "utf-8");
+    deleteRuntimeOverride(tmpDir, ["embedding", "model"]);
+    assert.deepStrictEqual(loadRuntimeOverrides(tmpDir), { embedding: { provider: "ollama" } });
+    deleteRuntimeOverride(tmpDir, ["embedding", "provider"]);
+    assert.deepStrictEqual(loadRuntimeOverrides(tmpDir), {});
+  });
+
+  it("keeps sibling keys and other sections", () => {
+    writeFileSync(
+      overridePath(),
+      JSON.stringify({ embedding: { model: "m", apiKey: "k" }, retrieval: { topK: 5 } }),
+      "utf-8",
+    );
+    deleteRuntimeOverride(tmpDir, ["embedding", "apiKey"]);
+    assert.deepStrictEqual(loadRuntimeOverrides(tmpDir), { embedding: { model: "m" }, retrieval: { topK: 5 } });
+  });
+
+  it("tolerates missing paths and a missing file", () => {
+    try { unlinkSync(overridePath()); } catch { /* ignore */ }
+    deleteRuntimeOverride(tmpDir, ["embedding", "model"]);
+    writeFileSync(overridePath(), JSON.stringify({ retrieval: { topK: 5 } }), "utf-8");
+    deleteRuntimeOverride(tmpDir, ["embedding", "model"]);
+    deleteRuntimeOverride(tmpDir, ["retrieval", "hybridSearch", "enabled"]);
+    assert.deepStrictEqual(loadRuntimeOverrides(tmpDir), { retrieval: { topK: 5 } });
+  });
 });

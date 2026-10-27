@@ -79,7 +79,7 @@ export function registerIndexCommand(program: Command): void {
         const cwd = process.cwd();
         let logFilePath = path.resolve(cwd, ".opencode", "opencode-rag.log");
         const ctx = await resolveCliContext(options, logFilePath);
-        const { config, embedder, store, storePath, keywordIndex, descriptionProvider, dimension } = ctx;
+        const { config, embedder, store, storePath, keywordIndex, descriptionProvider, dimension, stateSync } = ctx;
         logFilePath = ctx.logFilePath;
 
         // ── Abort controller for graceful Ctrl+C during the initial pass ──
@@ -139,6 +139,7 @@ export function registerIndexCommand(program: Command): void {
             embedder,
             keywordIndex,
             descriptionProvider,
+            stateSync,
             force: !!(options.force && !watchTriggered),
             abortSignal,
             dimension,

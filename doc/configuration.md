@@ -1,16 +1,23 @@
 # Configuration
 
-Configuration is defined in `opencode-rag.json` (created by `opencode-rag init`, or automatically by `opencode-rag setup`). You only need to define values you want to override — missing sections inherit from `DEFAULT_CONFIG`.
+Configuration is defined in `opencode-rag.json` inside the workspace's `.opencode/` directory (created by `opencode-rag init`, or automatically by `opencode-rag setup`). You only need to define values you want to override — missing sections inherit from `DEFAULT_CONFIG`.
 
 ## Configuration Layering
 
 ```
 1. DEFAULT_CONFIG (hardcoded defaults)
-2. opencode-rag.json (user overrides, deep-merged per section)
-3. runtime-overrides.json (live TUI changes, overrides everything)
+2. $XDG_CONFIG_HOME/opencode/opencode-rag.json — machine-global base layer (falls back to ~/.config/opencode/...)
+3. .opencode/opencode-rag.json (workspace overrides, deep-merged over the global layer)
+4. runtime-overrides.json (live TUI changes for non-provider options, overrides everything)
 ```
 
-Runtime overrides are reloaded on a 5-second TTL. See [Architecture](architecture.md#configuration-layering).
+**Where an option belongs**
+
+- **Workspace config — `.opencode/opencode-rag.json`**: everything that describes the *repository* — indexing scope, chunking, retrieval tuning, auto-index, memory, docs/wiki modes, keybindings. A legacy root-level `opencode-rag.json` (or `.opencode/rag.json`) is still read; `opencode-rag init` moves a root-level file into `.opencode/`. When both exist, `.opencode/opencode-rag.json` wins.
+- **Global config — `~/.config/opencode/opencode-rag.json`**: machine-wide defaults *and* **provider options** — the `provider`/`model`/`baseUrl`/`apiKey`/`vectorDimension` of the `embedding`, `description`, `imageDescription`, `decision` and `reranking` sections. These describe which models *this machine* serves, so the TUI settings dialog always saves them here (and only here): they never land in a committed repo file, and the API key sits outside any repository. The plugin re-reads this layer by file mtime — changes apply without a restart.
+- **Runtime overrides — `.opencode/rag_db/runtime-overrides.json`**: live TUI toggles for project-scoped options (retrieval, auto-index, chunking, …), reloaded on a 5-second TTL. Provider options are removed from this file when saved, so a stale override can never shadow the global config.
+
+See [Architecture](architecture.md#configuration-layering).
 
 ## Full Configuration Reference
 
@@ -114,7 +121,22 @@ Controls file discovery and chunking behavior.
 
 | Option | Default | Description |
 |---|---|---|
-| `path` | `"./.opencode/rag_db"` | Path to the LanceDB database directory |
+| `path` | `"./.opencode/rag_db"` | Path to the LanceDB database directory. With `provider: "clickhouse"` this is only a **disposable local cache** for the manifest, keyword index, quirks and other workspace state |
+| `provider` | `"lancedb"` | Backend: `"lancedb"` (local, default), `"memory"` (ephemeral), or `"clickhouse"` (central server) |
+| `clickhouse.url` | `"http://localhost:8123"` | ClickHouse HTTP endpoint |
+| `clickhouse.database` | `"OpenCodeRAG"` | Database holding the per-project tables (created on first use) |
+| `clickhouse.username` | `"default"` | ClickHouse user |
+| `clickhouse.passwordEnv` | `"OPENCODERAG_CLICKHOUSE_PASSWORD"` | Env var holding the password. Prefer this over `clickhouse.password` so the secret stays out of the repo file |
+| `clickhouse.namespace` | derived | Table suffix (`chunks_<ns>`, `state_<ns>`). Defaults to the sanitized workspace directory name plus a path hash; set it explicitly when several machines share one project index |
+| `clickhouse.ann` | `"off"` | `"off"` = exact cosine scans (works on every supported server). `"hnsw"` = `vector_similarity` index (requires ClickHouse >= 25.8; bound to the embedding dimension) |
+| `clickhouse.annFetchMultiplier` | `4` | Over-fetch factor for filtered ANN searches (1–1000) |
+| `clickhouse.annWithRescoring` | `true` | Recompute final distances from the full-precision vectors (ClickHouse 26.x defaults this off) |
+| `clickhouse.state.syncDescCache` | `false` | Also sync `.desc-cache.json` into `state_<ns>` (chunk/image LLM descriptions), so a fresh client reuses them instead of regenerating. Enabled on this machine |
+| `clickhouse.lease.ttlSeconds` | `90` | Advisory single-writer lease shared by all machines using the namespace |
+| `clickhouse.diskFreeFloorBytes` | 5 GiB | Refuse a full rebuild when the server has less free space |
+
+The central backend, its state bundle, epoch rebuilds and operational limits are documented
+in [ClickHouse vector store](clickhouse.md). LanceDB remains the default and needs no server.
 
 ### `retrieval`
 
@@ -384,7 +406,7 @@ Optional safety guard for shell commands. Every `shell`/`bash` command is classi
 
 **How it works:** the guard runs in OpenCode V2's permission `evaluate` hook, which fires after the configured rules are evaluated and before the action runs — for both `allow` and `ask` decisions (`deny` is final and never reaches the evaluator). A flagged command keeps its resolved effect but is upgraded to `ask`, and the confirmation prompt shows the full verdict: model name, both probabilities, and the risk category (`delete_files`, `format_disk`, `process_kill`, `network`, `config_tamper`, `privilege`, or `none`).
 
-**Machine-wide:** put the `shellGuard` block in the [global config](#config-file-discovery) (`~/.config/opencode/opencode-rag.json`) to vet commands in every workspace; a workspace `opencode-rag.json` can still override the threshold or switch it off.
+**Machine-wide:** put the `shellGuard` block in the [global config](#config-file-discovery) (`~/.config/opencode/opencode-rag.json`) to vet commands in every workspace; a workspace `.opencode/opencode-rag.json` can still override the threshold or switch it off.
 
 **Prompting behaviour:** a flagged command is confirmed **every time**. OpenCode's native "Allow always" saved approvals are keyed by rule, not by this dynamic check, so they cannot suppress it. Commands that classify as clean are not prompted again.
 
@@ -613,7 +635,7 @@ Controls the terminal UI (TUI) keybindings for RAG context injection.
   "tui": {
     "fileListKeybinding": "ctrl+enter",
     "chunksKeybinding": "ctrl+alt+enter",
-    "settingsKeybinding": "ctrl+shift+r"
+    "settingsKeybinding": "alt+s"
   }
 }
 ```
@@ -622,11 +644,13 @@ Controls the terminal UI (TUI) keybindings for RAG context injection.
 |---|---|---|
 | `fileListKeybinding` | `"ctrl+enter"` | Hotkey to append a relevant file list to the prompt |
 | `chunksKeybinding` | `"ctrl+alt+enter"` | Hotkey to append full code chunks to the prompt |
-| `settingsKeybinding` | `"ctrl+shift+r"` | Hotkey to open the RAG settings dialog |
+| `settingsKeybinding` | `"alt+s"` | Hotkey to open the RAG settings dialog. One chord; must be encodable by the terminal (see below) |
 
 All keybindings read the current prompt text combined with the previous assistant response (if any) as the search query. Configurable in the TUI settings menu under "Keybindings" (open with the configured `settingsKeybinding`).
 
-**Terminal caveat:** Legacy terminal encodings cannot represent `ctrl+shift+<letter>` distinctly — e.g. gnome-terminal/VTE sends `ctrl+shift+r` as plain `ctrl+r` (`0x12`), so the default `settingsKeybinding` never fires there. Terminals implementing the Kitty keyboard protocol (kitty, WezTerm, foot, Ghostty, Alacritty) deliver it correctly. On other terminals, bind `settingsKeybinding` to something distinguishable, e.g. `ctrl+alt+s` (sent as `ESC` + control byte, which OpenCode parses as `ctrl+alt+<key>`). Avoid `ctrl+alt+r` if you also use it for `session_rename` in OpenCode's CLI config (`cli.json`).
+**Why `alt+s`:** legacy terminal encodings cannot represent `ctrl+shift+<letter>` distinctly. In VS Code's integrated terminal (xterm.js) such a chord is **swallowed entirely** — no bytes reach OpenCode — until the terminal and application negotiate the Kitty keyboard protocol; gnome-terminal/VTE instead collapses it to the plain control byte (`ctrl+shift+r` → `0x12`, i.e. `ctrl+r`). `alt+s` travels as `ESC` + `s` (`\x1b s`), the same shape as OpenCode's `alt+f`/`alt+b` bindings, so it works everywhere, including the PowerShell prompt inside VS Code.
+
+The settings dialog binds **exactly one chord** — there is no fallback binding. If you configure a `ctrl+shift+<letter>` chord yourself, it will not fire on terminals without Kitty keyboard support; pick a legacy-safe chord instead (`alt+<letter>`, or `ctrl+alt+<letter>` — note `ctrl+alt` *is* AltGr on Windows, so some layouts/IMs swallow it). Avoid `ctrl+alt+r` if you also use it for `session_rename` in OpenCode's TUI config (`tui.json`).
 
 ### `autoUpdate`
 
@@ -722,9 +746,11 @@ The CLI and plugin resolve configuration as three layers (later layers win):
 
 1. `DEFAULT_CONFIG` (built-in defaults)
 2. **Global config** — `$XDG_CONFIG_HOME/opencode/opencode-rag.json`, falling back to `~/.config/opencode/opencode-rag.json`
-3. **Workspace config** — the first match of `./opencode-rag.json`, `./.opencode/opencode-rag.json`, `./.opencode/rag.json`
+3. **Workspace config** — the first match of `./.opencode/opencode-rag.json` (canonical), `./opencode-rag.json` (legacy root location), `./.opencode/rag.json` (legacy alias)
 
-Layers are deep-merged section by section, so the global file can carry machine-wide defaults (for example `shellGuard.enabled` or a decision model) that every workspace inherits; a workspace value always overrides the global one. A workspace still works with only the global file present. `--config <path>` makes that file authoritative and bypasses both layers, and the TUI config editor reads/writes the workspace layer only.
+Layers are deep-merged section by section, so the global file can carry machine-wide defaults (for example `shellGuard.enabled` or a decision model) that every workspace inherits; a workspace value always overrides the global one. A workspace still works with only the global file present. `--config <path>` makes that file authoritative and bypasses both layers.
+
+Writers (TUI settings dialog, `init`, `clickhouse setup`, `PUT /api/config`) create and update the **canonical** `.opencode/opencode-rag.json` — never the repository root. `opencode-rag init` moves a legacy root-level `opencode-rag.json` into `.opencode/`. **Exception — provider options:** the TUI always saves the `provider`/`model`/`baseUrl`/`apiKey`/`vectorDimension` of the `embedding`, `description`, `imageDescription`, `decision` and `reranking` sections to the *global* file only, because those describe the machine, not the repository (and the global file is never committed).
 
 > The global file is new in this release. Existing setups are unaffected until the file exists.
 

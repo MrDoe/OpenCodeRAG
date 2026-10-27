@@ -261,7 +261,7 @@ export function registerEvalTuneCommand(program: Command): void {
         if (options.write) {
           if (!ctx.configPath) {
             throw new Error(
-              "No config file to write to — pass --config <path> or run this in a workspace with opencode-rag.json.",
+              "No config file to write to — pass --config <path> or run this in a workspace with .opencode/opencode-rag.json.",
             );
           }
           const tuned = applyTuningToConfig(ctx.config, best);

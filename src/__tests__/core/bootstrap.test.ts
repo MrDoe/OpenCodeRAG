@@ -1,4 +1,4 @@
-import { describe, it, after, beforeEach } from "node:test";
+import { describe, it, after, before, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,8 +7,27 @@ import { resolveRagContext } from "../../core/bootstrap.js";
 import { DEFAULT_CONFIG } from "../../core/config.js";
 import { LanceDbStore } from "../../vectorstore/lancedb.js";
 
+/**
+ * These tests assert against DEFAULT_CONFIG and the workspace layers only.
+ * A real user-level config (e.g. an OpenAI Qwen3-Embedding:8B setup with a
+ * 4096-dimension cache) is a legitimate global layer that would otherwise win
+ * over the defaults, so isolate the home/config directory for this file.
+ */
+const originalUserProfile = process.env.USERPROFILE;
+const originalHome = process.env.HOME;
+const originalXdgConfig = process.env.XDG_CONFIG_HOME;
+
 describe("resolveRagContext", () => {
   let tmpDir: string;
+  let isolatedHome: string;
+
+  before(() => {
+    isolatedHome = join(tmpdir(), `opencode-rag-home-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(isolatedHome, { recursive: true });
+    process.env.USERPROFILE = isolatedHome;
+    process.env.HOME = isolatedHome;
+    process.env.XDG_CONFIG_HOME = join(isolatedHome, ".config");
+  });
 
   beforeEach(() => {
     tmpDir = join(tmpdir(), `opencode-rag-bootstrap-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -16,8 +35,15 @@ describe("resolveRagContext", () => {
   });
 
   after(() => {
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = originalXdgConfig;
     try {
       rmSync(tmpDir, { recursive: true, force: true });
+      rmSync(isolatedHome, { recursive: true, force: true });
     } catch {
       // ignore
     }

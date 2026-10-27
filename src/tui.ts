@@ -9,9 +9,18 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Provider } from "@opencode-ai/sdk/v2";
-import { loadRuntimeOverrides, saveRuntimeOverride } from "./core/runtime-overrides.js";
+import { loadRuntimeOverrides, saveRuntimeOverride, deleteRuntimeOverride } from "./core/runtime-overrides.js";
 import { PROVIDER_DEFAULTS } from "./core/provider-defaults.js";
-import { loadConfig, updateConfigValue } from "./core/config.js";
+import {
+  findConfigFile,
+  globalConfigPath,
+  isProviderScopedPath,
+  loadWorkspaceRawConfig,
+  projectConfigPath,
+  ensureConfigFile,
+  updateConfigValue,
+  updateGlobalConfigValue,
+} from "./core/config.js";
 import { setPendingRagInjection } from "./core/rag-injection-flag.js";
 
 /**
@@ -138,51 +147,50 @@ function watcherIsStale(w: WatcherState): boolean {
   return !!(w.lastChangeAt && (!w.lastSuccessAt || w.lastChangeAt > w.lastSuccessAt));
 }
 
+/** Resolve the store directory from a raw effective config (workspace-relative or absolute `vectorStore.path`). */
+function resolveStorePath(worktree: string, cfg: Record<string, unknown>): string {
+  const vs = cfg.vectorStore as Record<string, unknown> | undefined;
+  const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
+  return resolve(worktree, storeRelPath);
+}
+
 /**
- * Load the full RAG status for a workspace by reading its config and
- * vector store manifest.
+ * Load the full RAG status for a workspace by reading its effective config
+ * (global + workspace layers) and the vector store manifest. Provider/model
+ * live in the global layer as often as in the workspace file, so a raw
+ * single-file read would show the wrong model in the sidebar.
  */
 function loadRagStatus(worktree: string): RagStatus {
   const status = { ...DEFAULT_STATUS };
 
-  for (const loc of ["opencode-rag.json", ".opencode/opencode-rag.json", ".opencode/rag.json"]) {
-    const configPath = join(worktree, loc);
-    if (!existsSync(configPath)) continue;
-    try {
-      // BOM-tolerant read - a leading U+FEFF must not throw and silently skip
-      // every config candidate (leaving the sidebar stuck on DEFAULT_STATUS).
-      const cfg = readJsonFile<Record<string, unknown>>(configPath);
-      if (!cfg) continue; // unparseable (e.g. malformed JSON) - try next candidate
-      const embedding = cfg.embedding as Record<string, unknown> | undefined;
-      if (embedding) {
-        status.provider = (embedding.provider as string) ?? status.provider;
-        status.model = (embedding.model as string) ?? status.model;
-      }
-      const vs = cfg.vectorStore as Record<string, unknown> | undefined;
-      const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
-      const storePath = resolve(worktree, storeRelPath);
-
-      const manifestPath = join(storePath, "manifest.json");
-      if (existsSync(manifestPath)) {
-        const manifest = readJsonFile<Record<string, unknown>>(manifestPath);
-        if (manifest) {
-          const files = manifest.files as Record<string, { chunkCount?: number }> | undefined;
-          if (files && typeof files === "object") {
-            status.chunkCount = Object.values(files).reduce(
-              (sum: number, entry) => sum + (entry.chunkCount ?? 0),
-              0
-            );
-          }
-          status.lastIndexedAt = manifest.lastIndexedAt as number | undefined;
-          status.indexed = status.chunkCount > 0;
-        }
-      }
-
-      status.watcher = loadWatcherStatus(storePath);
-      break;
-    } catch {
-      continue;
+  try {
+    const cfg = loadWorkspaceRawConfig(worktree);
+    const embedding = cfg.embedding as Record<string, unknown> | undefined;
+    if (embedding) {
+      status.provider = (embedding.provider as string) ?? status.provider;
+      status.model = (embedding.model as string) ?? status.model;
     }
+    const storePath = resolveStorePath(worktree, cfg);
+
+    const manifestPath = join(storePath, "manifest.json");
+    if (existsSync(manifestPath)) {
+      const manifest = readJsonFile<Record<string, unknown>>(manifestPath);
+      if (manifest) {
+        const files = manifest.files as Record<string, { chunkCount?: number }> | undefined;
+        if (files && typeof files === "object") {
+          status.chunkCount = Object.values(files).reduce(
+            (sum: number, entry) => sum + (entry.chunkCount ?? 0),
+            0
+          );
+        }
+        status.lastIndexedAt = manifest.lastIndexedAt as number | undefined;
+        status.indexed = status.chunkCount > 0;
+      }
+    }
+
+    status.watcher = loadWatcherStatus(storePath);
+  } catch {
+    // sidebar stays on DEFAULT_STATUS
   }
 
   return status;
@@ -214,6 +222,15 @@ function formatKeybinding(key: string): string {
     .map((k) => k.charAt(0).toUpperCase() + k.slice(1))
     .join("+");
 }
+
+/**
+ * Default chord that opens the settings dialog.
+ *
+ * `alt+s` is encoded by every terminal as `ESC` + `s` — including VS Code's
+ * PowerShell terminal, where `ctrl+shift+<letter>` is swallowed until the
+ * Kitty keyboard protocol is negotiated. Exactly one chord is bound.
+ */
+const DEFAULT_SETTINGS_KEYBINDING = "alt+s";
 
 /** A valid child node for the TUI element tree. */
 type Child = JSX.Element | string | number | null | undefined | false;
@@ -286,7 +303,7 @@ function renderSidebar(
 
   const fileListKey = tuiConfig?.fileListKeybinding ?? "ctrl+enter";
   const chunksKey = tuiConfig?.chunksKeybinding ?? "ctrl+alt+enter";
-  const settingsKey = tuiConfig?.settingsKeybinding ?? "ctrl+shift+r";
+  const settingsKey = tuiConfig?.settingsKeybinding ?? DEFAULT_SETTINGS_KEYBINDING;
 
   return box(
     {
@@ -335,13 +352,44 @@ function renderSidebar(
 
 // ── Settings dialog ────────────────────────────────────────────────
 
-/** Resolve the path to the first existing RAG config file in the worktree. */
-function getConfigPath(worktree: string): string | undefined {
-  for (const loc of ["opencode-rag.json", ".opencode/opencode-rag.json", ".opencode/rag.json"]) {
-    const p = join(worktree, loc);
-    if (existsSync(p)) return p;
+/**
+ * Resolve the WRITABLE workspace config file: the existing one found by
+ * {@link findConfigFile}, or a freshly created `.opencode/opencode-rag.json`
+ * — the canonical location. A workspace without any config file no longer
+ * blocks the dialog; the first write creates the file.
+ */
+function getWritableConfigPath(worktree: string): string {
+  const existing = findConfigFile(worktree);
+  if (existing) return existing;
+  const created = projectConfigPath(worktree);
+  ensureConfigFile(created);
+  return created;
+}
+
+/**
+ * Persist a settings-dialog value to its proper layer.
+ *
+ * - Provider options (provider/model/baseUrl/apiKey of any model section) go
+ *   into the machine-global config file ONLY — they describe this machine's
+ *   models, not the repository, and the global file is never committed. Any
+ *   stale per-store runtime override for that path is cleared so it cannot
+ *   shadow the global value. The plugin re-reads the global layer by mtime.
+ * - Everything else stays project-scoped: workspace config file plus the
+ *   runtime override that applies live within 5 s.
+ */
+function persistSetting(
+  worktree: string,
+  storePath: string,
+  path: readonly string[],
+  value: boolean | number | string | Record<string, unknown>,
+): void {
+  if (isProviderScopedPath(path)) {
+    updateGlobalConfigValue(path, value);
+    deleteRuntimeOverride(storePath, [...path]);
+    return;
   }
-  return undefined;
+  saveRuntimeOverride(storePath, [...path], value);
+  updateConfigValue(getWritableConfigPath(worktree), [...path], value);
 }
 
 /** Read and parse a JSON file, returning undefined on failure. */
@@ -454,14 +502,19 @@ function syncWatcherStatusFile(storePath: string, enabled: boolean): void {
 }
 
 /**
- * Save a model selection to both runtime overrides and the config file.
- * Resolves the RAG provider name and API base URL automatically.
+ * Save a model selection as a machine-global provider option.
+ *
+ * provider/model/baseUrl (and the provider's apiKey) are written to the
+ * global config file (`~/.config/opencode/opencode-rag.json`) ONLY — never to
+ * the workspace config, which is routinely committed to git. The global file
+ * lives outside any repository, so the key is safe there. Legacy per-store
+ * runtime overrides for these keys are deleted so a value saved from an older
+ * build cannot shadow the global file.
  *
  * @returns The composite "provider/model" string if saved, or undefined for custom.
  */
 function saveModelSelection(
   storePath: string,
-  configPath: string,
   selectionValue: string,
   path: string[],
   providers?: readonly Provider[]
@@ -479,21 +532,18 @@ function saveModelSelection(
   const ragProvider = providerIdToRagProvider(providerId);
   const baseUrl = provider ? resolveProviderBaseUrl(provider) : "";
 
-  saveRuntimeOverride(storePath, [section, "provider"], ragProvider);
-  updateConfigValue(configPath, [section, "provider"], ragProvider);
-  saveRuntimeOverride(storePath, [section, "model"], modelId);
-  updateConfigValue(configPath, [section, "model"], modelId);
-  if (baseUrl) {
-    saveRuntimeOverride(storePath, [section, "baseUrl"], baseUrl);
-    updateConfigValue(configPath, [section, "baseUrl"], baseUrl);
-  }
+  const writeProviderOption = (key: string, value: string): void => {
+    updateGlobalConfigValue([section, key], value);
+    deleteRuntimeOverride(storePath, [section, key]);
+  };
+
+  writeProviderOption("provider", ragProvider);
+  writeProviderOption("model", modelId);
+  if (baseUrl) writeProviderOption("baseUrl", baseUrl);
 
   const apiKey = (provider?.options?.apiKey as string) ?? "";
-  if (apiKey) {
-    // Persist the key only in the store-dir overrides, never in the workspace
-    // config file — `opencode-rag.json` is routinely committed to git.
-    saveRuntimeOverride(storePath, [section, "apiKey"], apiKey);
-  }
+  if (apiKey) writeProviderOption("apiKey", apiKey);
+  else deleteRuntimeOverride(storePath, [section, "apiKey"]);
 
   return selectionValue;
 }
@@ -783,7 +833,7 @@ function buildSettingCategories(
           path: ["tui", "settingsKeybinding"],
           label: "Open settings",
           type: "string",
-          currentValue: (tuiRo.settingsKeybinding as string) ?? (tuiCfg.settingsKeybinding as string) ?? "ctrl+shift+r",
+          currentValue: (tuiRo.settingsKeybinding as string) ?? (tuiCfg.settingsKeybinding as string) ?? DEFAULT_SETTINGS_KEYBINDING,
         },
         {
           path: ["tui", "fileListKeybinding"],
@@ -882,12 +932,7 @@ function readTokenStats(
   worktree: string,
 ): { inputTokens: number; ragCtxTokens: number; reads: number; ragTools: number; queries: number } | undefined {
   try {
-    const configPath = getConfigPath(worktree);
-    if (!configPath) return undefined;
-    const cfg = loadConfig(configPath);
-    const vs = cfg.vectorStore as Record<string, unknown> | undefined;
-    const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
-    const storePath = resolve(worktree, storeRelPath);
+    const storePath = resolveStorePath(worktree, loadWorkspaceRawConfig(worktree));
     const { listSessions } = _require("./eval/storage.js") as typeof import("./eval/storage.js");
     const sessions = listSessions(storePath);
     if (sessions.length === 0) return undefined;
@@ -959,20 +1004,20 @@ async function openSettingsDialogV2(
   const { dialog, toast } = ui;
   const settingsToast = (variant: string, message: string) => toast.show({ variant, title: "Settings", message });
 
-  const configPath = getConfigPath(worktree);
-  if (!configPath) {
-    settingsToast("error", "No config file found");
-    return;
-  }
-  const cfgRaw = readJsonFile(configPath);
-  if (!cfgRaw) {
-    settingsToast("error", "Cannot read config");
-    return;
-  }
-  const cfg: Record<string, unknown> = cfgRaw;
-  const vs = cfg.vectorStore as Record<string, unknown> | undefined;
-  const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
-  const storePath = resolve(worktree, storeRelPath);
+  // Effective raw config (global < workspace, no defaults). Provider options
+  // usually live only in the global layer, so a single-file workspace read
+  // would display stale/absent values. A workspace without any config file is
+  // fine — the first non-provider write creates `.opencode/opencode-rag.json`.
+  const cfg: Record<string, unknown> = loadWorkspaceRawConfig(worktree);
+  const storePath = resolveStorePath(worktree, cfg);
+
+  /** Route one dialog value to its layer; provider options report where they went. */
+  const saveSetting = (path: readonly string[], value: boolean | number | string | Record<string, unknown>): void => {
+    persistSetting(worktree, storePath, path, value);
+    if (isProviderScopedPath(path)) {
+      settingsToast("info", `Provider option saved to global config: ${globalConfigPath()}`);
+    }
+  };
 
   const refreshCats = (): SettingCategory[] =>
     buildSettingCategories(cfg, loadRuntimeOverrides(storePath) as unknown as Record<string, unknown>, providers);
@@ -1030,16 +1075,16 @@ async function openSettingsDialogV2(
           if (custom === undefined) continue;
           value = custom;
         }
-        const saved = saveModelSelection(storePath, configPath, value, entry.path, providers);
+        const saved = saveModelSelection(storePath, value, entry.path, providers);
         if (saved) {
           entry.currentValue = saved;
           settingsToast("success", `${entry.label}: ${saved}`);
+          settingsToast("info", `Provider option saved to global config: ${globalConfigPath()}`);
           if (entry.path[0] === "embedding") {
-            settingsToast("warning", "Embedding changed. Re-index may be required. Restart OpenCode for changes.");
+            settingsToast("warning", "Embedding changed. Re-index required for existing chunks.");
           }
         } else if (value) {
-          saveRuntimeOverride(storePath, entry.path, value);
-          updateConfigValue(configPath, entry.path, value);
+          saveSetting(entry.path, value);
           entry.currentValue = value;
         }
         onSettingsChanged?.();
@@ -1048,8 +1093,7 @@ async function openSettingsDialogV2(
 
       if (entry.type === "boolean") {
         const newVal = !entry.currentValue;
-        saveRuntimeOverride(storePath, entry.path, newVal);
-        updateConfigValue(configPath, entry.path, newVal);
+        saveSetting(entry.path, newVal);
         settingsToast("success", `${entry.label}: ${newVal ? "Yes" : "No"}`);
         warnReindex(entry.path);
         if (entry.path.join(".") === "openCode.autoIndex.enabled") {
@@ -1073,8 +1117,7 @@ async function openSettingsDialogV2(
           settingsToast("error", "Enter a valid number");
           continue;
         }
-        saveRuntimeOverride(storePath, entry.path, num);
-        updateConfigValue(configPath, entry.path, num);
+        saveSetting(entry.path, num);
         settingsToast("success", `${entry.label}: ${num}`);
         warnReindex(entry.path);
         entry.currentValue = num;
@@ -1086,8 +1129,7 @@ async function openSettingsDialogV2(
             settingsToast("error", "Value must be a JSON object");
             continue;
           }
-          saveRuntimeOverride(storePath, entry.path, parsed as Record<string, unknown>);
-          updateConfigValue(configPath, entry.path, parsed);
+          saveSetting(entry.path, parsed as Record<string, unknown>);
           settingsToast("success", `${entry.label}: updated`);
           warnReindex(entry.path);
           entry.currentValue = parsed as Record<string, unknown>;
@@ -1096,8 +1138,7 @@ async function openSettingsDialogV2(
           settingsToast("error", "Invalid JSON");
         }
       } else {
-        saveRuntimeOverride(storePath, entry.path, raw);
-        updateConfigValue(configPath, entry.path, raw);
+        saveSetting(entry.path, raw);
         settingsToast("success", `${entry.label}: ${raw}`);
         entry.currentValue = raw;
         onSettingsChanged?.();
@@ -1132,13 +1173,14 @@ async function setup(context: V2TuiContext): Promise<(() => void) | undefined> {
   const REFRESH_INTERVAL_MS = Number(process.env.OPENCODE_RAG_TUI_REFRESH_MS) || 30000;
 
   let tuiConfig: { fileListKeybinding: string; chunksKeybinding: string; settingsKeybinding: string } | undefined;
-  const tuiConfigPath = worktree ? getConfigPath(worktree) : undefined;
-  if (tuiConfigPath) {
-    try {
-      tuiConfig = loadConfig(tuiConfigPath).tui;
-    } catch {
-      // use defaults
-    }
+  const rawCfg = worktree ? loadWorkspaceRawConfig(worktree) : {};
+  const tuiSection = rawCfg.tui as Record<string, unknown> | undefined;
+  if (tuiSection) {
+    tuiConfig = {
+      fileListKeybinding: (tuiSection.fileListKeybinding as string) ?? "ctrl+enter",
+      chunksKeybinding: (tuiSection.chunksKeybinding as string) ?? "ctrl+alt+enter",
+      settingsKeybinding: (tuiSection.settingsKeybinding as string) ?? DEFAULT_SETTINGS_KEYBINDING,
+    };
   }
 
   /** Refresh the cached RAG status from disk. */
@@ -1165,19 +1207,13 @@ async function setup(context: V2TuiContext): Promise<(() => void) | undefined> {
   let flagStorePath: string | undefined;
   if (worktree) {
     try {
-      const flagConfigPath = getConfigPath(worktree);
-      if (flagConfigPath) {
-        const flagCfg = loadConfig(flagConfigPath);
-        const vs = flagCfg.vectorStore as Record<string, unknown> | undefined;
-        const storeRelPath = (vs?.path as string) ?? ".opencode/rag_db";
-        flagStorePath = resolve(worktree, storeRelPath);
-      }
+      flagStorePath = resolveStorePath(worktree, rawCfg);
     } catch {
       // ignore
     }
   }
 
-  const settingsKey = tuiConfig?.settingsKeybinding ?? "ctrl+shift+r";
+  const settingsKey = tuiConfig?.settingsKeybinding ?? DEFAULT_SETTINGS_KEYBINDING;
   const fileListKey = tuiConfig?.fileListKeybinding ?? "ctrl+enter";
   const chunksKey = tuiConfig?.chunksKeybinding ?? "ctrl+alt+enter";
   try {

@@ -29,7 +29,7 @@ export function registerQuirkCommand(program: Command): void {
         const { config, embedder, store, keywordIndex } = ctx;
 
         const quirk = await addQuirk(
-          { embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath },
+          { embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath, flushState: () => ctx.stateSync?.flush(["quirks"]) ?? Promise.resolve() },
           {
             content,
             quirkType: options.type as string | undefined,
@@ -72,7 +72,7 @@ export function registerQuirkCommand(program: Command): void {
         const tags = options.tag as string | string[] | undefined;
 
         const quirk = await updateQuirk(
-          { embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath },
+          { embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath, flushState: () => ctx.stateSync?.flush(["quirks"]) ?? Promise.resolve() },
           id,
           {
             content: options.content as string | undefined,
@@ -103,7 +103,7 @@ export function registerQuirkCommand(program: Command): void {
       try {
         const ctx = await resolveCliContext(options, resolveLogPath());
         const { config, embedder, store, keywordIndex } = ctx;
-        const quirks = await listQuirks({ embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath });
+        const quirks = await listQuirks({ embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath, flushState: () => ctx.stateSync?.flush(["quirks"]) ?? Promise.resolve() });
 
         logCliInfo(ctx.logFilePath, "quirk list", `\n${c.num(quirks.length)} quirk(s):\n`);
         for (const q of quirks) {
@@ -128,7 +128,7 @@ export function registerQuirkCommand(program: Command): void {
       try {
         const ctx = await resolveCliContext(options, resolveLogPath());
         const { config, embedder, store, keywordIndex } = ctx;
-        await removeQuirk({ embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath }, id);
+        await removeQuirk({ embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath, flushState: () => ctx.stateSync?.flush(["quirks"]) ?? Promise.resolve() }, id);
         logCliInfo(ctx.logFilePath, "quirk rm", `\n${c.success("Quirk removed:")} ${id}`);
         await cleanupContext(ctx);
       } catch (err) {
@@ -145,7 +145,7 @@ export function registerQuirkCommand(program: Command): void {
       try {
         const ctx = await resolveCliContext(options, resolveLogPath());
         const { config, embedder, store, keywordIndex } = ctx;
-        const issues = await lintQuirks({ embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath });
+        const issues = await lintQuirks({ embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath, flushState: () => ctx.stateSync?.flush(["quirks"]) ?? Promise.resolve() });
 
         if (issues.length === 0) {
           logCliInfo(ctx.logFilePath, "quirk lint", c.success("\nNo issues found. All quirks look healthy."));
@@ -173,7 +173,7 @@ export function registerQuirkCommand(program: Command): void {
         const { config, embedder, store, keywordIndex } = ctx;
 
         const results = await recallQuirks(
-          { embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath },
+          { embedder, store, keywordIndex: keywordIndex!, cfg: config, storePath: ctx.storePath, flushState: () => ctx.stateSync?.flush(["quirks"]) ?? Promise.resolve() },
           content,
           { topK: 5 },
         );
