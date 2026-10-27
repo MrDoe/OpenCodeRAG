@@ -180,6 +180,23 @@ describe("walkTree", () => {
     assert.equal(result[0]!.type, "class_declaration");
   });
 
+  it("descends into a matching node when descend is true", () => {
+    const grandchild = makeNode("method_definition", 5, 15, 3, 4);
+    const classNode = makeNode("class_declaration", 0, 20, 1, 5, [grandchild]);
+    const root = makeNode("program", 0, 20, 0, 5, [classNode]);
+    // With descend the class is still reported, and its method is reached.
+    const result = walkTree(
+      root as never,
+      new Set(["class_declaration", "method_definition"]),
+      "class A { foo() {} }",
+      10,
+      0,
+      undefined,
+      true
+    );
+    assert.deepEqual(result.map((n) => n.type), ["class_declaration", "method_definition"]);
+  });
+
   it("preserves correct startIndex and endIndex in result", () => {
     const child = makeNode("function_declaration", 5, 15, 1, 2);
     const root = makeNode("program", 0, 20, 0, 3, [child]);

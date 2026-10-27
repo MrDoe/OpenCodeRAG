@@ -33,16 +33,16 @@ export const SKELETON_CONFIGS: Record<string, SkeletonConfig> = {
   ".jsx":   { grammarName: "javascript", nodeTypes: ["function_declaration", "method_definition", "class_declaration", "arrow_function"] },
   ".mjs":   { grammarName: "javascript", nodeTypes: ["function_declaration", "method_definition", "class_declaration", "arrow_function"] },
   ".cjs":   { grammarName: "javascript", nodeTypes: ["function_declaration", "method_definition", "class_declaration", "arrow_function"] },
-  ".py":    { grammarName: "python", nodeTypes: ["function_definition", "class_definition", "decorated_definition"] },
+  ".py":    { grammarName: "python", nodeTypes: ["function_definition", "class_definition"] },
   ".java":  { grammarName: "java", nodeTypes: ["class_declaration", "method_declaration", "interface_declaration", "enum_declaration"] },
-  ".go":    { grammarName: "go", nodeTypes: ["function_declaration", "method_declaration", "type_declaration", "type_spec"] },
+  ".go":    { grammarName: "go", nodeTypes: ["function_declaration", "method_declaration", "type_spec", "type_alias"] },
   ".rs":    { grammarName: "rust", nodeTypes: ["function_item", "struct_item", "enum_item", "impl_item", "trait_item", "type_item"] },
   ".c":     { grammarName: "c", nodeTypes: ["function_definition", "struct_specifier", "enum_specifier"] },
   ".cpp":   { grammarName: "cpp", nodeTypes: ["function_definition", "class_specifier", "struct_specifier", "enum_specifier"] },
   ".cxx":   { grammarName: "cpp", nodeTypes: ["function_definition", "class_specifier", "struct_specifier", "enum_specifier"] },
   ".h":     { grammarName: "cpp", nodeTypes: ["function_definition", "class_specifier", "struct_specifier", "enum_specifier"] },
   ".hpp":   { grammarName: "cpp", nodeTypes: ["function_definition", "class_specifier", "struct_specifier", "enum_specifier"] },
-  ".cs":    { grammarName: "c_sharp", nodeTypes: ["class_declaration", "method_declaration", "interface_declaration", "enum_declaration", "struct_declaration"] },
+  ".cs":    { grammarName: "c_sharp", nodeTypes: ["class_declaration", "struct_declaration", "interface_declaration", "enum_declaration", "record_declaration", "delegate_declaration", "constructor_declaration", "destructor_declaration", "method_declaration", "property_declaration", "indexer_declaration", "event_field_declaration", "event_declaration", "operator_declaration", "conversion_operator_declaration"] },
   ".rb":    { grammarName: "ruby", nodeTypes: ["method", "class", "module"] },
   ".swift": { grammarName: "swift", nodeTypes: ["function_declaration", "class_declaration", "struct_declaration", "enum_declaration", "protocol_declaration"] },
   ".kt":    { grammarName: "kotlin", nodeTypes: ["function_declaration", "class_declaration", "interface_declaration", "object_declaration"] },
@@ -127,6 +127,63 @@ function resolveSkeletonKey(ext: string, overrides: ParserOverrides): string {
 }
 
 /**
+ * Node types that represent executable bodies. A callable nested inside
+ * another callable is an implementation detail (callback, local helper), not
+ * a member of the file's outline, so descent drops it. A callable nested in a
+ * type (a method, constructor, …) is kept.
+ */
+const CALLABLE_NODE_TYPES = new Set([
+  "function_declaration",
+  "function_definition",
+  "function_item",
+  "function",
+  "method_declaration",
+  "method_definition",
+  "method",
+  "constructor_declaration",
+  "destructor_declaration",
+  "operator_declaration",
+  "conversion_operator_declaration",
+  "arrow_function",
+  "generator_function_declaration",
+  "generator_function",
+  "lambda",
+  "lambda_expression",
+  "lambda_literal",
+  "func_literal",
+  "closure_expression",
+  "anonymous_function",
+]);
+
+/**
+ * Drop a callable whose nearest outlined ancestor is also a callable, keeping
+ * the outer one. Types and their members are unaffected: only body-level
+ * nesting is removed, so a method of a local class still appears.
+ */
+function dropNestedCallables(nodes: AstNode[]): AstNode[] {
+  return nodes.filter((node) => {
+    if (!CALLABLE_NODE_TYPES.has(node.type)) return true;
+    let nearest: AstNode | undefined;
+    for (const other of nodes) {
+      if (other === node) continue;
+      const contains =
+        other.startIndex <= node.startIndex &&
+        other.endIndex >= node.endIndex &&
+        (other.startIndex < node.startIndex || other.endIndex > node.endIndex);
+      if (!contains) continue;
+      if (
+        !nearest ||
+        other.startIndex > nearest.startIndex ||
+        (other.startIndex === nearest.startIndex && other.endIndex < nearest.endIndex)
+      ) {
+        nearest = other;
+      }
+    }
+    return !nearest || !CALLABLE_NODE_TYPES.has(nearest.type);
+  });
+}
+
+/**
  * Extract structural outline from source code using tree-sitter.
  * Falls back to regex patterns for languages without WASM grammars, and to a
  * plain line count when neither recipe applies.
@@ -183,7 +240,11 @@ export async function extractSkeleton(
 
   try {
     const nodeTypes = new Set(config.nodeTypes);
-    const astNodes: AstNode[] = walkTree(tree.rootNode, nodeTypes, content, 15);
+    // Descend into matched declarations: a skeleton describes the members
+    // inside a type, whereas the chunker intentionally stops at the type.
+    const astNodes = dropNestedCallables(
+      walkTree(tree.rootNode, nodeTypes, content, 15, 0, undefined, true),
+    );
     return astNodes.map((node) => ({
       type: node.type,
       name: extractNodeName(node.text, node.type),

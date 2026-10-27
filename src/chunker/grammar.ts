@@ -307,6 +307,9 @@ function extractDocstringFromBody(
  * @param source - Full source text (used to slice node text and comments).
  * @param maxDepth - Maximum recursion depth (default: 10).
  * @param depth - Current recursion depth (internal, start at 0).
+ * @param descend - When true, keep walking into a matched node's children so
+ *   nested members are returned too. The chunker keeps the default (false) so
+ *   one matched declaration stays one chunk; the skeleton outline opts in.
  * @returns An array of {@link AstNode} objects for matching declarations.
  */
 export function walkTree(
@@ -316,6 +319,7 @@ export function walkTree(
   maxDepth: number = 10,
   depth: number = 0,
   offsetMap?: Map<number, number> | null,
+  descend: boolean = false,
 ): AstNode[] {
   const results: AstNode[] = [];
 
@@ -335,13 +339,15 @@ export function walkTree(
       type: node.type,
       leadingDoc: leadingDoc.length > 0 ? leadingDoc : undefined,
     });
-    return results;
+    // The chunker stops at the first matched declaration so that one
+    // declaration produces one chunk. The skeleton opts into descending.
+    if (!descend) return results;
   }
 
   if (depth < maxDepth) {
     for (const child of node.children) {
       results.push(
-        ...walkTree(child, nodeTypes, source, maxDepth, depth + 1, offsetMap)
+        ...walkTree(child, nodeTypes, source, maxDepth, depth + 1, offsetMap, descend)
       );
     }
   }

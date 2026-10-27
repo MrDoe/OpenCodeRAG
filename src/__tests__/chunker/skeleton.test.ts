@@ -18,6 +18,127 @@ describe("extractSkeleton", () => {
     );
   });
 
+  it("descends into matched declarations for a member-level outline", async () => {
+    // The chunker intentionally stops at the first matched declaration so one
+    // declaration stays one chunk; the skeleton must descend so members are
+    // reported. Regression: C# files used to collapse to a single class line.
+    const source = [
+      "public class Example",
+      "{",
+      "  public Example() {}",
+      "  public void Run() {}",
+      "  public string Name { get; set; }",
+      "  private int _count;",
+      "}",
+    ].join("\n");
+    const items = await extractSkeleton(source, ".cs");
+    assert.ok(
+      items.some((i) => i.type === "class_declaration"),
+      `expected the class, got: ${JSON.stringify(items)}`,
+    );
+    assert.ok(
+      items.some((i) => i.type === "constructor_declaration"),
+      `expected the constructor, got: ${JSON.stringify(items)}`,
+    );
+    assert.ok(
+      items.some((i) => i.type === "method_declaration"),
+      `expected the method, got: ${JSON.stringify(items)}`,
+    );
+    assert.ok(
+      items.some((i) => i.type === "property_declaration"),
+      `expected the property, got: ${JSON.stringify(items)}`,
+    );
+    assert.equal(
+      items.some((i) => i.type === "field_declaration"),
+      false,
+      "fields are intentionally excluded from the outline",
+    );
+  });
+
+  it("includes C# contract members but excludes data members", () => {
+    const types = SKELETON_CONFIGS[".cs"]!.nodeTypes;
+    for (const type of [
+      "property_declaration",
+      "record_declaration",
+      "delegate_declaration",
+      "event_field_declaration",
+      "event_declaration",
+      "indexer_declaration",
+      "operator_declaration",
+      "conversion_operator_declaration",
+      "destructor_declaration",
+      "constructor_declaration",
+    ]) {
+      assert.ok(types.includes(type), `expected ${type} in the .cs recipe`);
+    }
+    for (const type of [
+      "field_declaration",
+      "enum_member_declaration",
+      "using_directive",
+      "namespace_declaration",
+      "accessor_declaration",
+      "local_function_statement",
+    ]) {
+      assert.equal(types.includes(type), false, `did not expect ${type} in the .cs recipe`);
+    }
+  });
+
+  it("filters callables nested inside another callable", async () => {
+    const source = [
+      "export function App() {",
+      "  return <div onClick={() => alert(1)}>{[1].map((x) => <b>{x}</b>)}</div>;",
+      "}",
+    ].join("\n");
+    const items = await extractSkeleton(source, ".jsx");
+    assert.ok(items.some((i) => i.type === "function_declaration"));
+    assert.equal(
+      items.some((i) => i.type === "arrow_function"),
+      false,
+      `callbacks are not outline members, got: ${JSON.stringify(items)}`,
+    );
+  });
+
+  it("keeps members of a type nested inside a callable", async () => {
+    const source = [
+      "function make() {",
+      "  class Local {",
+      "    run() {}",
+      "  }",
+      "  return Local;",
+      "}",
+    ].join("\n");
+    const items = await extractSkeleton(source, ".js");
+    assert.ok(items.some((i) => i.type === "class_declaration"));
+    assert.ok(items.some((i) => i.type === "method_definition"));
+  });
+
+  it("keeps a top-level arrow function and type members", async () => {
+    const arrow = await extractSkeleton("export const App = () => 1;\n", ".jsx");
+    assert.ok(arrow.some((i) => i.type === "arrow_function"));
+    const cls = await extractSkeleton("class Example {\n  run() {}\n}\n", ".js");
+    assert.ok(cls.some((i) => i.type === "method_definition"));
+  });
+
+  it("reports Python decorated definitions through the inner definition", async () => {
+    const items = await extractSkeleton("@decorator\ndef foo():\n    pass\n", ".py");
+    assert.equal(items.some((i) => i.type === "decorated_definition"), false);
+    assert.equal(items.filter((i) => i.type === "function_definition").length, 1);
+  });
+
+  it("reports Go type specs and aliases without the declaration wrapper", async () => {
+    const items = await extractSkeleton("type Foo struct{}\ntype Bar = int\n", ".go");
+    assert.equal(items.some((i) => i.type === "type_declaration"), false);
+    assert.equal(items.filter((i) => i.type === "type_spec").length, 1);
+    assert.equal(items.filter((i) => i.type === "type_alias").length, 1);
+  });
+
+  it("descends into class members for non-C# languages", async () => {
+    const source = "class Example {\n  run() {}\n}\n";
+    const items = await extractSkeleton(source, ".ts");
+    assert.ok(items.some((i) => i.type === "class_declaration"));
+    assert.ok(items.some((i) => i.type === "method_definition"));
+  });
+
   it("keeps per-extension recipes that differ (.tsx includes arrow functions)", async () => {
     const source = "const App = () => 1;\n";
     const tsxItems = await extractSkeleton(source, ".tsx");
