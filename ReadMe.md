@@ -10,17 +10,16 @@ AI coding agents are capable, but they have four recurring weaknesses: they read
 OpenCodeRAG addresses all these problems and more in one package:
 
 - **Semantic Search**: retrieval tools that find relevant code parts by a rough description only
-- **Persistent Memory**: vectorized memory, which keeps gotchas and decisions across sessions and automatically injects them into the context where necessary
+- **Persistent Memory**: vectorized memory, which keeps gotchas and decisions across sessions and automatically injects them into the context when necessary
 - **Knowledge Base**: agents use and maintain a project wiki to understand the code base better
 - **Basic Judgment**: a small local decision model that answers classification and routing questions
 - **Guardrails**: shell guard, which evaluates shell commands for malignancy before they run
-- **Image Description**: describes images with a local vision model
-- **Documentation Assistant**: the agent maintains and adds code documentation where they are still missing or unclear
+- **Image Description**: describes images with a local vision model for non-multimodal LLMs
+- **Documentation Assistant**: maintains and adds code documentation where it is still missing or unclear
 
-OpenCodeRAG is primarily built as an [OpenCode](https://opencode.ai) plugin. But it can also run as a MCP server for other AI tools or as a standalone command-line tool. By default it works fully locally via Ollama, but it can also use OpenAI-compatible APIs.
+OpenCodeRAG is primarily built as an [OpenCode](https://opencode.ai) plugin. But it can also be run as a MCP server for other AI coding platforms or used as a standalone command-line tool. By default it works fully locally via Ollama, but it can also use OpenAI-compatible APIs.
 
-No GPU is required, although it is recommended when using code and image descriptions. Smaller embedding models still run fine on a modern CPU.
-
+No GPU is required, although it is recommended when using code and image descriptions. Smaller embedding models can still run fine on a modern CPU.
 
 ---
 
