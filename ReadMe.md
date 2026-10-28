@@ -9,7 +9,7 @@ AI coding agents are capable, but they have four recurring weaknesses: they read
 
 OpenCodeRAG addresses all these problems and more in one package:
 
-- **Semantic Search**: retrieval tools that find relevant code by a rough description only
+- **Semantic Search**: retrieval tools that find relevant code parts by a rough description only
 - **Persistent Memory**: vectorized memory, which keeps gotchas and decisions across sessions and automatically injects them into the context where necessary
 - **Knowledge Base**: agents use and maintain a project wiki to understand the code base better
 - **Basic Judgment**: a small local decision model that answers classification and routing questions
