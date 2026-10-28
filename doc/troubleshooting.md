@@ -52,6 +52,49 @@ the logged `cause=` is authoritative; do not infer the cause from the `ref=` alo
 3. No matching code found — refine your query or run `opencode-rag index` to (re)index the workspace
 4. Index is stale — run `opencode-rag index --force` for a full rebuild
 
+### `/doc` Says Documentation Mode Is Disabled But The Config Says `true`
+
+**Symptom:** `documentationMode.enabled` is `true` in `opencode-rag.json`, a standalone
+`loadConfig(findConfigFile(cwd))` returns `true`, but `/doc` answers
+"Documentation mode is not enabled" — and restarting the TUI does not help.
+
+**First: read the resolution line in the reply.** The command now prints exactly which
+file it read:
+
+```
+Config resolution — directory: <dir>; workspace: <path|none>; global: <path|none>.
+```
+
+- `workspace: none` → the plugin is looking at a **different directory** than the one you
+  edited. OpenCode's plugin `location` is the session directory, not necessarily the
+  directory you opened the file from.
+- `workspace: <path>` pointing at a file you did not edit → a **higher-precedence layer
+  shadows your edit**: `.opencode/opencode-rag.json` wins over the legacy root
+  `opencode-rag.json` (and the global `~/.config/opencode/opencode-rag.json` is only a
+  base layer, always overridden by a workspace file).
+- `workspace` correct, file correct, still disabled → **the plugin is running with a
+  stale config**. OpenCode V2 starts plugins inside a shared background service that
+  survives TUI restarts, so closing the TUI does not reload the plugin:
+
+  ```bash
+  opencode service restart
+  ```
+
+**Where to check the plugin's view:** `.opencode/opencode-rag.log` records one line per
+plugin instance:
+
+```
+[config] Config: directory: <dir>; workspace: <path>; global: <path>; documentationMode.enabled=false; wikiMode.enabled=true
+```
+
+If that line is older than your config edit, the plugin never reloaded.
+
+**Why it used to stay stale:** the plugin dropped its own config-cache entry right after
+loading it, which disabled the live re-read (`refreshConfig`) that every "edit the config
+without restarting" feature depends on. The entry now survives, and the slash-command
+gates (`/doc`, `/wiki`, `/quirk`) read the workspace config straight from disk instead of
+a startup snapshot.
+
 ### RAG Settings Dialog Does Not Open (VS Code / PowerShell)
 
 **Symptom:** the settings hotkey does nothing in the PowerShell prompt inside VS Code's integrated terminal. The shipped default `alt+s` is not affected — this happens when `tui.settingsKeybinding` is set to a `ctrl+shift+<letter>` chord.

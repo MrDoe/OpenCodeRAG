@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PluginInput } from "@opencode-ai/plugin";
@@ -150,6 +150,72 @@ describe("ragPlugin", () => {
     } finally {
       rmSync(disabledDir, { recursive: true, force: true });
       rmSync(enabledDir, { recursive: true, force: true });
+    }
+  });
+
+  it("honours a documentationMode enabled after the plugin booted (issue #36)", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "opencode-rag-doc-reload-"));
+    const configPath = path.join(dir, "opencode-rag.json");
+    const config = (documentationEnabled: boolean): string =>
+      JSON.stringify({
+        openCode: { enabled: true, autoIndex: { enabled: false } },
+        embedding: { provider: "ollama", vectorDimension: 384 },
+        description: { enabled: false },
+        autoUpdate: { enabled: false },
+        documentationMode: { enabled: documentationEnabled },
+      });
+    const runDoc = async (hooks: Record<string, unknown>): Promise<string> => {
+      const output = {
+        message: { parts: [{ type: "text", text: "/doc" }] },
+        parts: [{ type: "text", text: "/doc" }],
+      };
+      await (hooks["chat.message"] as (i: never, o: never) => Promise<void>)(
+        { sessionID: "session-doc" } as never,
+        output as never,
+      );
+      return (output.parts[0] as { text: string }).text;
+    };
+
+    try {
+      writeFileSync(configPath, config(false));
+      // Force `getEffectiveCfg` to re-check the config on every call (the
+      // production 1s memo would otherwise mask a stale cache in this test).
+      process.env.OPENCODE_RAG_OVERRIDES_TTL_MS = "-1";
+      const hooks = (await ragPlugin({ directory: dir } as PluginInput, {})) as Record<string, unknown>;
+      assert.match(await runDoc(hooks), /Documentation mode is not enabled/);
+      const systemBefore = { system: [] as string[] };
+      await (hooks["experimental.chat.system.transform"] as (i: never, o: never) => Promise<void>)(
+        { model: { providerID: "test", modelID: "test" } } as never,
+        systemBefore as never,
+      );
+      assert.ok(
+        !systemBefore.system.some((line) => line.includes("code documentation expert")),
+        "documentation prompt must not be injected while the mode is off",
+      );
+
+      // The user enables documentation mode while OpenCode keeps running.
+      // The shared V2 service (and with it this plugin instance) survives a
+      // TUI restart, so the gate must follow the file, not a startup snapshot.
+      writeFileSync(configPath, config(true));
+      const future = new Date(Date.now() + 10_000);
+      utimesSync(configPath, future, future);
+
+      const text = await runDoc(hooks);
+      assert.doesNotMatch(text, /Documentation mode is not enabled/);
+      assert.match(text, /No indexed files found/);
+
+      const systemAfter = { system: [] as string[] };
+      await (hooks["experimental.chat.system.transform"] as (i: never, o: never) => Promise<void>)(
+        { model: { providerID: "test", modelID: "test" } } as never,
+        systemAfter as never,
+      );
+      assert.ok(
+        systemAfter.system.some((line) => line.includes("code documentation expert")),
+        "documentation prompt must be injected once the file enables it",
+      );
+    } finally {
+      delete process.env.OPENCODE_RAG_OVERRIDES_TTL_MS;
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

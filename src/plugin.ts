@@ -331,6 +331,23 @@ function configStamp(paths: { global?: string; workspace?: string }): string {
 }
 
 /**
+ * Describe where a workspace's effective config is read from.
+ *
+ * Slash-command gates (`/doc`, `/wiki`, `/quirk`) report "not enabled" from a
+ * config object, and without provenance the report is not actionable: a
+ * higher-precedence layer (`.opencode/opencode-rag.json`) silently shadows the
+ * root file, and a plugin that booted before an edit keeps serving its startup
+ * snapshot. Printed in the command's response and in the plugin log.
+ *
+ * @param directory - Workspace directory the plugin was loaded for.
+ * @returns One line naming the directory and both config layers (`none` when absent).
+ */
+export function describeConfigSource(directory: string): string {
+  const paths = resolveConfigPaths(directory);
+  return `directory: ${directory}; workspace: ${paths.workspace ?? "none"}; global: ${paths.global ?? "none"}`;
+}
+
+/**
  * Load the RAG configuration for a directory: DEFAULT_CONFIG, then the global
  * layer (`~/.config/opencode/opencode-rag.json`), then the first workspace
  * config found (`.opencode/opencode-rag.json`, then the legacy
@@ -879,6 +896,31 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
     lastEffectiveCfg = applyRuntimeOverrides(refreshConfig(options.worktree, options.cfg), cachedOverrides);
     lastEffectiveCfgTime = Date.now();
     return lastEffectiveCfg;
+  }
+
+  /**
+   * Config used by the slash-command gates (`/doc`, `/wiki`, `/quirk`).
+   *
+   * These are cold paths, so read the workspace config straight from disk
+   * instead of trusting the cached startup snapshot: the gate must agree with
+   * the file the user just edited, even when the plugin started before that
+   * edit. This matters because OpenCode V2 runs plugins inside a shared
+   * background service that survives TUI restarts, so "restart OpenCode" does
+   * not necessarily reload the plugin.
+   *
+   * Falls back to the effective config when the workspace has no config file
+   * or the file cannot be parsed (the last known config keeps serving).
+   */
+  function slashCommandConfig(): RagConfig {
+    try {
+      const paths = resolveConfigPaths(options.worktree);
+      if (paths.workspace || paths.global) {
+        return applyRuntimeOverrides(loadWorkspaceConfig(options.worktree, false), cachedOverrides);
+      }
+    } catch {
+      // Unreadable/malformed config — fall through to the last known config.
+    }
+    return getEffectiveCfg();
   }
 
   // The embedder follows the live configuration: when the config file changes
@@ -1875,13 +1917,27 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
 
         // Handle /doc slash command
         if (text.startsWith("/doc")) {
-          const docMode = getEffectiveCfg().documentationMode;
+          // Read the config from disk (cold path): the gate must agree with the
+          // file the user just edited, not with a startup snapshot.
+          const docMode = slashCommandConfig().documentationMode;
           if (!docMode?.enabled) {
+            const configSource = describeConfigSource(options.worktree);
+            const configHint = resolveConfigPaths(options.worktree).workspace
+              ?? path.join(options.worktree, ".opencode", "opencode-rag.json");
+            appendDebugLog(options.logFilePath, {
+              scope: "chat.message",
+              message: `Slash command /doc blocked: documentationMode.enabled is not true — ${configSource}`,
+            }, options.logLevel);
             const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
             if (Array.isArray(parts) && parts.length > 0) {
               const first = parts[0] as Record<string, unknown>;
               if (typeof first.text === "string") {
-                parts[0] = { ...first, text: "Documentation mode is not enabled. Set `documentationMode.enabled` to `true` in .opencode/opencode-rag.json." } as typeof parts[0];
+                parts[0] = { ...first, text:
+                  "Documentation mode is not enabled.\n\n" +
+                  `Set \`documentationMode.enabled\` to \`true\` in \`${configHint}\`.\n\n` +
+                  `Config resolution — ${configSource}.\n\n` +
+                  "If the file already says `true`, the running plugin is using a stale config — " +
+                  "restart the OpenCode service (`opencode service restart`) so the plugin reloads." } as typeof parts[0];
               }
             }
             return;
@@ -1967,13 +2023,13 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
 
         // Handle /wiki slash command
         if (text.startsWith("/wiki")) {
-          const wikiMode = getEffectiveCfg().wikiMode;
+          const wikiMode = slashCommandConfig().wikiMode;
           if (!wikiMode?.enabled) {
             const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
             if (Array.isArray(parts) && parts.length > 0) {
               const first = parts[0] as Record<string, unknown>;
               if (typeof first.text === "string") {
-                parts[0] = { ...first, text: "Wiki mode is not enabled. Set `wikiMode.enabled` to `true` in .opencode/opencode-rag.json." } as typeof parts[0];
+                parts[0] = { ...first, text: `Wiki mode is not enabled. Set \`wikiMode.enabled\` to \`true\` in opencode-rag.json. Config resolution — ${describeConfigSource(options.worktree)}.` } as typeof parts[0];
               }
             }
             return;
@@ -2065,13 +2121,13 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
 
         // Handle /quirk slash command
         if (text.startsWith("/quirk")) {
-          const memoryCfg = getEffectiveCfg().memory;
+          const memoryCfg = slashCommandConfig().memory;
           if (!memoryCfg?.enabled) {
             const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;
             if (Array.isArray(parts) && parts.length > 0) {
               const first = parts[0] as Record<string, unknown>;
               if (typeof first.text === "string") {
-                parts[0] = { ...first, text: "Quirk memory is not enabled. Set `memory.enabled` to `true` in .opencode/opencode-rag.json." } as typeof parts[0];
+                parts[0] = { ...first, text: `Quirk memory is not enabled. Set \`memory.enabled\` to \`true\` in opencode-rag.json. Config resolution — ${describeConfigSource(options.worktree)}.` } as typeof parts[0];
               }
             }
             return;
@@ -2363,6 +2419,18 @@ export const ragPlugin: Plugin = async (
     return {};
   }
 
+  // Record WHICH config file produced this instance. Without it, a report like
+  // "the config says documentationMode.enabled = true but /doc says it is off"
+  // cannot be diagnosed from the log: the answer is either a different file
+  // (layer shadowing) or a stale snapshot (plugin never reloaded).
+  appendDebugLog(logFilePath, {
+    scope: "config",
+    message:
+      `Config: ${describeConfigSource(input.directory)}; ` +
+      `documentationMode.enabled=${cfg.documentationMode?.enabled === true}; ` +
+      `wikiMode.enabled=${cfg.wikiMode?.enabled === true}`,
+  }, logLevel);
+
   const storePath = path.resolve(input.directory, cfg.vectorStore.path);
 
   // Apply runtime overrides before creating services
@@ -2418,8 +2486,13 @@ export const ragPlugin: Plugin = async (
     ragStores.delete(input.directory);
   }
 
-  // Clean up stale config cache and pending update info for this directory
-  configCache.delete(input.directory);
+  // Clean up pending update info for this directory.
+  //
+  // Do NOT drop the config cache entry here: `getConfig` above just stored it,
+  // and that entry is what makes `refreshConfig` re-read the file on every
+  // later mtime change. Deleting it pinned the whole plugin to its startup
+  // snapshot for the lifetime of the (long-lived, shared) OpenCode service —
+  // a config edit was then never picked up, not even by `getEffectiveCfg()`.
   pendingUpdateInfo.delete(input.directory);
   pendingRestartNotice.delete(input.directory);
   notifiedUpdateDirs.delete(input.directory);

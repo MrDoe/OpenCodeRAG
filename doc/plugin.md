@@ -223,6 +223,15 @@ When `documentationMode.enabled` is `true`, the plugin provides a `/doc` slash c
 **How it works:**
 
 1. **User types `/doc`** — The `chat.message` hook intercepts the slash command and returns a list of all undocumented files, grouped by subdirectory.
+   The enable-gate is evaluated against the workspace config **read fresh from disk** (`/doc`, `/wiki`, and `/quirk` are cold paths), so a just-edited `opencode-rag.json` wins even when the plugin was started earlier — OpenCode V2 keeps plugins in a shared background service that survives TUI restarts. When the mode is off, the reply names the exact file and directory that were resolved:
+
+   ```
+   Documentation mode is not enabled.
+
+   Set `documentationMode.enabled` to `true` in `/work/proj/.opencode/opencode-rag.json`.
+
+   Config resolution — directory: /work/proj; workspace: /work/proj/.opencode/opencode-rag.json; global: /home/me/.config/opencode/opencode-rag.json.
+   ```
 
 2. **Agent picks a subdirectory** — The agent reads the file list, chooses a subdirectory, and documents all files within it:
    - Calls `get_file_skeleton(filePath)` to understand file structure
