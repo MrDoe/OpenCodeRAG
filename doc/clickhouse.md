@@ -50,7 +50,7 @@ Put the password in the environment (or the global user config at
 - Network access from every client to the HTTP port (`8123` by default). Internal hostnames
   may need `NO_PROXY`; the Node client does not use proxy environment variables itself.
 
-`opencode-rag init --vector-store clickhouse --clickhouse-url http://host:8123
+`opencode-rag setup --vector-store clickhouse --clickhouse-url http://host:8123
 --clickhouse-database OpenCodeRAG --clickhouse-namespace my-project` writes the block below
 into a new `opencode-rag.json`.
 

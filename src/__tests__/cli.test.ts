@@ -9,13 +9,34 @@ import { fileURLToPath } from "node:url";
 
 const originalCwd = process.cwd;
 
-describe("opencode-rag init", () => {
+// Isolate the machine-global config layer: `setup` routes provider settings
+// there, and a developer machine with a real ~/.config must not leak into the
+// tests (see the bootstrap-test precedent).
+const originalHome = process.env.HOME;
+const originalUserProfile = process.env.USERPROFILE;
+const originalXdgConfig = process.env.XDG_CONFIG_HOME;
+const isolatedHome = join(tmpdir(), `opencode-rag-cli-home-${Date.now()}`);
+mkdirSync(join(isolatedHome, ".config"), { recursive: true });
+process.env.HOME = isolatedHome;
+process.env.USERPROFILE = isolatedHome;
+process.env.XDG_CONFIG_HOME = join(isolatedHome, ".config");
+
+after(() => {
+  if (originalHome === undefined) delete process.env.HOME; else process.env.HOME = originalHome;
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = originalUserProfile;
+  if (originalXdgConfig === undefined) delete process.env.XDG_CONFIG_HOME; else process.env.XDG_CONFIG_HOME = originalXdgConfig;
+  try { rmSync(isolatedHome, { recursive: true, force: true }); } catch { /* ignore */ }
+});
+
+describe("opencode-rag setup (workspace)", () => {
   let tmpDir: string;
   let symlinkPath: string;
 
   before(() => {
-    tmpDir = join(tmpdir(), `opencode-rag-init-test-${Date.now()}`);
+    tmpDir = join(tmpdir(), `opencode-rag-setup-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
+    // setup only scaffolds directories that look like a project root.
+    writeFileSync(join(tmpDir, "package.json"), "{}", "utf-8");
     symlinkPath = join(tmpDir, "opencode-rag-cli-symlink.js");
   });
 
@@ -31,9 +52,9 @@ describe("opencode-rag init", () => {
   it("creates .opencode/opencode-rag.json and .opencode/.gitignore and .opencode/ dir", async () => {
     process.cwd = () => tmpDir;
 
-    // Dynamic import so commander registers the 'init' command
+    // Dynamic import so commander registers the 'setup' command
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
     const configPath = join(tmpDir, ".opencode", "opencode-rag.json");
     const opencodeDir = join(tmpDir, ".opencode");
@@ -56,12 +77,13 @@ describe("opencode-rag init", () => {
     assert.ok(existsSync(configPath), ".opencode/opencode-rag.json should exist");
     assert.equal(existsSync(join(tmpDir, "opencode-rag.json")), false, "config must not be created at the project root");
 
-    // Check opencode-rag.json is valid JSON
+    // Check opencode-rag.json is valid JSON. Provider-scoped keys live in the
+    // global config now, so the workspace file only carries repo settings.
     const configContent = readFileSync(configPath, "utf-8");
     const parsed = JSON.parse(configContent);
-    assert.equal(parsed.embedding.provider, "ollama");
-    assert.equal(parsed.embedding.baseUrl, "http://127.0.0.1:11434/api");
+    assert.equal(parsed.embedding, undefined, "provider settings belong to the global config");
     assert.equal(parsed.vectorStore.path, "./.opencode/rag_db");
+    assert.equal(parsed.description.enabled, true);
 
     // Check .gitignore content
     const gitignoreContent = readFileSync(gitignorePath, "utf-8");
@@ -76,7 +98,7 @@ describe("opencode-rag init", () => {
     const opencodePackage = JSON.parse(readFileSync(opencodePackagePath, "utf-8"));
     assert.equal(opencodePackage.type, "module");
     assert.equal(opencodePackage.private, true);
-    // init copies the version from this package's devDependencies (see
+    // setup copies the version from this package's devDependencies (see
     // buildWorkspacePackageJson) — derive it here so the test never goes stale.
     const rootPackage = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf-8"));
     assert.equal(
@@ -102,9 +124,9 @@ describe("opencode-rag init", () => {
     const { writeFileSync } = await import("node:fs");
     writeFileSync(configPath, customContent, "utf-8");
 
-    // Re-run init without force
+    // Re-run setup without force
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
     // Content should be unchanged (still our custom content)
     const afterContent = readFileSync(configPath, "utf-8");
@@ -119,7 +141,7 @@ describe("opencode-rag init", () => {
       process.cwd = () => legacyDir;
 
       const { runCli } = await import("../cli.js");
-      await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+      await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
       assert.equal(existsSync(join(legacyDir, "opencode-rag.json")), false, "root file moved away");
       const moved = join(legacyDir, ".opencode", "opencode-rag.json");
@@ -139,17 +161,17 @@ describe("opencode-rag init", () => {
   it("does not overwrite opencode-rag.json even with --force in non-interactive shell", async () => {
     process.cwd = () => tmpDir;
 
-    const configPath = join(tmpDir, "opencode-rag.json");
+    const configPath = join(tmpDir, ".opencode", "opencode-rag.json");
     const customContent = JSON.stringify({ embedding: { provider: "custom-preserved" } });
     writeFileSync(configPath, customContent, "utf-8");
 
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "init", "--force", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--force", "--skip-install", "--skip-health-check"]);
 
-    // Config must NOT be overwritten in non-TTY even with --force; requires interactive y/N
+    // Config must NOT be overwritten in non-TTY even with --force; only the
+    // wizard (or an explicit flag) changes configuration.
     const afterContent = readFileSync(configPath, "utf-8");
     assert.equal(afterContent, customContent, "should not overwrite config without interactive confirmation");
-    assert.ok(!existsSync(configPath + ".bak"), "should not create .bak file");
   });
 
   it("removes stale plugin registration from .opencode/opencode.json", async () => {
@@ -168,7 +190,7 @@ describe("opencode-rag init", () => {
     );
 
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
     const opencodeConfig = JSON.parse(readFileSync(opencodeConfigPath, "utf-8"));
     assert.equal(opencodeConfig.$schema, "https://opencode.ai/config.json");
@@ -201,7 +223,7 @@ describe("opencode-rag init", () => {
 
     const { runCli } = await import("../cli.js");
     // Write a config with an unreachable provider (non-existent host)
-    const configPath = join(tmpDir, "opencode-rag.json");
+    const configPath = join(tmpDir, ".opencode", "opencode-rag.json");
     writeFileSync(
       configPath,
       JSON.stringify({
@@ -212,7 +234,7 @@ describe("opencode-rag init", () => {
 
     // Without --skip-health-check, this would fail with "Connection refused"
     // With --skip-health-check, it should complete successfully
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
     // Config should not be overwritten since it already exists and no --force
     const content = readFileSync(configPath, "utf-8");
@@ -224,6 +246,7 @@ describe("opencode-rag init", () => {
     const legacyDir = join(tmpdir(), `opencode-rag-init-migrate-${Date.now()}`);
     const legacyPluginsDir = join(legacyDir, ".opencode", "plugins");
     mkdirSync(legacyPluginsDir, { recursive: true });
+    writeFileSync(join(legacyDir, "package.json"), "{}", "utf-8");
     // Exact V1-generated contents (init only removes files it wrote itself).
     writeFileSync(
       join(legacyPluginsDir, "rag-plugin.js"),
@@ -241,7 +264,7 @@ describe("opencode-rag init", () => {
 
     process.cwd = () => legacyDir;
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
     try {
       assert.equal(existsSync(join(legacyPluginsDir, "rag-plugin.js")), false, "legacy server entry should be removed");
@@ -277,12 +300,14 @@ describe("opencode-rag init", () => {
   });
 });
 
-describe("opencode-rag init AGENTS.md", () => {
+describe("opencode-rag setup AGENTS.md", () => {
   let tmpDir: string;
 
   before(() => {
-    tmpDir = join(tmpdir(), `opencode-rag-init-agents-${Date.now()}`);
+    tmpDir = join(tmpdir(), `opencode-rag-setup-agents-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
+    // setup only scaffolds directories that look like a project root.
+    writeFileSync(join(tmpDir, "package.json"), "{}", "utf-8");
   });
 
   after(() => {
@@ -294,7 +319,7 @@ describe("opencode-rag init AGENTS.md", () => {
     process.cwd = () => tmpDir;
 
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
     const agentsPath = join(tmpDir, "AGENTS.md");
     assert.ok(existsSync(agentsPath), "AGENTS.md should exist at workspace root");
@@ -329,7 +354,7 @@ describe("opencode-rag init AGENTS.md", () => {
     process.cwd = () => sub;
 
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
     const content = readFileSync(join(sub, "AGENTS.md"), "utf-8");
     assert.ok(content.includes("Custom notes about the workspace."), "should preserve custom content");
@@ -340,11 +365,12 @@ describe("opencode-rag init AGENTS.md", () => {
   it("replaces the section in place on re-run without duplicating", async () => {
     const sub = join(tmpDir, "rerun-test");
     mkdirSync(sub, { recursive: true });
+    writeFileSync(join(sub, "package.json"), "{}", "utf-8");
     process.cwd = () => sub;
 
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
-    await runCli(["node", "cli.ts", "init", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
 
     const content = readFileSync(join(sub, "AGENTS.md"), "utf-8");
     const beginCount = (content.match(/<!-- BEGIN opencode-rag -->/g) ?? []).length;
@@ -356,10 +382,10 @@ describe("opencode-rag init AGENTS.md", () => {
 });
 
 describe("mergeAgentsMdContent helper", () => {
-  let mergeAgentsMdContent: typeof import("../cli/commands/init-helpers.js").mergeAgentsMdContent;
+  let mergeAgentsMdContent: typeof import("../cli/commands/workspace-helpers.js").mergeAgentsMdContent;
 
   before(async () => {
-    ({ mergeAgentsMdContent } = await import("../cli/commands/init-helpers.js"));
+    ({ mergeAgentsMdContent } = await import("../cli/commands/workspace-helpers.js"));
   });
 
   it("returns the section alone when no existing content", () => {
@@ -524,7 +550,7 @@ describe("workspace detection helpers (setup integration)", () => {
   });
 
   it("isLikelyProjectRoot detects git repos and manifest files", async () => {
-    const { isLikelyProjectRoot } = await import("../cli/commands/init.js");
+    const { isLikelyProjectRoot } = await import("../cli/workspace.js");
 
     // An empty directory is not a project root.
     assert.equal(isLikelyProjectRoot(tmpDir), false);
@@ -539,39 +565,17 @@ describe("workspace detection helpers (setup integration)", () => {
     assert.equal(isLikelyProjectRoot(tmpDir), true);
   });
 
-  it("isWorkspaceInitialized requires the plugin directory layout", async () => {
-    const { isWorkspaceInitialized } = await import("../cli/commands/init.js");
-
-    assert.equal(isWorkspaceInitialized(tmpDir), false);
-
-    // Only the server plugin entry exists -> not initialized yet.
-    const pluginDir = join(tmpDir, ".opencode", "plugins", "opencode-rag");
-    mkdirSync(pluginDir, { recursive: true });
-    writeFileSync(join(pluginDir, "index.js"), "x", "utf-8");
-    assert.equal(isWorkspaceInitialized(tmpDir), false);
-
-    // TUI entrypoint beside it -> initialized.
-    writeFileSync(join(pluginDir, "tui.js"), "x", "utf-8");
-    assert.equal(isWorkspaceInitialized(tmpDir), true);
-  });
-
-  it("treats the V1 flat layout as uninitialized so setup migrates it", async () => {
-    const { isWorkspaceInitialized } = await import("../cli/commands/init.js");
-
-    const legacyDir = join(tmpdir(), `opencode-rag-legacy-test-${Date.now()}`);
-    mkdirSync(join(legacyDir, ".opencode", "plugins"), { recursive: true });
-    writeFileSync(join(legacyDir, ".opencode", "plugins", "rag-plugin.js"), "x", "utf-8");
-    writeFileSync(join(legacyDir, ".opencode", "plugins", "rag-tui.js"), "x", "utf-8");
-    writeFileSync(join(legacyDir, ".opencode", "tui.json"), '{"plugin":["./plugins/rag-tui.js"]}', "utf-8");
-
+  it("setup --yes does not scaffold an unrelated directory", async () => {
+    const emptyDir = join(tmpdir(), `opencode-rag-empty-${Date.now()}`);
+    mkdirSync(emptyDir, { recursive: true });
+    process.cwd = () => emptyDir;
     try {
-      assert.equal(isWorkspaceInitialized(legacyDir), false);
+      const { runCli } = await import("../cli.js");
+      await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
+      assert.equal(existsSync(join(emptyDir, ".opencode")), false, "must not create .opencode/ outside a project");
     } finally {
-      try {
-        rmSync(legacyDir, { recursive: true, force: true });
-      } catch {
-        // ignore cleanup failures
-      }
+      process.cwd = originalCwd;
+      try { rmSync(emptyDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   });
 });

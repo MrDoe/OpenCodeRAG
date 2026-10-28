@@ -193,7 +193,7 @@ Use the hotkeys:
 
 ### 3. Agent Skill Discovery
 
-`opencode-rag init` creates `.opencode/skills/opencode-rag/SKILL.md` — an OpenCode skill that teaches agents the recommended tool workflow. This is the primary discovery mechanism:
+`opencode-rag setup` creates `.opencode/skills/opencode-rag/SKILL.md` — an OpenCode skill that teaches agents the recommended tool workflow. This is the primary discovery mechanism:
 
 - Agents see the skill listed in the `skill` tool description
 - Loading it injects the workflow guidance into the conversation
@@ -201,13 +201,13 @@ Use the hotkeys:
 
 The skill teaches the workflow: skeleton → find_usages → search → read → edit.
 
-`opencode-rag init` also creates `.opencode/skills/make-decision/SKILL.md` — a dedicated skill for the decision-model tool covering when to use `make_decision`, the three question types, prerequisites, and limits. It is generated regardless of `decision.enabled` and is loaded on demand like any other skill.
+`opencode-rag setup` also creates `.opencode/skills/make-decision/SKILL.md` — a dedicated skill for the decision-model tool covering when to use `make_decision`, the three question types, prerequisites, and limits. It is generated regardless of `decision.enabled` and is loaded on demand like any other skill.
 
 ### 4. System Prompt Guidance (when the tools are exposed)
 
 The `experimental.chat.system.transform` hook prepends a tool list to the system prompt on every message, ensuring agents know the tools are available — even before the index is built. OpenCode V2 passes the session's tool catalog and agent ID to the context hook, so the plugin injects the guidance **only when at least one RAG tool is present in that catalog**. Restricted built-in agents such as `explore` (which deny everything except `read`, `glob`, `grep`, and the web tools) and custom permission overrides that hide the plugin tools no longer receive an inert mandate referencing tools they cannot call. When the host sends no catalog, injection stays unconditional except for known tool-less built-in agents. `openCode.injectSystemPrompt: false` disables the guidance entirely.
 
-The guidance text (mandatory tools, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules) is defined in a single source at `src/opencode/system-guidance.ts`. The same text is used at `init` time to populate the `AGENTS.md` directive, ensuring consistency between the runtime system prompt and the always-loaded workspace directive.
+The guidance text (mandatory tools, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules) is defined in a single source at `src/opencode/system-guidance.ts`. The same text is used at `setup` time to populate the `AGENTS.md` directive, ensuring consistency between the runtime system prompt and the always-loaded workspace directive.
 
 ### 5. Documentation Mode — Slash Command (`/doc`)
 
@@ -471,7 +471,7 @@ Key requirements:
 
 Do NOT register the plugin via `"plugin": ["opencode-rag-plugin"]` in OpenCode config. Instead, rely on plugin-directory auto-discovery:
 
-1. Run `opencode-rag init` to create the plugin directory `.opencode/plugins/opencode-rag/` and `.opencode/skills/opencode-rag/SKILL.md`
+1. Run `opencode-rag setup` to create the plugin directory `.opencode/plugins/opencode-rag/` and `.opencode/skills/opencode-rag/SKILL.md`
 2. The directory holds two entrypoints, each a bare re-export from the workspace `node_modules/`:
 
 ```javascript
@@ -489,9 +489,9 @@ export default plugin;
 OpenCode 2 resolves a plugin *directory* as `index.*` (server entrypoint) + `tui.*` (CLI
 entrypoint beside it), and the terminal UI only discovers directories — a flat
 `.opencode/plugins/rag-tui.js` would only ever load in the server role, which is why the
-sidebar disappeared on V2. `init` therefore also removes the V1-era flat files
+sidebar disappeared on V2. `setup` therefore also removes the V1-era flat files
 (`rag-plugin.js`, `rag-tui.js`, `.opencode/tui.json`) when their content is exactly what an
-earlier `init` generated; hand-written files and custom configs are left untouched.
+earlier `init`/`setup` generated; hand-written files and custom configs are left untouched.
 
 A bare default re-export satisfies both loaders because the shape (`{ id, setup }`) lives in
 the built module. `dist/tui.js` imports `@opentui/solid` lazily, **only** when the TUI role
@@ -631,6 +631,7 @@ The TUI plugin (`src/tui.ts`) registers a settings panel in the OpenCode sidebar
 | Chunking | `chunkOverlap`, `maxSvgSizeBytes`, `nodeTypes` JSON editor |
 | Embedding | Model picker dropdown (populated from OpenCode's registered providers) |
 | LLM Descriptions | Enable/disable toggle, model picker dropdown |
+| Keybindings | `settingsKeybinding`, `fileListKeybinding`, `chunksKeybinding` |
 
 ### Features
 
@@ -638,7 +639,8 @@ The TUI plugin (`src/tui.ts`) registers a settings panel in the OpenCode sidebar
 - **Auto-sets provider and base URL** when a model is selected
 - **Runtime overrides**: Settings are persisted to `${storePath}/runtime-overrides.json` and take precedence over `opencode-rag.json`
 - **Status sidebar**: Shows chunk count, provider/model info, last indexed time, watcher state
-- **Keyboard shortcut**: `Ctrl+Shift+R` opens the settings dialog
+- **Keyboard shortcut**: `Alt+S` (configurable via `tui.settingsKeybinding`) opens the settings dialog
+- **Slash command**: `/rag-settings` (alias `/rag`) opens the same dialog from prompt slash completion — no keyboard encoding involved, so it works on every terminal
 - **Auto-refresh**: Status refreshes every 30 seconds
 
 ### TUI Keyboard Shortcuts
@@ -647,9 +649,10 @@ The TUI plugin (`src/tui.ts`) registers a settings panel in the OpenCode sidebar
 |---|---|
 | **Ctrl+Enter** | Retrieve and append a relevant file list to the prompt |
 | **Ctrl+Alt+Enter** | Retrieve and append full code chunks to the prompt |
-| **Ctrl+Shift+R** | Open the settings dialog |
+| **Alt+S** | Open the settings dialog (configurable) |
+| **/rag-settings** | Open the settings dialog from the prompt (alias `/rag`) |
 
-Both shortcuts read the current prompt text combined with the previous assistant response (if any) as the search query. If the prompt is empty, a toast reminds you to type first — no dialogs are opened. Keybindings are configurable in the settings menu under "Keybindings".
+The two injection shortcuts read the current prompt text combined with the previous assistant response (if any) as the search query. If the prompt is empty, a toast reminds you to type first — no dialogs are opened. Keybindings are configurable in the settings menu under "Keybindings".
 
 ## Plugin Troubleshooting
 
@@ -659,7 +662,7 @@ This occurs when OpenCode's Bun runtime tries to load the plugin via the `"plugi
 
 **Fix:**
 1. Ensure the plugin is loaded via `.opencode/plugins/opencode-rag/` auto-discovery, NOT via `"plugin"` config key
-2. Run `opencode-rag init` to regenerate the workspace-local plugin files
+2. Run `opencode-rag setup` to regenerate the workspace-local plugin files
 3. Remove stale `"plugin"` entries from all OpenCode config files
 
 ### Debugging Plugin Loading

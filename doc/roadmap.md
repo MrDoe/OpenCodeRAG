@@ -86,7 +86,7 @@ reasoning behind the moves.
 
 ### CLI & Distribution
 
-- Commands: `init`, `index`, `query`, `clear`, `status`, `list`, `show`,
+- Commands: `setup`, `index`, `query`, `clear`, `status`, `list`, `show`,
   `dump`, `describe-image`, `decide`, `quirk` (`add`/`update`/`list`/`rm`/
   `lint`/`test`), `eval:sessions`, `eval:analyze`, `eval:compare`, `eval:gate`,
   `eval:decide`, `eval:tune`, `mcp`, `setup`, `ui`, `update`, `backend-detect`
@@ -94,7 +94,7 @@ reasoning behind the moves.
   `get_file_skeleton`, `find_usages`, `describe_image`, `make_decision`
 - Web dashboard UI (`opencode-rag ui`): file tree, token analysis, savings
   projection
-- `init` lifecycle with plugin generation, gitignore handling and npm install
+- `setup` lifecycle with plugin generation, gitignore handling and npm install
 - `AGENTS.md` creation/merge via sentinel markers
 - Install scripts (`.sh` / `.ps1`) with pnpm/yarn/bun support; `setup`
   auto-inits a workspace and bootstraps the latest npm release; `update`
@@ -139,7 +139,7 @@ for the full analysis.
 | # | Lever | Where | Expected saving | Risk |
 |---|-------|-------|-----------------|------|
 | A | Cap the `search_semantic` output: a char/token budget, lowest-scoring chunks dropped first, and a **visible** notice saying what was truncated and how to get more | `formatContext` (`src/plugin.ts`) — currently uncapped, unlike `formatReadOutput` | ~2.4k → ~0.8k tokens per call, times the number of calls and re-sends | Low **if** the truncation is visible; silent truncation is what the decision model rated unsafe (p = 0.25) |
-| B | Inject the mandatory guidance **once** — skip the runtime system-prompt block when the workspace `AGENTS.md` already carries the managed directive | system-transform hook (`src/plugin.ts`, `src/opencode/system-guidance.ts`) | ~835 tokens **per model request** | Low; needs a fallback to the runtime block when the marker is missing, and an `init` re-sync |
+| B | Inject the mandatory guidance **once** — skip the runtime system-prompt block when the workspace `AGENTS.md` already carries the managed directive | system-transform hook (`src/plugin.ts`, `src/opencode/system-guidance.ts`) | ~835 tokens **per model request** | Low; needs a fallback to the runtime block when the marker is missing, and a `setup` re-sync |
 | C | Tighten the read override: lower `openCode.maxReadOutputChars` (20000 → ~8000) and prefer the already-retrieved chunks over the whole file when the caller passes a query | `createRagReadTool` (`src/opencode/create-read-tool.ts`) | up to ~5k tokens per read | Medium — may cost an extra read call |
 | D | Make the hotkey injection budget configurable and default to the cheap file-list mode | `formatAutoInjectContext` — the 3000-token budget is hardcoded | ~1.5-3k tokens per injected turn | Low |
 | E | Keep quirk auto-injection opt-in; raise `memory.autoInjectMinScore` (0.75 → ~0.8) when it is on | `memory.*` | ~150-300 tokens per turn | Low |
@@ -192,7 +192,7 @@ results at `kw = 0.4` vs 17.5 at `kw = 0`). Normalize the gate, or apply
    needs no retrieval change: the candidate pool stays as it is, only the
    rendering shrinks
 2. **De-duplicate the mandatory guidance** (B) — ~835 tokens saved on *every*
-   model request in any workspace that ran `opencode-rag init`
+   model request in any workspace that ran `opencode-rag setup`
 3. **Make the fused score scale-free** so `minScore` means something
 4. **Query rewriting** for ambiguous query expansion
 5. **Persistent session memory** across coding sessions

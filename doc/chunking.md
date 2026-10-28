@@ -225,7 +225,7 @@ The parser used for a file extension is normally fixed by the chunker registry (
 - An override that names the extension's **existing** parser is a no-op: the extension keeps its own skeleton recipe, so `.tsx` → `typescript` does not drop the `.tsx`-specific `arrow_function` node type.
 - Overrides are resolved per call and never mutate the process-wide registry, so they are workspace-scoped and coexist safely with pluggable `chunkers[]`.
 
-**Where to set it:** the config file (`opencode-rag.json`), the TUI settings editor under *Chunking* (applies live — no OpenCode restart needed), `opencode-rag init` (emits an empty `chunking` section), or the dashboard API (`PUT /api/config` with a `chunking` section).
+**Where to set it:** the config file (`opencode-rag.json`), the TUI settings editor under *Chunking* (applies live — no OpenCode restart needed), `opencode-rag setup` (emits an empty `chunking` section), or the dashboard API (`PUT /api/config` with a `chunking` section).
 
 **Re-index required**: changing a mapping changes chunk boundaries for already-indexed files without touching their content hashes. Run `opencode-rag index --force` after editing (the TUI warns about this when you edit under the Chunking category).
 

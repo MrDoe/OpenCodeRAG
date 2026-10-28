@@ -24,7 +24,6 @@ import {
   registerListCommand,
   registerShowCommand,
   registerDumpCommand,
-  registerInitCommand,
   registerClickHouseCommand,
   registerUiCommand,
   registerMcpCommand,
@@ -85,7 +84,6 @@ registerEvalCompareCommand(program);
 registerEvalGateCommand(program);
 registerEvalDecideCommand(program);
 registerEvalTuneCommand(program);
-registerInitCommand(program);
 registerClickHouseCommand(program);
 registerQuirkCommand(program);
 

@@ -11,49 +11,6 @@ The CLI interface (`opencode-rag`) provides full access to build, manage, and se
 
 ## Commands
 
-### `init`
-
-Configure the current workspace for OpenCodeRAG.
-
-```bash
-opencode-rag init [options]
-```
-
-**Options:**
-| Flag | Default | Description |
-|---|---|---|
-| `-f, --force` | `false` | Overwrite existing files (except `opencode-rag.json`, which requires interactive confirmation) |
-| `--skip-install` | `false` | Skip npm install step |
-| `--skip-health-check` | `false` | Skip provider connectivity and model availability check |
-
-**Creates:**
-- `.opencode/` directory structure
-- `.opencode/plugins/opencode-rag/` — workspace-local plugin directory (OpenCode 2 discovers plugin directories for both roles)
-- `.opencode/plugins/opencode-rag/index.js` — server entrypoint (re-exports `dist/plugin-entry.js`)
-- `.opencode/plugins/opencode-rag/tui.js` — TUI entrypoint beside it (re-exports `dist/tui.js`)
-- `.opencode/opencode.json` — OpenCode workspace config
-- `.opencode/package.json` — workspace dependencies
-- `opencode-rag.json` — runtime configuration
-- `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`
-- `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
-- `.opencode/skills/make-decision/SKILL.md` — decision-model skill (question types, prerequisites, optional pre-ask routing)
-- `AGENTS.md` — always-loaded tool-usage directive (merged into existing content via sentinel markers; includes mandatory tool guidance, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules)
-- Runs `npm install` to install workspace dependencies
-
-**Config protection:**
-If `opencode-rag.json` already exists, it is **never overwritten without interactive `y/N` confirmation** — not even with `--force`. Non-interactive shells (pipes, CI) skip the overwrite automatically. To reset the config, run `init` in a TTY and type `y` when prompted, or edit the file manually.
-
-**Backend auto-tuning:**
-When generating a new `opencode-rag.json`, `init` probes Ollama (`GET /api/ps`) and tunes the embedding batch settings for the detected backend:
-- **GPU** (any loaded model has `size_vram > 0`): `embedBatchSize: 40`, `embedConcurrency: 4`, `ollamaMaxBatchSize: 40`
-- **CPU**: `embedBatchSize: 20`, `embedConcurrency: 1`, `ollamaMaxBatchSize: 20`
-- **Ollama unreachable / undetermined**: default values (100 / 3 / 100)
-
-If nothing is loaded yet, a minimal embed request loads the default embedding model first. The detection is best-effort and never fails `init`.
-
-**Health check:**
-After writing config files, `init` validates provider connectivity and model availability for all configured models (embedding + description + image description if enabled). For Ollama, if models are missing, you're prompted to pull them automatically. Use `--skip-health-check` to bypass (e.g., for offline environments).
-
 ### `index`
 
 Index workspace files into the vector database.
@@ -341,7 +298,7 @@ opencode-rag mcp [options]
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
 
-Exposes `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools (plus `make_decision` when `decision.enabled` is `true`). Clients can configure the server manually, or `opencode-rag init` auto-registers it. The plugin auto-starts the MCP server only when `mcp.enabled` is `true` (default: `false`). Running `opencode-rag mcp` manually always starts the server regardless of `mcp.enabled`. See the [MCP Server](../ReadMe.md#mcp-server) section in the README.
+Exposes `search_semantic`, `get_file_skeleton`, `find_usages`, and `describe_image` tools (plus `make_decision` when `decision.enabled` is `true`). Clients configure the server manually. The plugin does not autostart a child MCP server: the agent tools run in-process, and external MCP clients must run `opencode-rag mcp` themselves. See the [MCP Server](../ReadMe.md#mcp-server) section in the README.
 
 ### `quirk`
 
@@ -476,11 +433,13 @@ $ opencode-rag quirk test "some brand new fact"
 
 ### `setup`
 
-Set up the OpenCodeRAG runtime at `~/.opencode/` so OpenCode can discover the plugin, and initialize the current workspace.
+Set up OpenCodeRAG: install/verify the machine-level runtime, scaffold the current workspace, and run the model configuration wizard.
 
 ```bash
 opencode-rag setup [options]
 ```
+
+`setup` is the only workspace-initialization command — it replaces the removed `opencode-rag init`.
 
 **Options:**
 | Flag | Default | Description |
@@ -488,8 +447,28 @@ opencode-rag setup [options]
 | `--check` | `false` | Check whether the runtime is correctly installed |
 | `-f, --force` | `false` | Force re-setup even if up-to-date |
 | `--uninstall` | `false` | Remove the runtime and cleanup |
+| `--reconfigure` | `false` | Re-open the model wizard even when a config already exists |
+| `-y, --yes` | `false` | Non-interactive: never prompt, keep the existing configuration |
+| `--provider <name>` | — | `ollama`, `openai` (OpenAI-compatible), `cohere`, `anthropic`, `google` |
+| `--base-url <url>` | provider default | Provider base URL |
+| `--api-key <key>` | env auto-detect | API key, or `env:NAME` to read an environment variable |
+| `--embedding-model <model>` | from wizard | Embedding model |
+| `--description-model <model>` | — | Enable chunk descriptions with this model |
+| `--vision-model <model>` | — | Enable image descriptions with this vision model |
+| `--decision-model <model>` | — | Enable `make_decision` with this tev1 model |
+| `--description [on\|off]` | existing / `on` | Toggle chunk descriptions |
+| `--vision [on\|off]` | existing / `off` | Toggle image descriptions |
+| `--decision [on\|off]` | existing / `off` | Toggle the decision model |
+| `--reranking [on\|off]` | existing | Toggle reranking |
+| `--shell-guard [on\|off]` | existing | Toggle the shell-command guard |
+| `--memory-capture [on\|off]` | existing | Toggle automatic quirk capture |
+| `--vector-store <provider>` | `lancedb` | `lancedb` or `clickhouse` |
+| `--clickhouse-*` | — | `url`, `database`, `user`, `password-env`, `namespace` |
+| `--skip-install` | `false` | Skip linking workspace-local plugin dependencies |
+| `--skip-health-check` | `false` | Skip provider connectivity and model availability checks |
+| `--skip-runtime` | `false` | Workspace setup only (no machine-level runtime install) |
 
-**Machine step - how it works:**
+**Machine step — how it works:**
 1. Checks the installed version against the **latest version on npm**; when
    outdated, fetches and installs the new version (self-update, independent of
    how the package was installed - global prefix, runtime junction or dev link)
@@ -500,7 +479,29 @@ opencode-rag setup [options]
 
 No `npm install` into `~/.opencode/` is needed - the junction-links resolve transparently through Node.js.
 
-**Workspace step:** When run inside a project root (git repo or a manifest such as `package.json`), `setup` automatically initializes the workspace with the same files `opencode-rag init` creates. When the workspace is already initialized, `setup` reports it and leaves it untouched. Use `opencode-rag init` explicitly to re-sync an initialized workspace (e.g. after AGENTS.md/skill changes).
+**Workspace step — the wizard:**
+
+On the first run (no provider configuration yet) or with `--reconfigure`, `setup` asks for the basic setup:
+
+1. **Provider** — Ollama (local/remote), OpenAI-compatible (llama.cpp, LM Studio, vLLM, OpenRouter, …), Cohere, Anthropic or Google.
+2. **Base URL** — the host answers a model-list probe (`/api/tags`, `/v1/models`), shown as `✓ reachable, N models` or the exact error.
+3. **API key** — only when the provider needs one; an existing `<PROVIDER>_API_KEY` environment variable or a stored key is reused. Masked input, never written as a placeholder.
+4. **Embedding model** — picked from the probed list (Ollama capabilities via `/api/show`), with manual entry for models the host does not list. The vector dimension is probed and stored so the store schema stays stable.
+5. **Description / vision / decision** — each is enabled with a yes/no question and a model picker. The decision model uses Ollama's `/v1/systemone` (`ollama pull tev1:0.8b`).
+6. **Advanced** — reranking, shell guard, memory capture, ClickHouse backend, `embedDescriptions`, background indexing.
+
+Every question has a default taken from the current configuration, so pressing Enter keeps an existing setup intact. Ctrl+C cancels the wizard without writing anything.
+
+**Config layering:** provider/model/baseUrl/apiKey/vectorDimension describe the machine and are written to `~/.config/opencode/opencode-rag.json`; feature toggles and repository settings go to `.opencode/opencode-rag.json`. Stale provider keys left in a workspace config by an older `init` are detected and removed (with a `.bak` backup) because the workspace layer would otherwise shadow the global choice.
+
+**Workspace files:** `.opencode/` tree, `.opencode/plugins/opencode-rag/{index.js,tui.js}`, `.opencode/opencode.json`, `.opencode/package.json`, `.opencode/.gitignore`, `.opencode/skills/opencode-rag/SKILL.md`, `.opencode/skills/make-decision/SKILL.md`, `AGENTS.md` (merged via sentinel markers) and the workspace config. `setup` re-syncs them on every run; `--force` rewrites generated files even when unchanged.
+
+**Backend auto-tuning:** a fresh workspace config probes Ollama (`GET /api/ps`) and tunes embedding batches for the detected backend:
+- **GPU** (`size_vram > 0`): `embedBatchSize: 40`, `embedConcurrency: 4`, `ollamaMaxBatchSize: 40`
+- **CPU**: `embedBatchSize: 20`, `embedConcurrency: 1`, `ollamaMaxBatchSize: 20`
+- **Ollama unreachable / undetermined**: defaults (100 / 3 / 100)
+
+**Health check:** after applying the configuration, `setup` validates provider connectivity and model availability (embedding + description + image description + reranking when enabled). Missing Ollama models can be pulled in place. Use `--skip-health-check` for offline environments.
 
 **Updating from npm:** After `npm update -g opencode-rag-plugin`, run `opencode-rag setup` to sync the runtime.
 
@@ -508,25 +509,34 @@ No `npm install` into `~/.opencode/` is needed - the junction-links resolve tran
 
 **Examples:**
 ```bash
-# Set up the runtime (after global install)
+# First-time setup: runtime + workspace + model wizard
 opencode-rag setup
 
-# Re-sync after update
+# Re-sync after an update (no questions)
 npm update -g opencode-rag-plugin
 opencode-rag setup
 
-# Check status only
-opencode-rag setup --check
+# Re-open the wizard
+opencode-rag setup --reconfigure
 
-# Remove the runtime
+# Scripted OpenAI-compatible setup
+opencode-rag setup --provider openai --base-url http://127.0.0.1:11437/v1 \
+  --api-key env:LLAMA_API_KEY --embedding-model Qwen3-Embedding:8B --description off
+
+# Workspace files only
+opencode-rag setup --skip-runtime
+
+# Check status only / remove the runtime
+opencode-rag setup --check
 opencode-rag setup --uninstall
 ```
 
 ## Examples
 
 ```bash
-# Initialize a workspace
-opencode-rag init
+# Set up a workspace (runtime + files + wizard)
+opencode-rag setup
+
 
 # Full index
 opencode-rag index

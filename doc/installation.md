@@ -26,9 +26,9 @@ OpenCodeRAG uses three models:
 - **Description model** - generates natural-language descriptions of code chunks before embedding. Configured via `description.model` (default: `qwen2.5:3b`).
 - **Vision model** - generates natural-language descriptions of images before embedding. Configured via `imageDescription.model` (default: `minicpm-v4.6`).
 
-> **`init` / `setup` only test configured models.** The embedding model is always checked (indexing needs it). The description, vision (including its `onDemand` override), and rerank models are checked only when the corresponding section appears in your config file (`opencode-rag.json` or the global config) *and* the feature is enabled. Models that are merely on because of built-in defaults are never probed or offered for `ollama pull`.
+> **`setup` only tests configured models.** The embedding model is always checked (indexing needs it). The description, vision (including its `onDemand` override), and rerank models are checked only when the corresponding section appears in your config file (`opencode-rag.json` or the global config) *and* the feature is enabled. Models that are merely on because of built-in defaults are never probed or offered for `ollama pull`.
 
-> **Tip:** Smaller embedding models (≤3B) work well on CPU. For better search results, use a larger embedding model like `qwen3-embedding:1.7b` and activate description and image descripion model usage in OpenCodeRAG config (dedicated GPU recommended). `opencode-rag init` auto-detects whether your Ollama runs on CPU or GPU and tunes the embedding batch settings accordingly — no manual tuning needed.
+> **Tip:** Smaller embedding models (≤3B) work well on CPU. For better search results, use a larger embedding model like `qwen3-embedding:1.7b` and activate description and image descripion model usage in OpenCodeRAG config (dedicated GPU recommended). `opencode-rag setup` auto-detects whether your Ollama runs on CPU or GPU and tunes the embedding batch settings accordingly — no manual tuning needed.
 
 ## Install
 
@@ -38,14 +38,14 @@ OpenCodeRAG uses three models:
 # Install globally via npm
 npm install -g opencode-rag-plugin
 
-# One command: set up the runtime and initialize the workspace
+# One command: set up the runtime, the workspace and the model wizard
 cd /path/to/your/workspace
 opencode-rag setup
 ```
 
 > **Alternative package managers:** `pnpm add -g opencode-rag-plugin`, `yarn global add opencode-rag-plugin`, and `bun add -g opencode-rag-plugin` are equally supported. `opencode-rag setup` and `opencode-rag update` detect the package manager that owns the global install and run its equivalent commands — npm does not need to be on `PATH` at all.
 
-> `opencode-rag setup` is both a **machine-level** step (installs the plugin runtime into `~/.opencode/` once per machine; when outdated, fetches and installs the latest published npm version of itself) and a **workspace-level** step (auto-initializes the current project - config, skill, AGENTS.md - when it looks like a project root). `opencode-rag init` remains available for re-syncing an already initialized workspace. Both commands explain their exact use cases in their help output (`opencode-rag setup --help` / `opencode-rag init --help`).
+> `opencode-rag setup` is both a **machine-level** step (installs the plugin runtime into `~/.opencode/` once per machine; when outdated, fetches and installs the latest published npm version of itself) and a **workspace-level** step (scaffolds the current project - config, skill, AGENTS.md - and runs the model wizard on first use or with `--reconfigure`). Re-running `setup` syncs the files without asking questions; `opencode-rag init` no longer exists. See `opencode-rag setup --help` for all flags.
 
 Tree-sitter grammars ship as pre-built WASM files (bundled in `wasm/` and `@vscode/tree-sitter-wasm`). Native dependencies (`sharp`, `@lancedb/lancedb`) use pre-built platform binaries. The plugin is workspace-local — OpenCode loads it from `.opencode/plugins/`. Data (vector store, manifest) lives in the workspace.
 
@@ -56,8 +56,7 @@ The global CLI (`~/.local/bin/opencode-rag`) is a thin wrapper that runs `node ~
 **From npm (published release):**
 ```bash
 npm update -g opencode-rag-plugin
-opencode-rag setup               # sync the runtime symlink
-opencode-rag init                 # update workspace files (AGENTS.md, skill, config)
+opencode-rag setup               # sync the runtime + workspace files
 ```
 
 **From source (local development):**
@@ -102,33 +101,48 @@ This removes all copies and config entries of OpenCodeRAG.
 
 ## Workspace Initialization
 
-The install script only installs the CLI globally. Initialize each workspace where you want to use OpenCodeRAG:
+The install script only installs the CLI globally. Set up each workspace where you want to use OpenCodeRAG:
 
 ```bash
 cd /path/to/your/workspace
-opencode-rag init
+opencode-rag setup
 ```
 
+On the first run, `setup` asks for the model host and models (see [the wizard](#the-setup-wizard)); re-running it syncs the files without questions.
+
 This creates:
-- `opencode-rag.json` — Workspace-specific RAG configuration (never overwritten without interactive confirmation). Embedding batch settings are **auto-tuned to your Ollama backend** (see below)
+- `.opencode/opencode-rag.json` — Workspace-specific RAG configuration. Provider/model settings live in the global config instead (`~/.config/opencode/opencode-rag.json`). Embedding batch settings are **auto-tuned to your Ollama backend** (see below)
 - `.opencode/plugins/opencode-rag/index.js` — Server entrypoint (re-exports `dist/plugin-entry.js` from the workspace `node_modules/`)
 - `.opencode/plugins/opencode-rag/tui.js` — TUI entrypoint beside it (re-exports `dist/tui.js`); OpenCode 2 only discovers plugin *directories*, so both roles live in this folder
 - `.opencode/opencode.json` — OpenCode workspace config
 - `.opencode/package.json` — Workspace dependencies (links to the globally-installed plugin)
 - `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
+- `.opencode/skills/make-decision/SKILL.md` — decision-model skill
 - `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`
 - `AGENTS.md` — Always-loaded tool-usage directive (merged into existing content, never overwrites; includes mandatory tool guidance, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules)
 - Runs `npm install` to install workspace dependencies
 
-The `AGENTS.md` directive is wrapped in sentinel markers (`<!-- BEGIN opencode-rag -->` / `<!-- END opencode-rag -->`) so re-running `init` replaces the section in-place without duplicating it. Existing content outside the markers is always preserved.
+The `AGENTS.md` directive is wrapped in sentinel markers (`<!-- BEGIN opencode-rag -->` / `<!-- END opencode-rag -->`) so re-running `setup` replaces the section in-place without duplicating it. Existing content outside the markers is always preserved.
 
-Use `--skip-install` to skip the npm install step. Use `--force` to overwrite existing files except `opencode-rag.json` (requires interactive confirmation). Use `--skip-health-check` to skip provider validation (useful in offline environments).
+Use `--skip-install` to skip the npm install step. Use `--force` to rewrite generated files even when unchanged. Use `--skip-health-check` to skip provider validation (useful in offline environments). `--skip-runtime` performs the workspace step only.
 
-After writing config, `init` validates that your embedding provider is reachable and all configured models (embedding, description & visual) are available. For Ollama, if models are missing, you will be asked to pull them automatically.
+After applying the configuration, `setup` validates that your embedding provider is reachable and all configured models (embedding, description & visual) are available. For Ollama, if models are missing, you will be asked to pull them automatically.
+
+### The setup wizard
+
+`setup` runs an interactive wizard on the first run and with `--reconfigure`:
+
+1. **Provider** — Ollama (local/remote), OpenAI-compatible (llama.cpp, LM Studio, vLLM, OpenRouter, …), Cohere, Anthropic or Google.
+2. **Base URL** — probed immediately; the wizard shows `✓ reachable, N models` or the exact error.
+3. **API key** — only when needed. An existing `<PROVIDER>_API_KEY` environment variable or a stored key is reused; input is masked.
+4. **Models** — embedding (required), description, vision and decision model (tev1), each picked from the probed model list with a manual-entry fallback. The embedding dimension is probed and stored.
+5. **Optional features** — descriptions, vision, decision model, reranking, shell guard, quirk capture, ClickHouse backend.
+
+Every question defaults to the current value, so Enter keeps an existing setup. Ctrl+C cancels without writing anything. Non-interactive runs (`--yes`, CI, piped stdin) never prompt: flags win, then the stored config, then defaults.
 
 ### Auto-tuned embedding batches (Ollama)
 
-When generating a new `opencode-rag.json`, `init` probes Ollama (`GET /api/ps`) and detects whether models run on the **GPU** or **CPU**, then writes matching embedding batch settings into the `indexing` section:
+When generating a new `.opencode/opencode-rag.json`, `setup` probes Ollama (`GET /api/ps`) and detects whether models run on the **GPU** or **CPU**, then writes matching embedding batch settings into the `indexing` section:
 
 | Detected backend | `embedBatchSize` | `embedConcurrency` | `ollamaMaxBatchSize` |
 |---|---|---|---|
@@ -141,7 +155,7 @@ GPU settings (batch 40 + concurrency 4) reach ~97% of the measured GPU throughpu
 ## Running Without Global Installation
 
 ```bash
-npx opencode-rag init
+npx opencode-rag setup
 npx opencode-rag index
 npx opencode-rag query "your search query"
 ```
@@ -187,4 +201,4 @@ Once installed, OpenCodeRAG provides three tools for AI agents to retrieve and e
 | `get_file_skeleton` | Get structural overview of a file (functions, classes, interfaces) |
 | `find_usages` | Find all references to a symbol across the codebase |
 
-For detailed usage instructions, parameters, and examples, see the `## Code Navigation` section of the workspace's `AGENTS.md` (created by `opencode-rag init`) or the [AGENTS.md](../AGENTS.md) file in the project root.
+For detailed usage instructions, parameters, and examples, see the `## Code Navigation` section of the workspace's `AGENTS.md` (created by `opencode-rag setup`) or the [AGENTS.md](../AGENTS.md) file in the project root.

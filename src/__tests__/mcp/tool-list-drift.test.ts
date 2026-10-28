@@ -24,7 +24,7 @@ import type { RagContext } from "../../core/bootstrap.js";
 import { KeywordIndex } from "../../retriever/keyword-index.js";
 import { createMcpServer } from "../../mcp/server.js";
 import { buildSystemGuidanceLines } from "../../opencode/system-guidance.js";
-import { generateDecisionSkillFile, generateSkillFile } from "../../cli/commands/init-helpers.js";
+import { generateDecisionSkillFile, generateSkillFile } from "../../cli/commands/workspace-helpers.js";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 

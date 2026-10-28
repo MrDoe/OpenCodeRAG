@@ -1,5 +1,5 @@
 /**
- * @fileoverview Auto-detect the Ollama backend (CPU vs GPU) during `init` and
+ * @fileoverview Auto-detect the Ollama backend (CPU vs GPU) during `setup` and
  * pick embedding batch settings tuned for the detected backend.
  */
 /**

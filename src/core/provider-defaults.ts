@@ -120,3 +120,8 @@ export function isOpenAiCompatible(provider: string): boolean {
 export function supportsEmbedding(provider: string): boolean {
   return PROVIDER_DEFAULTS[provider]?.supportsEmbedding ?? false;
 }
+
+/** Whether the given provider can serve chat/completion requests. */
+export function supportsChat(provider: string): boolean {
+  return PROVIDER_DEFAULTS[provider]?.supportsChat ?? false;
+}

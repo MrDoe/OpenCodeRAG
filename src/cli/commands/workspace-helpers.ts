@@ -1,8 +1,8 @@
 /**
- * @fileoverview Helper functions for the init command — file generation, config building, dependency linking, and gitignore merging.
+ * @fileoverview Helper functions for `opencode-rag setup` — file generation, config building, dependency linking, and gitignore merging.
  */
 /**
- * Helper functions for the `init` command — file generation, config building,
+ * Helper functions for the `setup` command — file generation, config building,
  * dependency installation, and gitignore merging.
  */
 
@@ -577,7 +577,7 @@ export async function installPluginFromGlobal(
 
   // Create directory junction from workspace → global runtime.
   // Junction creation can throw (EPERM, cross-drive on Windows) — fall back
-  // to a copy instead of aborting `init`.
+  // to a copy instead of aborting `setup`.
   console.log(`  ${c.created("Linking:")} ${packageName} from global cache...`);
   mkdirSync(path.dirname(workspaceTarget), { recursive: true });
   try {
@@ -614,64 +614,23 @@ export async function installPluginFromGlobal(
 
 
 /**
- * `embedding` keys that the default template does not model but that MUST
- * survive a rewrite. Losing `vectorDimension` makes the next run fall back to
- * the 384 default (and corrupts a rebuild against a store whose schema is
- * 4096), and `apiKey` is provider auth the template never carries — both are
- * invisible data loss when a user confirms "Overwrite with default config?".
- */
-const PRESERVED_EMBEDDING_KEYS = ["apiKey", "vectorDimension"] as const;
-
-/**
- * Pick the identity-critical `embedding` keys out of an existing config file so
- * the generated defaults can re-apply them. Malformed input simply yields an
- * empty set (the pure default template).
- */
-function preservedEmbeddingKeys(existingConfigRaw?: string): Record<string, unknown> {
-  if (!existingConfigRaw) return {};
-  try {
-    const raw = existingConfigRaw.charCodeAt(0) === 0xfeff
-      ? existingConfigRaw.slice(1)
-      : existingConfigRaw;
-    const parsed = JSON.parse(raw) as { embedding?: Record<string, unknown> };
-    const embedding = parsed?.embedding;
-    if (!embedding || typeof embedding !== "object") return {};
-    const preserved: Record<string, unknown> = {};
-    for (const key of PRESERVED_EMBEDDING_KEYS) {
-      const value = embedding[key];
-      if (value !== undefined && value !== null && value !== "") {
-        preserved[key] = value;
-      }
-    }
-    return preserved;
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Generate the default `opencode-rag.json` configuration content.
+ * Generate the default workspace `opencode-rag.json` configuration content.
+ *
+ * Provider-scoped keys (`provider`, `model`, `baseUrl`, `apiKey`,
+ * `vectorDimension`) are deliberately NOT emitted: they describe the machine
+ * and live in the global config, which is the BASE layer. A workspace copy
+ * would shadow the global choice (and could commit an API key), so only
+ * repository-scoped keys and feature toggles are written here.
  *
  * @param tuning - Optional embedding batch tuning (auto-detected from the
  *   Ollama backend). Falls back to `DEFAULT_CONFIG` for any omitted field.
- * @param existingConfigRaw - Optional raw text of the config file that is about
- *   to be replaced. Its `apiKey` and `vectorDimension` are carried over: a
- *   reset must not silently change the store schema or drop provider auth.
  * @returns A pretty-printed JSON string with all default configuration values.
  */
 export function generateDefaultConfigJson(
   tuning?: Partial<IndexingTuning>,
-  existingConfigRaw?: string,
 ): string {
   return JSON.stringify(
     {
-      embedding: {
-        provider: DEFAULT_CONFIG.embedding.provider,
-        baseUrl: DEFAULT_CONFIG.embedding.baseUrl,
-        model: DEFAULT_CONFIG.embedding.model,
-        timeoutMs: DEFAULT_CONFIG.embedding.timeoutMs,
-        ...preservedEmbeddingKeys(existingConfigRaw),
-      },
       indexing: {
         includeExtensions: DEFAULT_CONFIG.indexing.includeExtensions,
         excludeDirs: DEFAULT_CONFIG.indexing.excludeDirs,
@@ -713,18 +672,12 @@ export function generateDefaultConfigJson(
       },
       imageDescription: {
         enabled: DEFAULT_CONFIG.imageDescription!.enabled,
-        provider: DEFAULT_CONFIG.imageDescription!.provider,
-        model: DEFAULT_CONFIG.imageDescription!.model,
-        baseUrl: DEFAULT_CONFIG.imageDescription!.baseUrl,
         timeoutMs: DEFAULT_CONFIG.imageDescription!.timeoutMs,
         think: DEFAULT_CONFIG.imageDescription!.think,
         numCtx: DEFAULT_CONFIG.imageDescription!.numCtx,
       },
       decision: {
         enabled: DEFAULT_CONFIG.decision!.enabled,
-        provider: DEFAULT_CONFIG.decision!.provider,
-        baseUrl: DEFAULT_CONFIG.decision!.baseUrl,
-        model: DEFAULT_CONFIG.decision!.model,
         timeoutMs: DEFAULT_CONFIG.decision!.timeoutMs,
         keepAlive: DEFAULT_CONFIG.decision!.keepAlive,
         routeBeforeAsking: DEFAULT_CONFIG.decision!.routeBeforeAsking,
@@ -738,9 +691,6 @@ export function generateDefaultConfigJson(
       },
       description: {
         enabled: DEFAULT_CONFIG.description!.enabled,
-        provider: DEFAULT_CONFIG.description!.provider,
-        baseUrl: DEFAULT_CONFIG.description!.baseUrl,
-        model: DEFAULT_CONFIG.description!.model,
         think: DEFAULT_CONFIG.description!.think,
         numCtx: DEFAULT_CONFIG.description!.numCtx,
         timeoutMs: DEFAULT_CONFIG.description!.timeoutMs,

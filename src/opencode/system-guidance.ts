@@ -1,7 +1,7 @@
 /**
  * @fileoverview Single source of truth for the mandatory OpenCodeRAG tool-usage guidance
  * that is injected into both the runtime system prompt (via plugin.ts) and the AGENTS.md
- * directive (via init-helpers.ts).
+ * directive (via workspace-helpers.ts).
  */
 
 import type { OpenCodeShellConfig } from "../core/config.js";

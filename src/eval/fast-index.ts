@@ -52,7 +52,7 @@ const INCLUDE_EXTS = new Set([".ts", ".tsx"]);
 const CHANGED_FILES = new Set([
   "src/api.ts",
   "src/chunker/pdf.ts",
-  "src/cli/commands/init-helpers.ts",
+  "src/cli/commands/workspace-helpers.ts",
   "src/core/config.ts",
   "src/core/interfaces.ts",
   "src/core/manifest.ts",

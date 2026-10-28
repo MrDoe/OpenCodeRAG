@@ -1551,9 +1551,9 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
  * Config file locations to search, in order of precedence.
  *
  * `.opencode/opencode-rag.json` is the canonical workspace location — every
- * writer (TUI, `init`, `clickhouse setup`, the Web UI) creates and updates it
+ * writer (TUI, `setup`, `clickhouse setup`, the Web UI) creates and updates it
  * there. The root-level `opencode-rag.json` is the legacy location, still read
- * for compatibility (and migrated into `.opencode/` by `opencode-rag init`);
+ * for compatibility (and migrated into `.opencode/` by `opencode-rag setup`);
  * `.opencode/rag.json` is a legacy alias inside `.opencode/`.
  */
 export const CONFIG_FILE_CANDIDATES = [

@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { classifyOllamaModels } from "../../cli/commands/backend-detect.js";
-import { generateDefaultConfigJson } from "../../cli/commands/init-helpers.js";
+import { generateDefaultConfigJson } from "../../cli/commands/workspace-helpers.js";
 
 describe("classifyOllamaModels", () => {
   it("classifies GPU when a model has size_vram > 0", () => {
@@ -58,33 +58,17 @@ describe("generateDefaultConfigJson", () => {
     assert.equal(cfg.indexing.ollamaMaxBatchSize, 100);
   });
 
-  it("carries apiKey and vectorDimension over from the config being replaced", () => {
-    const existing = JSON.stringify({
-      embedding: {
-        provider: "openai",
-        apiKey: "sk-llama-local",
-        baseUrl: "http://127.0.0.1:11437/v1",
-        model: "Qwen3-Embedding:8B",
-        vectorDimension: 4096,
-      },
-      memory: { enabled: true },
-    });
-
-    const cfg = JSON.parse(generateDefaultConfigJson(undefined, existing)) as {
-      embedding: Record<string, unknown>;
-    };
-
-    assert.equal(cfg.embedding.vectorDimension, 4096, "dimension must survive a reset");
-    assert.equal(cfg.embedding.apiKey, "sk-llama-local", "provider auth must survive a reset");
-    // everything the template models is still reset to defaults
-    assert.equal(cfg.embedding.baseUrl, "http://127.0.0.1:11434/api");
-    assert.equal(cfg.embedding.model, "qwen3-embedding:0.6b");
-  });
-
-  it("omits the preserved keys when there is no existing config", () => {
-    const cfg = JSON.parse(generateDefaultConfigJson()) as { embedding: Record<string, unknown> };
-    assert.equal("vectorDimension" in cfg.embedding, false);
-    assert.equal("apiKey" in cfg.embedding, false);
+  it("does not emit provider-scoped keys (they belong to the global config)", () => {
+    const cfg = JSON.parse(generateDefaultConfigJson()) as Record<string, unknown>;
+    assert.equal("embedding" in cfg, false, "embedding provider/model/baseUrl are machine-global");
+    for (const section of ["description", "imageDescription", "decision"]) {
+      const value = cfg[section] as Record<string, unknown>;
+      assert.equal("provider" in value, false, `${section}.provider must not be project-scoped`);
+      assert.equal("model" in value, false, `${section}.model must not be project-scoped`);
+      assert.equal("baseUrl" in value, false, `${section}.baseUrl must not be project-scoped`);
+      assert.equal("apiKey" in value, false, `${section}.apiKey must not be project-scoped`);
+    }
+    assert.equal("provider" in (cfg.reranking as Record<string, unknown> | undefined ?? {}), false);
   });
 
   it("emits an empty chunking section so parser overrides are discoverable", () => {
@@ -94,18 +78,5 @@ describe("generateDefaultConfigJson", () => {
     assert.ok(cfg.chunking, "generated config must contain a chunking section");
     assert.deepStrictEqual(cfg.chunking.parsers, {});
     assert.deepStrictEqual(cfg.chunking.nodeTypes, {});
-  });
-
-  it("survives a malformed or BOM-prefixed existing config", () => {
-    const malformed = JSON.parse(generateDefaultConfigJson(undefined, '{"embedding": {oops')) as {
-      embedding: Record<string, unknown>;
-    };
-    assert.equal("vectorDimension" in malformed.embedding, false);
-
-    const withBom = "\ufeff" + JSON.stringify({ embedding: { vectorDimension: 1024 } });
-    const bomCfg = JSON.parse(generateDefaultConfigJson(undefined, withBom)) as {
-      embedding: Record<string, unknown>;
-    };
-    assert.equal(bomCfg.embedding.vectorDimension, 1024);
   });
 });

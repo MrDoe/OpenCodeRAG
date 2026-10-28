@@ -6,7 +6,7 @@
 git clone https://github.com/MrDoe/OpenCodeRAG.git
 cd OpenCodeRAG
 npm install --legacy-peer-deps
-opencode-rag init --force
+opencode-rag setup --force --skip-runtime
 ```
 
 > LanceDB and other dependencies have peer dependency conflicts — `--legacy-peer-deps` is required. Run `opencode-rag setup --force` after building to sync the development copy into the runtime.
@@ -29,10 +29,10 @@ After making source changes, sync them to the global runtime:
 npm run build                 # compile src/ → dist/
 npm link                      # link local package as global npm package
 opencode-rag setup --force    # sync symlink at ~/.opencode/ to your local build + refresh the workspace
-# optional: opencode-rag init # force re-sync of workspace files (AGENTS.md, skill)
+# setup re-syncs AGENTS.md/skills/config on every run; --reconfigure re-opens the model wizard
 ```
 
-> **Note:** `npm i -g opencode-rag-plugin` installs from the npm registry, not your local source. Always use `npm run build && npm link && opencode-rag setup --force` to test local changes. `opencode-rag setup` auto-initializes *fresh* workspaces; re-run `opencode-rag init` in already initialized target workspaces to pick up AGENTS.md changes.
+> **Note:** `npm i -g opencode-rag-plugin` installs from the npm registry, not your local source. Always use `npm run build && npm link && opencode-rag setup --force` to test local changes. `setup` syncs an existing workspace too — there is no separate `init` command anymore.
 
 ## Testing
 
@@ -188,7 +188,7 @@ await table.add(rows as unknown as Record<string, unknown>[]);
 
 ### Config File Loading
 - `loadConfig()` deep-merges per section (not recursive)
-- Workspace config is canonical at `.opencode/opencode-rag.json`; legacy `./opencode-rag.json` and `./.opencode/rag.json` are still read (root file migrated by `init`)
+- Workspace config is canonical at `.opencode/opencode-rag.json`; legacy `./opencode-rag.json` and `./.opencode/rag.json` are still read (root file migrated by `setup`)
 - Global base layer: `~/.config/opencode/opencode-rag.json`; the TUI saves provider options there only
 - Default config is the fallback when no file is found
 

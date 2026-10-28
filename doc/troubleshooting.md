@@ -9,7 +9,7 @@
 **Fix:**
 1. Do NOT register via `"plugin": ["opencode-rag-plugin"]` in OpenCode config
 2. Rely on `.opencode/plugins/opencode-rag/` auto-discovery instead
-3. Run `opencode-rag init` to regenerate workspace-local plugin files
+3. Run `opencode-rag setup` to regenerate workspace-local plugin files
 4. Remove stale `"plugin"` entries from all OpenCode config files
 
 **Verify:**
@@ -41,7 +41,7 @@ the logged `cause=` is authoritative; do not infer the cause from the `ref=` alo
    `.opencode/plugins/opencode-rag/index.js` (server) + `tui.js` (CLI) must both exist.
    OpenCode 2 only discovers plugin directories (`index.*`/`tui.*`) for the terminal UI —
    a V1-era flat `.opencode/plugins/rag-tui.js` is never loaded there, only in the server
-   role. Re-run `opencode-rag init` to migrate the flat layout (it removes only the files
+   role. Re-run `opencode-rag setup` to migrate the flat layout (it removes only the files
    it generated itself).
 
 ### No Context Returned by OpenCode
@@ -102,6 +102,8 @@ a startup snapshot.
 **Cause:** Legacy terminal encodings cannot carry `ctrl+shift+<letter>`. VS Code's terminal (xterm.js) emits **no bytes at all** for that chord until the Kitty keyboard protocol is negotiated; VTE/gnome-terminal sends the plain control byte instead. The key never reaches OpenCode, so no keybinding can fire.
 
 **Fix:** set `tui.settingsKeybinding` to `"alt+s"` (the default) or another legacy-safe chord in `opencode-rag.json` — `alt+<letter>` (ESC + letter) works on every layout; `ctrl+alt+<letter>` also works but is AltGr on Windows. The plugin binds exactly the configured chord and adds no fallback. Terminals with Kitty keyboard support (kitty, WezTerm, Ghostty, foot, Alacritty, newer VS Code with the protocol enabled) deliver `ctrl+shift+<letter>` itself, so a custom chord remains valid there.
+
+**Immediate workaround:** type **`/rag-settings`** (alias `/rag`) in the prompt. The dialog is also registered in prompt slash completion, and the text-input path needs no keyboard-protocol support.
 
 ### Embedding Timeouts
 

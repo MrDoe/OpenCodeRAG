@@ -3,6 +3,8 @@
  */
 /** Shared CLI option interfaces used by all command modules. */
 
+import type { WizardFlags } from "./wizard/flow.js";
+
 /** Standard CLI options shared by most commands (index, query, clear, etc.). */
 export interface CliOptions {
   /** Optional path to an `opencode-rag.json` config file. */
@@ -29,26 +31,24 @@ export interface CliOptions {
   systemPrompt?: string;
 }
 
-/** Options for the `init` command. */
-export interface InitOptions {
-  /** Overwrite existing files during initialization. */
+/** Options for the `setup` command. */
+export interface SetupOptions extends WizardFlags {
+  /** Remove the runtime and clean up. */
+  uninstall?: boolean;
+  /** Force re-setup even if up-to-date. */
   force?: boolean;
-  /** Skip installing workspace-local plugin dependencies. */
+  /** Only inspect the runtime. */
+  check?: boolean;
+  /** Re-open the configuration wizard even when a config already exists. */
+  reconfigure?: boolean;
+  /** Non-interactive: never prompt and keep the existing configuration. */
+  yes?: boolean;
+  /** Skip linking workspace-local plugin dependencies. */
   skipInstall?: boolean;
-  /** Skip provider connectivity and model availability check. */
+  /** Skip provider connectivity and model availability checks. */
   skipHealthCheck?: boolean;
-  /** Vector-store backend to write into the config (`lancedb` or `clickhouse`). */
-  vectorStore?: string;
-  /** ClickHouse endpoint for `--vector-store clickhouse`. */
-  clickhouseUrl?: string;
-  /** ClickHouse database for `--vector-store clickhouse`. */
-  clickhouseDatabase?: string;
-  /** ClickHouse user for `--vector-store clickhouse`. */
-  clickhouseUser?: string;
-  /** ClickHouse password env var name for `--vector-store clickhouse`. */
-  clickhousePasswordEnv?: string;
-  /** ClickHouse project namespace (table suffix) for `--vector-store clickhouse`. */
-  clickhouseNamespace?: string;
+  /** Skip the machine-level runtime install (workspace setup only). */
+  skipRuntime?: boolean;
 }
 
 /** Shape of the `package.json` metadata required by CLI helpers. */

@@ -232,6 +232,16 @@ function formatKeybinding(key: string): string {
  */
 const DEFAULT_SETTINGS_KEYBINDING = "alt+s";
 
+/**
+ * Prompt slash name for the settings dialog (no leading slash — the host adds
+ * it). A slash path matters because key delivery is terminal-dependent: VTE
+ * collapses `ctrl+shift+<letter>` to the plain control byte and VS Code's
+ * xterm sends nothing until the Kitty keyboard protocol is negotiated, while
+ * text input works everywhere. `tui.settingsKeybinding` stays the shortcut;
+ * this is the fallback that is also discoverable from `/` completion.
+ */
+const SETTINGS_SLASH_NAME = "rag-settings";
+
 /** A valid child node for the TUI element tree. */
 type Child = JSX.Element | string | number | null | undefined | false;
 
@@ -335,7 +345,7 @@ function renderSidebar(
       text({ fg: theme.textMuted }, [timeLine]),
       text({ fg: watcher.running ? theme.accent : watcherStale ? theme.text : theme.textMuted }, [watcherLine]),
       ...(watcherDetail ? [text({ fg: theme.textMuted }, [watcherDetail])] : []),
-      text({ fg: theme.textMuted }, [`${formatKeybinding(settingsKey)} → Settings`]),
+      text({ fg: theme.textMuted }, [`${formatKeybinding(settingsKey)} / /${SETTINGS_SLASH_NAME} → Settings`]),
       text({ fg: theme.textMuted }, [`${formatKeybinding(fileListKey)} → Add File List`]),
       text({ fg: theme.textMuted }, [`${formatKeybinding(chunksKey)} → Add Chunks`]),
       ...(tokenStats && tokenStats.queries > 0 ? [
@@ -904,6 +914,17 @@ type V2TuiContext = {
         id: string;
         title?: string;
         bind?: string;
+        /**
+         * Adds the command to prompt slash completion (`KeymapCommand.slash`
+         * in `@opencode/plugin/tui`). The name has no leading slash; a command
+         * needs a stable `id` to be slash-addressable.
+         */
+        slash?: {
+          name: string;
+          aliases?: string[];
+          /** Keeps the slash command in the prompt and passes its raw input to run. */
+          arguments?: true;
+        };
         run: (input?: string) => void;
       }[];
       bindings: readonly string[];
@@ -1225,6 +1246,8 @@ async function setup(context: V2TuiContext): Promise<(() => void) | undefined> {
           id: "opencode-rag:settings",
           title: "OpenCodeRAG Settings",
           bind: v2Bind(settingsKey),
+          // Also in prompt slash completion: `/rag-settings` (alias `/rag`).
+          slash: { name: SETTINGS_SLASH_NAME, aliases: ["rag"] },
           run: () => {
             if (worktree) {
               void openSettingsDialogV2(context, worktree, v2LegacyProviders(context), () => refreshStatus());

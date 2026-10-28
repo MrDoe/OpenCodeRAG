@@ -6,4 +6,4 @@
 /** Main CLI runner and auto-launch detection. */
 export { runCli, shouldAutoRunCli } from "./cli/index.js";
 /** Cleanup helper that removes stale global plugin registration symlinks. */
-export { removeStaleGlobalPluginRegistrations } from "./cli/commands/init-helpers.js";
+export { removeStaleGlobalPluginRegistrations } from "./cli/commands/workspace-helpers.js";

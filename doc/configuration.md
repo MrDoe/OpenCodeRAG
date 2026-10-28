@@ -1,6 +1,6 @@
 # Configuration
 
-Configuration is defined in `opencode-rag.json` inside the workspace's `.opencode/` directory (created by `opencode-rag init`, or automatically by `opencode-rag setup`). You only need to define values you want to override — missing sections inherit from `DEFAULT_CONFIG`.
+Configuration is defined in `opencode-rag.json` inside the workspace's `.opencode/` directory (created by `opencode-rag setup`). You only need to define values you want to override — missing sections inherit from `DEFAULT_CONFIG`.
 
 ## Configuration Layering
 
@@ -13,7 +13,7 @@ Configuration is defined in `opencode-rag.json` inside the workspace's `.opencod
 
 **Where an option belongs**
 
-- **Workspace config — `.opencode/opencode-rag.json`**: everything that describes the *repository* — indexing scope, chunking, retrieval tuning, auto-index, memory, docs/wiki modes, keybindings. A legacy root-level `opencode-rag.json` (or `.opencode/rag.json`) is still read; `opencode-rag init` moves a root-level file into `.opencode/`. When both exist, `.opencode/opencode-rag.json` wins.
+- **Workspace config — `.opencode/opencode-rag.json`**: everything that describes the *repository* — indexing scope, chunking, retrieval tuning, auto-index, memory, docs/wiki modes, keybindings. A legacy root-level `opencode-rag.json` (or `.opencode/rag.json`) is still read; `opencode-rag setup` moves a root-level file into `.opencode/`. When both exist, `.opencode/opencode-rag.json` wins.
 - **Global config — `~/.config/opencode/opencode-rag.json`**: machine-wide defaults *and* **provider options** — the `provider`/`model`/`baseUrl`/`apiKey`/`vectorDimension` of the `embedding`, `description`, `imageDescription`, `decision` and `reranking` sections. These describe which models *this machine* serves, so the TUI settings dialog always saves them here (and only here): they never land in a committed repo file, and the API key sits outside any repository. The plugin re-reads this layer by file mtime — changes apply without a restart.
 - **Runtime overrides — `.opencode/rag_db/runtime-overrides.json`**: live TUI toggles for project-scoped options (retrieval, auto-index, chunking, …), reloaded on a 5-second TTL. Provider options are removed from this file when saved, so a stale override can never shadow the global config.
 
@@ -267,12 +267,12 @@ When enabled, the embedded text is `filePath + "\n\n" + description + "\n\n" + c
 
 ### `imageDescription`
 
-Controls image-to-text description generation via vision-capable LLMs. Disabled by default; enable to make image files searchable.
+Controls image-to-text description generation via vision-capable LLMs. Enabled by default; disable it to skip image files. The `setup` wizard writes `enabled: false` when you decline the vision model (the built-in default is `true`).
 
 ```json
 {
   "imageDescription": {
-    "enabled": false,
+    "enabled": true,
     "provider": "ollama",
     "baseUrl": "http://127.0.0.1:11434/api",
     "apiKey": null,
@@ -293,7 +293,7 @@ Controls image-to-text description generation via vision-capable LLMs. Disabled 
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `enabled` | `false` | Enable image description indexing |
+| `enabled` | `true` | Enable image description indexing. Defaults to `true`; `setup` writes `false` when the vision model is skipped |
 | `provider` | `"ollama"` | Vision provider: `"ollama"`, `"openai"`, `"anthropic"`, `"gemini"`, `"opencode"`, `"opencode-go"` |
 | `baseUrl` | `http://127.0.0.1:11434/api` | Provider API endpoint |
 | `apiKey` | `null` | API key; auto-resolved from env vars, OpenCode provider config, or the OpenCode auth store (`~/.local/share/opencode/auth.json`) |
@@ -324,7 +324,7 @@ Controls image-to-text description generation via vision-capable LLMs. Disabled 
 }
 ```
 
-Every field of the base section except `enabled` can be overridden (`provider`, `model`, `baseUrl`, `apiKey`, `timeoutMs`, `prompt`, `think`, `numCtx`, `keepAlive`, `proxy`, `resizeMaxDimension`); omitted fields fall back to the indexing values. `imageDescription.enabled` stays the master switch — on-demand descriptions require it to be `true`. `apiKey` is auto-resolved for the on-demand provider the same way as for the indexing section. `onDemand` does **not** affect the index, so no re-index is needed when changing it. `opencode-rag init` health checks report the alternate model as `image description (on-demand)`.
+Every field of the base section except `enabled` can be overridden (`provider`, `model`, `baseUrl`, `apiKey`, `timeoutMs`, `prompt`, `think`, `numCtx`, `keepAlive`, `proxy`, `resizeMaxDimension`); omitted fields fall back to the indexing values. `imageDescription.enabled` stays the master switch — on-demand descriptions require it to be `true`. `apiKey` is auto-resolved for the on-demand provider the same way as for the indexing section. `onDemand` does **not** affect the index, so no re-index is needed when changing it. `opencode-rag setup` health checks report the alternate model as `image description (on-demand)`.
 
 **OpenCode Zen providers (`opencode`, `opencode-go`):** target the Zen chat-completions endpoints (`https://opencode.ai/zen/v1` and `https://opencode.ai/zen/go/v1`) and reuse the API key OpenCode stored via `/connect` (`$XDG_DATA_HOME/opencode/auth.json`, default `~/.local/share/opencode/auth.json`). Both send a stable per-process `x-opencode-session` header and an `opencode-rag/<version>` user agent, as required for Go routing (https://opencode.ai/docs/go/). A `baseUrl` inherited from the indexing section is replaced by the Zen default unless it already points at an `opencode.ai` host. Example on-demand override using the Go subscription:
 
@@ -652,6 +652,8 @@ All keybindings read the current prompt text combined with the previous assistan
 
 The settings dialog binds **exactly one chord** — there is no fallback binding. If you configure a `ctrl+shift+<letter>` chord yourself, it will not fire on terminals without Kitty keyboard support; pick a legacy-safe chord instead (`alt+<letter>`, or `ctrl+alt+<letter>` — note `ctrl+alt` *is* AltGr on Windows, so some layouts/IMs swallow it). Avoid `ctrl+alt+r` if you also use it for `session_rename` in OpenCode's TUI config (`tui.json`).
 
+**Slash-command alternative:** the dialog is also registered in prompt slash completion as **`/rag-settings`** (alias `/rag`). This path goes through ordinary text input, so it works on every terminal irrespective of keyboard-protocol support — use it when a configured chord is swallowed. The command is registered by the TUI plugin role; if OpenCode loads OpenCodeRAG only as a server plugin (a flat `.opencode/plugins/rag-tui.js`), neither the slash command nor the sidebar exists (see [plugin layout](plugin.md#tui-settings-menu)).
+
 ### `autoUpdate`
 
 Controls automatic update checking for OpenCodeRAG. When enabled, the plugin
@@ -726,7 +728,7 @@ Overrides which parser handles each file extension (`parsers`) and which AST nod
 
 See [chunking.md](chunking.md) for the full strategy and per-language node type details.
 
-These settings are also editable via the **OpenCodeRAG TUI** (`Ctrl+Shift+R` → Chunking). The `nodeTypes` and `parsers` fields use a JSON editor — changes apply live (no OpenCode restart) but require re-indexing (`opencode-rag index --force`). The dashboard API accepts the same section via `PUT /api/config`.
+These settings are also editable via the **OpenCodeRAG TUI** (`Alt+S` — or `/rag-settings` — → Chunking). The `nodeTypes` and `parsers` fields use a JSON editor — changes apply live (no OpenCode restart) but require re-indexing (`opencode-rag index --force`). The dashboard API accepts the same section via `PUT /api/config`.
 
 ### Custom Chunkers
 
@@ -750,7 +752,7 @@ The CLI and plugin resolve configuration as three layers (later layers win):
 
 Layers are deep-merged section by section, so the global file can carry machine-wide defaults (for example `shellGuard.enabled` or a decision model) that every workspace inherits; a workspace value always overrides the global one. A workspace still works with only the global file present. `--config <path>` makes that file authoritative and bypasses both layers.
 
-Writers (TUI settings dialog, `init`, `clickhouse setup`, `PUT /api/config`) create and update the **canonical** `.opencode/opencode-rag.json` — never the repository root. `opencode-rag init` moves a legacy root-level `opencode-rag.json` into `.opencode/`. **Exception — provider options:** the TUI always saves the `provider`/`model`/`baseUrl`/`apiKey`/`vectorDimension` of the `embedding`, `description`, `imageDescription`, `decision` and `reranking` sections to the *global* file only, because those describe the machine, not the repository (and the global file is never committed).
+Writers (TUI settings dialog, `setup`, `clickhouse setup`, `PUT /api/config`) create and update the **canonical** `.opencode/opencode-rag.json` — never the repository root. `opencode-rag setup` moves a legacy root-level `opencode-rag.json` into `.opencode/`. **Exception — provider options:** the TUI always saves the `provider`/`model`/`baseUrl`/`apiKey`/`vectorDimension` of the `embedding`, `description`, `imageDescription`, `decision` and `reranking` sections to the *global* file only, because those describe the machine, not the repository (and the global file is never committed).
 
 > The global file is new in this release. Existing setups are unaffected until the file exists.
 
