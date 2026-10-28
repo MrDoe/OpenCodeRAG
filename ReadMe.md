@@ -1,62 +1,90 @@
 # OpenCodeRAG
 
-**Semantic code search for AI coding agents — local-first, token-efficient, and fast.**
-
-OpenCodeRAG indexes your repository as AST-aware chunks with embeddings, then answers natural-language queries with the most relevant code, so an agent no longer has to read whole files to find one function. It installs as an [OpenCode](https://opencode.ai) plugin and also runs as an MCP server or a standalone CLI for other AI harnesses. Everything works locally with [Ollama](https://ollama.ai) by default, and small embedding models run fine on a modern CPU — no dedicated GPU required.
+**A local-first toolkit that gives AI coding agents search, memory, judgment, and guardrails.**
 
 [![npm version](https://img.shields.io/npm/v/opencode-rag-plugin.svg)](https://www.npmjs.com/package/opencode-rag-plugin)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **Package name:** install `opencode-rag-plugin`. The npm package `opencode-rag` is an unrelated, discontinued project by a different author.
+AI coding agents are capable, but they have four recurring weaknesses: they read whole files to find one function, they forget everything between sessions, they interrupt you with questions they could settle themselves, and they may run insecure shell commands without a second opinion.
 
-> **Shell Guard (optional):** every `shell`/`bash` command is classified by the local decision model *before it runs*. Flagged commands ask for confirmation with the full verdict (destructive/malicious probabilities plus a risk category); clean commands run unchanged. See [Shell Guard](#shell-guard-optional).
+OpenCodeRAG addresses all four in one package. This project started as semantic code search — meaning-based search over your repository — and that is still its foundation. 
+
+
+- **search** (the retrieval tools)
+- **memory** (quirk memory)
+- **judgment** (the decision model)
+- **guardrails** (Shell Guard).
+
+ such as a **persistent memory**, **image descriptions** by a local model, integrating a **decision model** for a **pre-execution shell safety check**, and agent-maintained **knowledge documentation**.
+
+OpenCodeRAG is primarily intended to run as an [OpenCode](https://opencode.ai) plugin, but it can also be used as a MCP server for other AI platforms, or as a shell-based standalone CLI tool.   
+  
+OpenCodeRAG is works fully locally by default via Ollama or OpenAI-compatible APIs.
+
+No GPU is required to run this tool (although it is recommended). Smaller embedding models run fine on modern CPUs.
+
+
+---
 
 ## Contents
 
-- [Why OpenCodeRAG](#why-opencoderag)
-- [Quick Start](#quick-start)
-- [How It Works](#how-it-works)
-- [Features](#features)
-- [Using OpenCodeRAG](#using-opencoderag)
-  - [MCP Tools](#mcp-tools)
-  - [Plugin-Only Tools](#plugin-only-tools)
-  - [With OpenCode](#with-opencode)
-  - [With Other MCP Clients](#with-other-mcp-clients)
-  - [From the CLI](#from-the-cli)
-- [Quirk Memory](#quirk-memory)
-- [Decision Model](#decision-model-make_decision)
-- [Shell Guard (Optional)](#shell-guard-optional)
-- [Documentation and Wiki Modes](#documentation-and-wiki-modes)
-- [Image Indexing](#image-indexing)
-- [Web UI](#web-ui)
-- [Evaluation and Calibration](#evaluation-and-calibration)
+- [What you get](#what-you-get)
+- [Quick start](#quick-start)
+- [Key terms](#key-terms)
+- [How it works](#how-it-works)
+- [Ways to use it](#ways-to-use-it)
+- [Capabilities in detail](#capabilities-in-detail)
+  - [1. Semantic code search](#1-semantic-code-search)
+  - [2. Quirk memory](#2-quirk-memory)
+  - [3. Decision model](#3-decision-model)
+  - [4. Shell Guard](#4-shell-guard)
+  - [5. Documentation and wiki modes](#5-documentation-and-wiki-modes)
+  - [6. Image indexing](#6-image-indexing)
+  - [7. Web UI, evaluation, and calibration](#7-web-ui-evaluation-and-calibration)
+- [Tool reference](#tool-reference)
 - [Configuration](#configuration)
-- [Documentation Index](#documentation-index)
-- [Privacy and Security](#privacy-and-security)
-- [Limitations and Non-Goals](#limitations-and-non-goals)
-- [Contributing and Support](#contributing-and-support)
+- [Privacy and security](#privacy-and-security)
+- [Limitations](#limitations)
+- [Documentation index](#documentation-index)
+- [Contributing and support](#contributing-and-support)
 - [License](#license)
 
-## Why OpenCodeRAG
+---
 
-- **Fewer tokens.** Retrieval returns the handful of relevant chunks instead of whole files, so the agent spends its context on the code that actually matters.
-- **Search the way code is written.** AST-aware chunking keeps functions and classes intact, and hybrid vector + keyword search catches both meaning ("where is auth handled?") and exact symbol names.
-- **Local by default.** Embeddings, the vector store, and the optional decision model run on your machine. No source code leaves the workspace unless you explicitly configure a hosted provider.
-- **Scales with the repository.** Incremental indexing, a background watcher, and an optional shared ClickHouse store keep large or multi-machine workspaces searchable.
+## What you get
 
-## Quick Start
+| Capability | What it does for your agent | On by default |
+|---|---|:---:|
+| **Search** | Finds relevant code by meaning and by exact name, so the agent reads a few chunks instead of whole files | Yes |
+| **Memory** | Remembers gotchas, decisions, and past tool failures across sessions | Yes |
+| **Decisions** | Answers small classification, routing, and scoring questions locally, without spending agent tokens | No |
+| **Protection** | Checks every shell command for destructive or malicious intent before it runs | No |
+| **Documentation** | Drives the agent to document undocumented code (`/doc`) and to maintain a project wiki (`/wiki`) | Wiki: yes, Doc: no |
+| **Vision** | Makes screenshots and diagrams searchable by generating descriptions | Yes |
+| **Measurement** | Reports token use, retrieval quality, and decision accuracy through CLI commands and a web dashboard | CLI + dashboard |
 
-**Prerequisites:** Node.js v22+ and [Ollama](https://ollama.ai) (default provider). [OpenCode](https://opencode.ai) is optional — the CLI and MCP server work without it.
+**Why it is built this way**
+
+- **Fewer tokens.** The agent gets the handful of relevant chunks, not entire files. A token is the unit AI models read and bill in, so this is the main cost saving.
+- **Search the way code is written.** Syntax-aware chunking keeps functions and classes intact, so a result is a complete unit rather than a random slice of lines. Hybrid search catches both meaning ("where is auth handled?") and exact names.
+- **Local by default.** Embeddings, the vector store, and the optional decision model run on your machine. No source code leaves the workspace unless you configure a hosted provider.
+- **Scales with the repository.** Incremental indexing means only changed files are reprocessed. An optional background watcher can keep the index current while you work.
+
+---
+
+## Quick start
+
+**Prerequisites:** Node.js v22+ and [Ollama](https://ollama.ai) (the default provider). Ollama is a free app that runs AI models on your own computer. OpenCode is optional; the command-line tool and the MCP server work without it.
 
 ```bash
-# 1. Install the CLI, the runtime and the OpenCode plugin (once per machine)
+# 1. Install the plugin and the command-line tool (once per machine)
 npm install -g opencode-rag-plugin
 
-# 2. Set up the workspace and your models
-#    (one recommended question; missing Ollama models are pulled for you)
+# 2. Set up this repository and choose your models
 cd /path/to/your/project
 opencode-rag setup
 
-# 3. Build the index (setup offers this at the end)
+# 3. Build the searchable index
 opencode-rag index
 
 # 4. Search from the terminal
@@ -77,120 +105,105 @@ Searching 1240 indexed chunks...
   ...
 ```
 
-That is the whole setup. Open OpenCode in the same directory and the agent can use the retrieval tools right away.
+Open OpenCode in the same directory and the agent can use the tools right away.
 
-`opencode-rag setup` does the whole onboarding in one command: it installs or verifies the machine-level runtime in `~/.opencode/`, scaffolds the current workspace, and — on the first run, or whenever you pass `--reconfigure` — asks **one** recommended-setup question (Ollama CPU/GPU preset with embedding, description and vision models). Missing models are pulled automatically. Answer “no” to pick every model yourself, or script it with `--yes`, `--provider`, `--base-url`, `--embedding-model`, `--description off`, ….
+<details>
+<summary><strong>What does <code>opencode-rag setup</code> do?</strong></summary>
 
-The OpenCode plugin is installed **once globally** (`~/.config/opencode/plugins/opencode-rag/`); a prepared workspace only contains its config, skills, `AGENTS.md` and the `.gitignore` that protects its local LanceDB store. The plugin also auto-scaffolds a fresh repository on first load (`setup.autoScaffold`, default on). If you prefer the old per-repository plugin layout, pass `--workspace-plugin`. `--skip-runtime` limits a run to the workspace, and `--skip-health-check` skips model probing. Use `opencode-rag update` to upgrade the runtime to a newer release.
+`setup` is the only onboarding command, and it works on two levels:
 
-**Other package managers:** `pnpm add -g opencode-rag-plugin`, `yarn global add opencode-rag-plugin`, and `bun add -g opencode-rag-plugin` work as drop-in replacements. Setup and update detect the package manager that owns the install, so npm does not need to be on `PATH`.
+- **Once per machine:** it installs the shared runtime in `~/.opencode/` and the OpenCode plugin in `~/.config/opencode/plugins/opencode-rag/`. Other repositories reuse that install; `opencode-rag update` upgrades it.
+- **Once per repository:** it writes `.opencode/opencode-rag.json`, the two skill files (`.opencode/skills/opencode-rag/` and `.opencode/skills/make-decision/`), the `AGENTS.md` directive, and `.opencode/.gitignore` (which keeps the vector store out of git). The store itself lives at `.opencode/rag_db/`, so two repositories never share embeddings.
+
+On a first run it asks **one** question — accept the recommended setup for the detected backend (usually an Ollama CPU or GPU preset with embedding, description, and vision models) — and pulls any missing models. Answer "no", or re-run with `--reconfigure`, to choose every model yourself; `--yes` never prompts and keeps the existing configuration. `--workspace-plugin` restores the per-repository plugin layout instead of the global one, and `--skip-runtime` limits a run to the workspace. Use `opencode-rag update` to upgrade the runtime to a newer release.
+
+</details>
+
+**The first index is the expensive step.** By default every chunk gets a one-sentence description from a local 3B model (`description.enabled`), and every image gets a vision-model description (`imageDescription.enabled`). On a CPU-only machine, `setup --description off --vision off` makes the first pass much faster. After that, indexing is incremental — a file-hash record means only changed files are reprocessed — but it is **manual by default**. Re-run `opencode-rag index` after changes, or opt into the watcher with `opencode-rag index --watch` (or `openCode.autoIndex.enabled`). `opencode-rag index --force` rebuilds from scratch.
 
 ### Optional add-ons
 
-These switchers are off by default and can be turned on later:
+These are off by default and can be enabled later:
 
-| Add-on | Default | Enable with | Requires |
-|---|---|---|---|
-| [Shell Guard](#shell-guard-optional) | off | `shellGuard.enabled` (or `setup --shell-guard on`) | tev1 via Ollama ≥ 0.35 |
-| [Decision model](#decision-model-make_decision) | off | `decision.enabled` (or `setup --decision on`) | tev1 via Ollama ≥ 0.35 |
-| [Documentation mode](#documentation-mode-doc) | off | `documentationMode.enabled` | nothing extra |
-| [Shared ClickHouse store](doc/clickhouse.md) | off | `vectorStore.provider: "clickhouse"` (or `setup --vector-store clickhouse`) | a ClickHouse server |
+| Add-on | Enable with | Requires |
+|---|---|---|
+| [Shell Guard](#4-shell-guard) | `shellGuard.enabled` or `setup --shell-guard on` | tev1 via Ollama ≥ 0.35 |
+| [Decision model](#3-decision-model) | `decision.enabled` or `setup --decision on` | tev1 via Ollama ≥ 0.35 |
+| [Documentation mode](#documentation-mode-doc) | `documentationMode.enabled` | nothing extra |
+| [Shared ClickHouse store](doc/clickhouse.md) | `vectorStore.provider: "clickhouse"` or `setup --vector-store clickhouse` | a ClickHouse server |
 
-Two more are on by default and worth switching off if they do not fit your setup: [image descriptions](#image-indexing) (`imageDescription.enabled`, needs a vision model) and [wiki mode](#wiki-mode-wiki) (`wikiMode.enabled`, no extra setup).
+Two features are **on** by default and worth disabling if they do not fit your setup: [image descriptions](#6-image-indexing) (`imageDescription.enabled`, needs a vision model) and [wiki mode](#wiki-mode-wiki) (`wikiMode.enabled`).
 
-> **Contributors / developers:** clone the repo and run `npm install --legacy-peer-deps; npm run build` — see the [development docs](doc/development.md).
+> **Contributors:** clone the repository and run `npm install` (no special flags) followed by `npm run build`. See the [development docs](doc/development.md).
 
-## How It Works
+---
+
+## Key terms
+
+A few words recur throughout this README. None of them require a background in AI.
+
+- **Agent** — the AI assistant that reads your request and uses tools. OpenCode is one such agent; Claude Desktop and Cursor are others.
+- **Token** — the unit AI models read and bill in. Roughly ¾ of an English word; code uses more tokens per line than prose.
+- **Index** — a searchable copy of your repository. Building it is a one-time or occasional step; searching it is fast.
+- **Embedding** — a numeric fingerprint of a piece of text. Texts with similar meaning get similar fingerprints, which is what makes meaning-based search possible.
+- **Vector store** — the database that holds embeddings and finds near neighbours quickly. LanceDB is the default; ClickHouse is an optional shared alternative.
+- **Chunk** — one complete unit of code or documentation: a function, method, class, interface, or section.
+- **Quirk** — one short fact worth remembering across sessions: a gotcha, preference, decision, or environment constraint.
+- **MCP** — Model Context Protocol, a standard plug that lets AI tools call external services. OpenCodeRAG can serve its tools over MCP to clients other than OpenCode.
+
+---
+
+## How it works
 
 ```text
 Workspace files
-   │  tree-sitter chunking (AST-aware)
+   │  syntax-aware chunking
    ▼
 Chunks ─────► embeddings ─────► vector store (LanceDB by default)
    │
-   └─────────► keyword index (TF×IDF)
+   └─────────► keyword index (word frequencies)
 
-Query ─► vector search + keyword search ─► weighted fusion ─► top-K chunks
+Query ─► meaning search + keyword search ─► weighted rank fusion ─► top chunks
 ```
 
-1. **Index** — files are split into semantic chunks, optionally described by a local LLM, embedded, and stored alongside a TF×IDF keyword index. A file-hash manifest means only changed files are reprocessed, and a background watcher keeps the index current while you work.
-2. **Retrieve** — the query is embedded and matched against both signals. The scores are fused and post-processed (dedup, per-file chunk limits, adjacent-chunk merging) to fit the context window.
-3. **Use** — the agent calls `search_semantic`, `get_file_skeleton`, or `find_usages` instead of reading entire files.
+1. **Index.** Files are split into semantic chunks, described by a local model by default, embedded, and stored next to a keyword index. A file-hash record means only changed files are reprocessed.
+2. **Retrieve.** The query is embedded and matched against both signals. The two ranked lists are fused and post-processed (deduplication, per-file limits, adjacent-chunk merging) to fit the context window.
+3. **Use.** The agent calls `search_semantic`, `get_file_skeleton`, or `find_usages` instead of reading entire files.
 
-## Features
+A few details make the difference:
 
-**Retrieval**
+- **A chunk is a complete unit.** It is a function, method, class, interface, or documentation section — not a fixed window of lines. That is why a result can be quoted directly into the conversation without splicing in unrelated code, and why `get_file_skeleton` shows the same boundaries.
+- **The two searches answer different questions.** The meaning search handles paraphrase ("where is authentication handled?"). The keyword search rescues exact identifiers that embeddings blur, such as `resolveWorkspacePath`.
+- **The rankings are combined with weights.** Each result earns points for ranking high in the meaning list and points for ranking high in the word list. `keywordWeight` decides how much the word list counts. A result near the top of both lists wins; a result found by only one list can still qualify, but its maximum score is lower.
+- **Indexing is incremental, but not automatic.** A file-hash record keeps a rebuild cheap. The background watcher is opt-in; otherwise the index is a snapshot until you run `opencode-rag index` again.
 
-- AST chunking for 26 languages via tree-sitter, plus documents (Markdown, LaTeX, PDF, DOCX, Excel) and images.
-- Hybrid search combining vector similarity with TF×IDF keyword matching; the keyword index is repaired from the store whenever it drifts behind it, so the BM25 half never covers only part of the corpus.
-- Retrieval calibration with `opencode-rag eval:tune` against a labelled golden set.
-- Context optimization: dedup, per-file chunk limits, adjacent-chunk merging.
-- Configurable parsers — remap file extensions to any parser via `chunking.parsers` (e.g. `.c` → `cpp`); the override applies to chunking, `get_file_skeleton`, and read labels ([docs](doc/chunking.md#parser-overrides-per-extension-chunkingparsers)).
+The other capabilities build on the same foundation. Quirk memories, for example, are embedded and stored in the same vector store as your code.
 
-**Agent integration**
+---
 
-- OpenCode plugin with three discovery paths: skill files, system-prompt guidance, and on-demand RAG context on `Ctrl+Enter` / `Ctrl+Alt+Enter`.
-- MCP server for Claude Desktop, Cursor, and any other MCP-compatible client.
-- Read-tool override that adds supplementary RAG chunks to normal file reads.
-- TUI settings panel for models, retrieval options, and keybindings.
-- `AGENTS.md` directive: workspace setup merges a tool-usage directive into `AGENTS.md` via sentinel markers.
+## Ways to use it
 
-**Memory and decisions**
-
-- [Quirk memory](#quirk-memory): persistent, cross-session gotchas and decisions with automatic injection into the agent's context.
-- [Decision model](#decision-model-make_decision): local classification, routing, and scoring of short text — no agent tokens spent.
-- Failed tool calls are recorded as quirks, so a later session starts with the fix already known.
-
-**Operations**
-
-- Incremental indexing with a file-hash manifest, background watcher, and automatic rebuild on corruption.
-- Optional ClickHouse backend for one shared index across many machines and workspaces, with HNSW ANN, epoch rebuilds, and state sync ([docs](doc/clickhouse.md)).
-- Session-level token and cost analysis: RAG-on vs RAG-off comparison with tiktoken BPE counting.
-- Alternate providers: embedding via Ollama, OpenAI-compatible endpoints, or Cohere; description and vision via Anthropic, Google Gemini, or OpenAI-compatible endpoints, with API-key auto-resolution.
-- Proxy-aware HTTP with a raw-socket localhost bypass.
-
-## Using OpenCodeRAG
-
-### MCP Tools
-
-These five tools are the whole retrieval surface. Inside OpenCode the plugin registers them in-process; over MCP they are served by `opencode-rag mcp`.
-
-| Tool | What it does | When the agent uses it |
+| Mode | Best for | How to start |
 |---|---|---|
-| `search_semantic` | Hybrid vector + keyword search over the indexed code | Before a code task, instead of reading whole files |
-| `get_file_skeleton` | AST outline of a file (functions, classes, methods) | To orient in a large file before reading it |
-| `find_usages` | Every reference to a symbol | Before editing a function, class, or variable |
-| `describe_image` | Describes an image with the configured vision model | When the task involves a screenshot, diagram, or other asset |
-| `make_decision` | Classifies, routes, or scores short text (needs `decision.enabled`) | When the answer reduces to a choice, a yes/no check, or a rubric score |
-
-### Plugin-Only Tools
-
-The quirk tools are registered by the OpenCode plugin (not served over MCP):
-
-| Tool | What it does |
-|---|---|
-| `recall_quirks` | Recalls stored gotchas, preferences, and decisions from past sessions |
-| `add_quirk` | Stores a new non-obvious fact, workaround, or convention |
-| `update_quirk` | Corrects a stored quirk that is outdated or wrong |
-| `delete_quirk` | Removes a quirk that is fixed, obsolete, or no longer applies |
+| **OpenCode plugin** | Day-to-day agent work with the full feature set (hotkeys, memory, Shell Guard, `/doc`, `/wiki`) | `opencode-rag setup`, then open OpenCode |
+| **MCP server** | Claude Desktop, Cursor, and any other MCP-compatible client | `opencode-rag mcp` (your client launches it) |
+| **CLI** | Scripts, CI, and manual exploration | `opencode-rag <command>` |
 
 ### With OpenCode
 
-**Discovery.** Workspace setup creates `.opencode/skills/opencode-rag/SKILL.md` (tool workflow) and `.opencode/skills/make-decision/SKILL.md` (decision-model guidance). Agents load them on demand, so idle sessions pay almost no token cost. When the index contains chunks, a brief tool list is also prepended to the system prompt so agents know the tools exist — skipped when nothing is indexed, to save tokens.
+- **Discovery.** Workspace setup creates `.opencode/skills/opencode-rag/SKILL.md` (tool workflow) and `.opencode/skills/make-decision/SKILL.md` (decision-model guidance). Agents load them on demand, so idle sessions pay almost no token cost. When the index contains chunks, a brief tool list is also added to the system prompt; it is skipped when nothing is indexed.
+- **Hotkeys.** While typing a prompt, `Ctrl+Enter` appends a list of relevant files, and `Ctrl+Alt+Enter` appends the actual code chunks. The search uses the text you have typed; if the prompt is empty, a toast reminds you to type first. Results land directly in the prompt as code blocks with file paths, line ranges, and relevance scores.
+- **Read override.** A normal `read` can return the file plus supplementary RAG chunks that are relevant to the surrounding work.
+- **Settings.** Models, retrieval options, and keybindings are configurable in the TUI settings panel (`Alt+S` or `/rag-settings`). If you rebind the settings key, prefer `alt+<letter>`: some terminals, including VS Code's integrated terminal, do not deliver `ctrl+shift+<letter>`.
+- **`AGENTS.md` directive.** Workspace setup merges a tool-usage directive into `AGENTS.md` using sentinel markers.
 
-**Hotkeys.** `Ctrl+Enter` appends a relevant file list to the prompt you are typing; `Ctrl+Alt+Enter` appends full code chunks. The query is taken from your typed text — if the prompt is empty, a toast reminds you to type first. Results land directly in the prompt as code blocks with file paths, line ranges, and relevance scores; no dialog is opened. Keybindings are configurable in the settings menu (Alt+S, or type `/rag-settings`).
-
-**Read override.** A normal `read` can return the file plus supplementary RAG chunks that are relevant to the surrounding work.
-
-### With Other MCP Clients
-
-<a id="mcp-server"></a>
+### With other MCP clients
 
 ```bash
 opencode-rag mcp
 ```
 
-The MCP server is optional and only needed when an *external* client connects. Inside OpenCode the tools are registered in-process and the hotkey hook runs in-process too. The plugin auto-starts the server only when `mcp.enabled` is `true` (default `false`); clients can also configure it manually, and workspace setup can register it for you.
+This starts an MCP server over standard input/output. Your client must launch it — a server cannot attach itself to a client. The OpenCode plugin does not start it, because inside OpenCode the same tools are registered directly; `mcp.enabled` only writes a hint to the log. Configure the command in your MCP client (Claude Desktop, Cursor, and others), and the client will expose the five tools listed below.
 
 ### From the CLI
 
@@ -202,194 +215,169 @@ opencode-rag status       # index health and coverage
 opencode-rag ui           # open the web dashboard
 ```
 
-Further commands: `list`, `show <file>`, `dump`, `clear`, `describe-image`, `decide`, `mcp`, `update`, `clickhouse`, `quirk`, and the `eval:*` family. Run `opencode-rag --help` or see the [CLI reference](doc/cli.md) for every command, flag, and example.
+Further commands: `list`, `show <file>`, `dump`, `clear`, `describe-image`, `decide`, `mcp`, `update`, `clickhouse`, `quirk`, and the `eval:*` family. Run `opencode-rag --help` or see the [CLI reference](doc/cli.md).
 
-## Quirk Memory
+---
 
-Quirk memory gives your agent a **persistent, cross-session memory** of non-obvious facts — gotchas, preferences, decisions, and environment constraints. Quirks are embedded and stored in the same vector store as your code, then injected into the agent's context whenever their relevance clears a configurable threshold. The agent stops repeating the same mistake and accumulates project knowledge over time.
+## Capabilities in detail
 
-**Enabled by default.** Configure it in `opencode-rag.json`:
+### 1. Semantic code search
 
-```json
-{
-  "memory": {
-    "enabled": true,
-    "autoInject": true,
-    "minConfidence": 0.5,
-    "recallMinScore": 0.72,
-    "autoInjectMinScore": 0.75,
-    "autoInjectTopK": 1,
-    "autoInjectLatencyBudgetMs": 2000,
-    "injectOnToolError": true,
-    "autoCreateOnToolError": true,
-    "toolErrorCreateMaxPerSession": 2,
-    "decay": { "enabled": false, "halfLifeDays": 30 }
-  }
-}
-```
+The core of the project. It answers natural-language queries with the most relevant code. "Semantic" means the query does not need to contain the same words as the code; the meaning search finds code that does the same thing, while the keyword half adds precision for exact names.
 
-**How injection works.** On every user message the plugin searches for quirks related to the combined agent response and user query, and injects only those whose raw vector similarity clears `autoInjectMinScore` (default 0.75). Manual `recall_quirks` calls use the slightly looser `recallMinScore` (default 0.72) — raise it to 0.85 to keep only strongly related quirks out of unrelated tasks. A latency budget (`autoInjectLatencyBudgetMs`, default 2000 ms) keeps a slow embedder from blocking message processing, and each quirk is injected **at most once per session**. Every `add_quirk` and every content-changing `update_quirk` passes an immutable trust monitor that rejects destructive patterns (`rm -rf`, `force push`, `bypass security`).
+- **Languages and formats.** Syntax-aware chunking for 26 languages via tree-sitter, a parser that understands code structure. It also handles documents (Markdown, LaTeX, PDF, DOCX, Excel) and images.
+- **Hybrid search.** Meaning-based vector search combined with a word-frequency keyword index. The keyword index is repaired from the store whenever it drifts behind, so it never covers only part of the corpus.
+- **Context optimization.** Deduplication, per-file chunk limits, and adjacent-chunk merging keep the result set small and coherent.
+- **Configurable parsers.** Remap file extensions to any parser (for example `.c` → `cpp`). The override applies to chunking, `get_file_skeleton`, and read labels ([docs](doc/chunking.md#parser-overrides-per-extension-chunkingparsers)).
+- **Alternate providers.** Embeddings via Ollama, OpenAI-compatible endpoints, or Cohere. Descriptions and vision via Ollama, Anthropic, Google Gemini, OpenAI-compatible endpoints, or OpenCode Zen.
+- **Scale.** Incremental indexing and automatic rebuild on corruption. The optional ClickHouse backend provides one shared index across machines and workspaces, with an approximate-nearest-neighbour index, epoch rebuilds, and state sync ([docs](doc/clickhouse.md)).
 
-**Failed tool calls become memory.** When a tool call fails, the plugin looks for a stored quirk that covers the failure and injects it into the next request (`memory.injectOnToolError`). If no quirk covers it, it writes one (`memory.autoCreateOnToolError`) from a deterministic template built from the tool name and the error text — no LLM involved. The new quirk is tagged `tool-error` and recorded for *future* sessions; it is deliberately excluded from the generic auto-injection, so a raw error dump never leaks into an unrelated turn. Creation is bounded by a per-session budget (2) and a per-error cooldown (10 minutes), and it is suppressed when a quirk for the same tool and cause class already exists.
+### 2. Quirk memory
 
-**Prevention, not just learning.** Known failure patterns are also injected into the **system prompt before the model picks a tool** (`memory.toolErrorProactiveInject`), scoped to the tools the session can actually call and to durable failure causes only — a rate limit is never warned about in advance, because the next call will not fail the same way. The first occurrence of a failure is unavoidable; every later session is warned up front.
+Quirk memory gives the agent a **persistent, cross-session memory** of non-obvious facts: gotchas, preferences, decisions, and environment constraints. The agent stops repeating the same mistake and accumulates project knowledge over time.
 
-**CLI — manage quirks directly:**
+A **quirk** is one short, self-contained fact that a future session cannot infer from the code. Example: "LanceDB's IVF index must use cosine; the default `l2` silently falls back to brute force." Quirks live in `.opencode/rag_db/quirks.jsonl` (the source of truth) and are mirrored into the same vector store as your code. Recall is therefore an ordinary similarity search, and a full rebuild does not forget them.
+
+**Where memories come from**
+
+Four things write memory:
+
+- **You.** The `add_quirk` tool or `opencode-rag quirk add`.
+- **A failed tool call.** A deterministic template built from the tool name and error text, with no LLM involved. These quirks are tagged `tool-error` and kept for *future* sessions.
+- **Passive capture.** A turn that contains an error signal is summarized by the description model. It does not run on every turn.
+- **Session-end extraction.** The full transcript is summarized by the description model when a session ends.
+
+The last two are enabled in the shipped configuration (`memory.passiveCapture`, `memory.sessionEndExtraction`) and require `description.enabled`; each pass adds at most 2 quirks and drops candidates that are 0.85 lexically similar to an existing quirk.
+
+**How memory reaches the agent**
+
+- **Auto-injection.** On each user message, matching quirks are added to the prompt only when their raw similarity is at least `autoInjectMinScore` (0.75) and they share at least 2 word tokens with the current message. Each quirk is injected at most once per session, and a 2-second latency budget skips injection rather than delaying the turn.
+- **After a failure.** If a tool call fails, the plugin looks for a matching quirk and injects it into the next request. If none exists, it creates one. Creation is limited to 2 per session, with a 10-minute cooldown per error, and is skipped when a quirk for the same tool and cause already exists.
+- **Before the model picks a tool.** Known, repeatable failure patterns are added to the system prompt in advance, scoped to the tools available in that session. Transient problems such as rate limits are never predicted, because the next call will not fail the same way.
+- **Manual recall.** `recall_quirks` uses the looser `recallMinScore` (0.72). Raise it to 0.85 to keep unrelated quirks out of unrelated tasks.
+
+**Safety.** Every `add_quirk` and every content-changing `update_quirk` passes an immutable trust monitor that rejects destructive patterns (`rm -rf`, `force push`, `bypass security`).
+
+**Manual control from the CLI**
 
 ```bash
 opencode-rag quirk add "npm needs --legacy-peer-deps" --type gotcha --tag installation
 opencode-rag quirk list
 opencode-rag quirk update <id> --content "..." --type decision
 opencode-rag quirk rm <id>
-opencode-rag quirk lint            # flag low-confidence / stale / duplicate quirks
+opencode-rag quirk lint            # flag low-confidence, stale, or duplicate quirks
 opencode-rag quirk test "npm needs --legacy-peer-deps"
-# ✓ Quirk has been appended:
-#   [gotcha] npm needs --legacy-peer-deps (installation)
-#   99% confidence
 ```
 
-See [Plugin documentation](doc/plugin.md#9-quirk-memory-experiential-memory) and [CLI reference: `quirk`](doc/cli.md#quirk).
+See the [plugin docs](doc/plugin.md#9-quirk-memory-experiential-memory) and the [CLI reference](doc/cli.md#quirk).
 
-## Decision Model (`make_decision`)
+### 3. Decision model
 
-OpenCodeRAG answers fast **classification, routing, policy, and scoring questions** with a local decision model — Together AI's [tev1](https://ollama.com/library/tev1) via Ollama's `/v1/systemone` endpoint. Unlike chat models, tev1 scores a short `state` against 1–64 named questions and returns the chosen option with probabilities — typically in **40–150 ms warm**, without spending agent tokens.
+A small local model answers fast **classification, routing, policy, and scoring questions**, so the agent does not spend its own tokens on them. OpenCodeRAG uses Together AI's [tev1](https://ollama.com/library/tev1) via Ollama's `/v1/systemone` endpoint.
+
+It is not a chat model. It does not write prose; it scores a short `state` against 1 to 64 named questions and returns the chosen option with probabilities, typically in **40 to 150 ms warm**.
 
 | Question type | Use it for | Example |
 |---|---|---|
-| `choice` | Pick one of 2–24 options | "Which support intent is this?" → duplicate_charge / cancel / none |
+| `choice` | Pick one of 2 to 24 options | "Which support intent is this?" → duplicate_charge / cancel / none |
 | `noul` | True/false probability | "Does the customer explicitly ask for a refund?" |
 | `score` | Place the input on a rubric | "How severe is this incident?" → cosmetic … critical |
 
-One call, two questions:
+For example, a support message can be classified as `duplicate_charge` with 0.97 confidence, and a second question can answer "Does the customer explicitly ask for a refund?" with p=0.96 — both in one call. The answer is a probability distribution over the options you named, not generated text.
 
-```json
-{
-  "state": "Customer: I was charged twice for the October subscription ($19.99 each). Please refund the extra charge.",
-  "questions": [
-    { "id": "intent", "type": "choice", "instructions": "Which support intent matches?",
-      "criteria": { "duplicate_charge": "Charged more than once", "cancel": "Wants to cancel", "none": "None of the above" } },
-    { "id": "refund", "type": "noul", "instructions": "Does the customer explicitly ask for a refund?" }
-  ]
-}
-```
-
-```text
-**Decision** — ollama/tev1:0.8b
-
-- **intent** = `duplicate_charge` (confidence 0.97)
-- **refund** = true (p=0.96)
-```
-
-**Prerequisites:** Ollama ≥ 0.35 and a pulled model:
+**Setup**
 
 ```bash
-ollama pull tev1:0.8b   # 812 MB, fast — good for quick labels and CI
-ollama pull tev1:4b     # 4.4 GB, more accurate — recommended when scoring
+ollama pull tev1:0.8b   # 812 MB, fast: good for quick labels and CI
+ollama pull tev1:4b     # 4.4 GB, more accurate: recommended for scoring
 ```
 
-**Disabled by default** — opt in via `decision.enabled`:
+Requires Ollama ≥ 0.35. **Disabled by default.** Opt in with `decision.enabled`; the shipped default model is `tev1:4b`, while `tev1:0.8b` is the faster choice. Every option is in the [configuration reference](doc/configuration.md#decision).
 
-```json
-{
-  "decision": {
-    "enabled": true,
-    "provider": "ollama",
-    "model": "tev1:0.8b",
-    "keepAlive": "30m",
-    "routeBeforeAsking": false
-  }
-}
-```
+**Using it well**
 
-**Using it well:** always include a `none` / "cannot be determined" option; keep `state` to the relevant excerpt (the effective context is ~2k tokens); treat `confidence < ~0.3` as undecided; do not use it for factual recall or as the only check for high-stakes decisions.
+- Always include a `none` or "cannot be determined" option.
+- Keep `state` to the relevant excerpt. The effective context is about 2k tokens, and the request is capped at 8,000 characters.
+- `confidence` is how concentrated the answer is, not the chance that it is correct. A 0.97 means the model barely hesitated; it does not mean the answer is right. Treat anything below about 0.3 as undecided.
+- Do not use it for factual recall, or as the only check for high-stakes decisions.
 
-**Pre-ask routing (optional):** with `decision.routeBeforeAsking: true`, the injected agent guidance tells the agent to resolve option choices through `make_decision` before asking you — proceeding on a confident answer and asking only when the model is undecided or the choice is preference-based. Off by default.
+**Endpoint note.** `decision.provider` is fixed to `ollama` because the request and response shape is Ollama's `/v1/systemone`. `baseUrl` can point at any server that speaks that protocol, including a llama-swap or llama.cpp proxy.
 
-`opencode-rag decide` exposes the same engine from the CLI, and workspace setup creates a dedicated `make-decision` agent skill. See [Plugin documentation](doc/plugin.md#make_decision) and [Configuration](doc/configuration.md#decision).
+**Pre-ask routing (optional).** With `decision.routeBeforeAsking: true`, the agent is told to resolve option choices through `make_decision` before asking you. It proceeds on a confident answer and asks only when the model is undecided or the choice is a matter of preference. Off by default.
 
-## Shell Guard (Optional)
+`opencode-rag decide` exposes the same engine from the CLI, and workspace setup creates a dedicated `make-decision` agent skill. See the [plugin docs](doc/plugin.md#make_decision) and the [configuration reference](doc/configuration.md#decision).
 
-The same local decision model can vet **every shell command before it runs**. With `shellGuard.enabled: true`, each `shell`/`bash` call is classified for destructive and malicious intent; a command whose `p(destructive)` or `p(malicious)` reaches the threshold is escalated to OpenCode's confirmation prompt with the full verdict — otherwise it executes unchanged.
+### 4. Shell Guard
 
-```json
-{
-  "shellGuard": {
-    "enabled": true,
-    "threshold": 0.5,
-    "timeoutMs": 10000,
-    "onError": "allow"
-  }
-}
-```
+The same decision model can vet **every shell command before it runs**. With `shellGuard.enabled: true`, each `shell` or `bash` call is classified for destructive and malicious intent. If the probability of either intent reaches the threshold, the command is escalated to OpenCode's confirmation prompt with the full verdict — the probabilities plus a risk category. Otherwise it runs unchanged.
 
-- **Off by default** — enabling adds one local model call to the critical path of every shell command.
-- **Fast** — a warm verdict costs ~200–230 ms (`rm -rf ./dist` → 0.96 destructive, `delete_files`; `ls -la src` → 0.23, allowed). Repeated identical commands hit the 10-minute cache.
-- **Machine-wide** — put the block in `~/.config/opencode/opencode-rag.json` (the global layer, see [Configuration](doc/configuration.md#config-file-discovery)) and every workspace inherits it; a workspace config can still override or disable it.
-- **Fail-open by default** (`onError: "allow"`) — if the classifier is down or times out, the command runs and a warning is logged. Set `onError: "ask"` to require confirmation instead.
-- **Verdict cache** (10 min, 256 entries) — repeated identical commands are answered instantly; the key includes the provider/model, so switching models invalidates it, and cached probabilities are re-scored against the current threshold on every call.
-- **Config edits apply without a restart** — the guard re-reads `opencode-rag.json` when it changes.
-- **Backend** defaults to the `decision` section, and any `/v1/systemone` endpoint works — e.g. llama-swap with `"baseUrl": "http://localhost:11437", "model": "Clef-Flash"`.
+Shell Guard is a policy hook, not a wrapper around the shell. It runs in OpenCode's permission `evaluate` step: it reads the command text, asks the decision model two questions, and sets the permission effect to `ask` when either answer crosses the line. It never executes the command and never sees its output. A clean verdict simply leaves the normal permission flow untouched.
 
-Every verdict is logged under `scope: shell.guard`, so you can tune the threshold against real commands. See [Configuration](doc/configuration.md#shellguard) and [Plugin documentation](doc/plugin.md#shell-guard-command-vetting).
+| Aspect | Behavior |
+|---|---|
+| **Default** | Off. Enabling it adds one local model call to every shell command. |
+| **Speed** | A warm verdict takes about 200 to 230 ms. Example: `rm -rf ./dist` → 0.96 destructive; `ls -la src` → 0.23, allowed. |
+| **What it sees** | The command string only, capped at 8,000 characters with the middle elided. Head and tail are kept because destructive payloads usually sit at one end; a payload hidden in the middle of a very long command can therefore survive. |
+| **On failure** | Fail-open by default (`onError: "allow"`): if the classifier is down or times out, the command runs and a warning is logged. Set `"ask"` to require confirmation instead. |
+| **Cache** | Verdicts are cached for 10 minutes (256 entries). The key includes the provider, base URL, model, and command, and cached probabilities are re-scored against the current threshold on every call. |
+| **Scope** | Put the block in `~/.config/opencode/opencode-rag.json` to apply it to every workspace. A workspace config can still override or disable it. |
+| **Live config** | Edits to `opencode-rag.json` apply without a restart. |
+| **Backend** | Defaults to the `decision` section. Any `/v1/systemone` endpoint works, for example a llama-swap proxy serving Clef-Flash. |
 
-## Documentation and Wiki Modes
+Every verdict is logged under `scope: shell.guard`, so you can tune the threshold against real commands. Shell Guard is a safety net, not a sandbox: a command you approve runs with your full permissions, and a harmful command the model misses is not caught. See the [configuration reference](doc/configuration.md#shellguard) and the [plugin docs](doc/plugin.md#shell-guard-command-vetting).
 
-### Documentation Mode (`/doc`)
+### 5. Documentation and wiki modes
 
-When `documentationMode.enabled` is `true`, the plugin exposes a `/doc` slash command that drives the agent to add JSDoc/TSDoc comments to undocumented source files. No agent tools are registered — documentation is driven entirely through the slash command and the documentation system prompt.
+Two documentation modes turn the agent into a documentation maintainer.
 
-```json
-{
-  "documentationMode": {
-    "enabled": true,
-    "batchSize": 5
-  }
-}
-```
+#### Documentation mode (`/doc`)
 
-**Workflow:** type `/doc` to list all undocumented files grouped by subdirectory. The agent picks a subdirectory, documents every public symbol (preserving existing comments and implementation code), then types `/doc src/auth/` to mark that subdirectory complete. Progress is persisted in `.opencode/rag_db/doc-mode-progress.json`, so later sessions resume where you left off.
+Off by default. When `documentationMode.enabled` is `true`, the plugin adds a `/doc` slash command that drives the agent to add JSDoc/TSDoc comments to undocumented source files. No agent tools are registered; it works entirely through the slash command and a documentation system prompt.
 
-See [Plugin documentation](doc/plugin.md#5-documentation-mode--slash-command-doc) for details.
+**Workflow**
 
-### Wiki Mode (`/wiki`)
+1. Type `/doc` to list all undocumented files, grouped by subdirectory.
+2. The agent picks a subdirectory and documents every public symbol, preserving existing comments and implementation code.
+3. Type `/doc src/auth/` to mark that subdirectory complete.
 
-When `wikiMode.enabled` is `true` (on by default), the plugin injects a wiki-maintainer system prompt that instructs the agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/` — a structured, interlinked collection of markdown pages synthesizing knowledge from the codebase, docs, and conversations.
+Progress is saved in `.opencode/rag_db/doc-mode-progress.json`, so later sessions resume where you left off. See the [plugin docs](doc/plugin.md#5-documentation-mode--slash-command-doc).
 
-```json
-{
-  "wikiMode": {
-    "enabled": true
-  }
-}
-```
+#### Wiki mode (`/wiki`)
+
+On by default. When `wikiMode.enabled` is `true`, the plugin injects a wiki-maintainer system prompt. The agent builds and maintains a persistent knowledge wiki in `.opencode/wiki/`: interlinked markdown pages that synthesize knowledge from the codebase, docs, and conversations.
+
+The wiki has a small, predictable shape:
+
+- `index.md` — the catalog of every page.
+- `log.md` — an append-only timeline of changes.
+- `entities/` — modules, services, and key classes.
+- `concepts/` — patterns, conventions, and gotchas.
+- `sources/` — summaries of external material.
 
 | Command | Action |
 |---|---|
-| `/wiki` | Show wiki status (page count, subdirectories, index/log presence, latest log entry) |
+| `/wiki` | Show wiki status (page count, subdirectories, index and log presence, latest log entry) |
 | `/wiki seed` | Generate the initial wiki from the README, file structure, and code patterns |
-| `/wiki lint` | Health-check for orphan pages, stale source refs, contradictions, missing cross-links |
+| `/wiki lint` | Health-check for orphan pages, stale source references, contradictions, and missing cross-links |
 
-The agent maintains all wiki pages during normal coding sessions; you never write wiki pages yourself. The wiki is git-trackable in `.opencode/`, so every edit is a diff. See [Plugin documentation](doc/plugin.md#6-wiki-mode--slash-command-wiki) for the full protocol.
+The agent maintains the pages during normal coding sessions; you do not write them yourself. The wiki lives in `.opencode/`, so it is git-trackable and every edit is a diff. Because the wiki prompt is injected into every session, it costs some context; disable `wikiMode.enabled` if you do not want it. See the [plugin docs](doc/plugin.md#6-wiki-mode--slash-command-wiki).
 
-## Image Indexing
+### 6. Image indexing
 
-OpenCodeRAG can index image files (PNG, JPEG, WebP, and others) by sending them to a vision-capable LLM and storing the generated text descriptions as searchable vector chunks. This makes visual assets discoverable through natural-language queries (e.g. "login screen screenshot", "architecture diagram").
+Image files (PNG, JPEG, WebP, and others) are sent to a vision-capable LLM, and the generated descriptions are stored as searchable chunks. Visual assets then become discoverable with natural-language queries such as "login screen screenshot" or "architecture diagram".
 
-**Supported providers:** Ollama, OpenAI, Anthropic, Google Gemini, and OpenCode Zen (`opencode`/`opencode-go`) compatible providers.
+- **Providers:** Ollama, OpenAI, Anthropic, Google Gemini, and OpenCode Zen (`opencode` / `opencode-go`) compatible providers.
+- **On by default.** Set `imageDescription.enabled: false` to skip image files entirely. This is recommended if you have no vision model or no GPU, because image descriptions are the one feature that really wants a GPU to be pleasant.
+- **On-demand inspection.** The `describe_image` tool lets an agent inspect an image on demand, without waiting for an index pass. It uses the `imageDescription.onDemand` overrides, so you can point it at a different model without re-indexing.
+- **Privacy.** The image bytes are sent to the configured vision provider. With the default Ollama setup, that provider is local.
 
-**Enabled by default** — set `imageDescription.enabled: false` in `opencode-rag.json` to skip image files entirely (recommended if you have no vision model or no GPU).
+### 7. Web UI, evaluation, and calibration
 
-## Web UI
+**Web UI.** A browser dashboard for exploring the vector database: browse, visualize, and inspect chunks, and evaluate OpenCode sessions by retrieved chunks and consumed tokens. Launch it with `opencode-rag ui` (the default port is 3210). See the [Web UI docs](doc/webui.md).
 
-A browser-based dashboard for exploring the indexed vector database — browse, visualize, and inspect chunks, and evaluate OpenCode sessions in terms of retrieved chunks and consumed tokens.
+[![OpenCodeRAG Web UI](doc/assets/webui-3d.png)](doc/assets/webui-3d.png)
 
-![OpenCodeRAG Web UI](doc/assets/webui-3d.png)
-
-Launch with `opencode-rag ui`. See the [Web UI documentation](doc/webui.md) for details.
-
-## Evaluation and Calibration
-
-OpenCodeRAG tracks token usage, RAG injection overhead, and costs across sessions, so you can measure whether semantic retrieval actually saves tokens.
+**Does it actually save tokens?** Session-level analysis compares RAG-on against RAG-off, using tiktoken BPE (`cl100k_base`) for code tokenization:
 
 ```bash
 opencode-rag eval:sessions          # list sessions
@@ -397,74 +385,153 @@ opencode-rag eval:analyze <id>      # detailed breakdown
 opencode-rag eval:compare <A> <B>   # side-by-side comparison
 ```
 
-Token counting uses tiktoken BPE (cl100k_base) for accurate code tokenization. See the [Evaluation documentation](doc/evaluation.md) for details.
+**Is retrieval good enough?** A separate harness measures quality:
 
-Retrieval quality has its own harness:
+| Command | Purpose |
+|---|---|
+| `opencode-rag eval:gate` | Runs the labelled golden set and exits non-zero when Hit@5, MRR, or nDCG@10 drop below the floors (defaults 0.35 / 0.25 / 0.32). Useful as a CI regression gate. |
+| `opencode-rag eval:decide` | Measures the decision model's accuracy, calibration (ECE), and Brier score on a labelled set. |
+| `opencode-rag eval:tune` | Sweeps the retrieval fusion weights and cut-offs against the golden set and reports the best configuration for your setup. |
 
-- `opencode-rag eval:gate` runs the labelled golden set and fails when Hit@5 / MRR / nDCG@10 drop below the documented floors.
-- `opencode-rag eval:decide` measures tev1's accuracy, ECE, and Brier score on a labelled calibration set.
-- `opencode-rag eval:tune` sweeps the retrieval fusion weights against the same golden set and reports the best configuration for your setup. The shipped `keywordWeight=0.4` is a default, not an optimum (on a code embedder it costs ~8 Hit@5 points) — measure it instead of guessing.
+The labels are repository-local: `src/eval/rerank-labels.json` for retrieval and `src/eval/decide-labels.json` for decisions, or pass `--labels` with your own file. This is a regression harness for a project with labelled queries, not a generic benchmark.
+
+`eval:tune` reports how strong the evidence is: a paired-bootstrap confidence interval, win/loss counts, and an exact sign test. When the interval includes zero or the sign test is above 0.05, it prints "weak evidence" instead of pretending that an argmax on a small sample is a measurement. A reference run on 48 labels with a code embedding model scored 68.8% Hit@5 at `keywordWeight=0.4` and 81.3% at `keywordWeight=0`, with a sign test of p≈0.20. The direction is consistent; the sample is too small to treat either number as settled. See the [evaluation docs](doc/evaluation.md).
+
+---
+
+## Tool reference
+
+### MCP tools (plugin and MCP server)
+
+Inside OpenCode the plugin registers these in-process. Over MCP they are served by `opencode-rag mcp`.
+
+| Tool | What it does | When the agent uses it |
+|---|---|---|
+| `search_semantic` | Hybrid vector and keyword search over the indexed code | Before a code task, instead of reading whole files |
+| `get_file_skeleton` | Structural outline of a file (functions, classes, methods) | To orient in a large file before reading it |
+| `find_usages` | Every reference to a symbol | Before editing a function, class, or variable |
+| `describe_image` | Describes an image with the configured vision model | When the task involves a screenshot, diagram, or other asset |
+| `make_decision` | Classifies, routes, or scores short text (needs `decision.enabled`) | When the answer reduces to a choice, a yes/no check, or a rubric score |
+
+### Plugin-only tools (OpenCode)
+
+Registered by the OpenCode plugin, not served over MCP.
+
+| Tool | What it does |
+|---|---|
+| `recall_quirks` | Recalls stored gotchas, preferences, and decisions from past sessions |
+| `add_quirk` | Stores a new non-obvious fact, workaround, or convention |
+| `update_quirk` | Corrects a stored quirk that is outdated or wrong |
+| `delete_quirk` | Removes a quirk that is fixed, obsolete, or no longer applies |
+
+### Slash commands and hotkeys (OpenCode)
+
+| Input | Action |
+|---|---|
+| `Ctrl+Enter` | Append a relevant file list to the prompt |
+| `Ctrl+Alt+Enter` | Append full code chunks to the prompt |
+| `/rag-settings` or `Alt+S` | Open the settings panel |
+| `/doc` | Documentation mode (if enabled) |
+| `/wiki`, `/wiki seed`, `/wiki lint` | Wiki mode |
+
+### A typical retrieval loop
+
+1. `search_semantic` finds candidate code by meaning or exact name.
+2. `get_file_skeleton` shows the structure of a promising file.
+3. The agent reads only the relevant lines.
+4. `find_usages` checks every place a symbol is used before it is changed.
+
+This is the loop that replaces "read the whole file and hope".
+
+---
 
 ## Configuration
 
-Settings live in JSON (no comments). The workspace file `.opencode/opencode-rag.json` is canonical; the global file `~/.config/opencode/opencode-rag.json` holds machine-wide settings (Shell Guard, provider choices) that every workspace inherits. Shown below are the shipped defaults:
+Settings are stored as JSON, but you rarely edit them by hand: `setup` writes the model choices, and the TUI settings panel edits the rest. Two files are used:
 
-```json
-{
-  "embedding": { "provider": "ollama", "model": "qwen3-embedding:0.6b" },
-  "retrieval": {
-    "topK": 20,
-    "minScore": 0.35,
-    "hybridSearch": { "enabled": true, "keywordWeight": 0.4, "symbolKeywordWeight": 0.6 }
-  },
-  "shellGuard": { "enabled": false, "threshold": 0.5, "onError": "allow" },
-  "decision": { "enabled": false, "model": "tev1:4b" }
-}
-```
+| File | Purpose |
+|---|---|
+| `.opencode/opencode-rag.json` | Workspace settings, committed with the project |
+| `~/.config/opencode/opencode-rag.json` | Machine-wide settings, including provider, model, base URL, and API key choices |
 
-The [Configuration reference](doc/configuration.md) documents every option — embedding, indexing, retrieval, description, image description, decision, shell guard, and plugin settings — and how the global and workspace layers merge.
+Provider options describe which models *this machine* serves, so the settings panel saves them only in the global file; they never land in a committed repository file when you configure models through setup or the UI. The layers merge recursively: shipped defaults < global file < workspace file. A workspace file overrides only the keys it sets.
 
-## Documentation Index
+The [configuration reference](doc/configuration.md) documents every option and every default. This README deliberately keeps configuration examples there rather than here.
+
+**What is on by default**
+
+| Feature | Default | Where to change it |
+|---|---|---|
+| Search | on | always available |
+| Memory | on | `memory.enabled` |
+| Auto-index watcher | off | `openCode.autoIndex.enabled` or `index --watch` |
+| Shell Guard | off | `shellGuard.enabled` |
+| Decision model | off | `decision.enabled` |
+| Image descriptions | on | `imageDescription.enabled` |
+| Wiki mode | on | `wikiMode.enabled` |
+| Documentation mode | off | `documentationMode.enabled` |
+| Update check | on | `autoUpdate.enabled` |
+
+One small difference worth knowing: `retrieval.topK` defaults to 20 for the agent's retrieval, while `opencode-rag query` defaults to 10 results. Use `--top-k` to change the CLI.
+
+---
+
+## Privacy and security
+
+- **Local by default.** Embeddings are generated locally via Ollama, and the vector database stays in `.opencode/rag_db/` inside your project. `.opencode/.gitignore` keeps it out of git. No source code or embeddings leave your machine unless you explicitly configure a third-party API.
+- **Hosted providers.** If you configure a hosted embedding, description, or vision provider, the code chunks, descriptions, or image bytes are sent to that provider. With the default Ollama setup, all three stay local.
+- **Shell Guard** sends the command text only to the decision-model endpoint you configure (local Ollama or a local proxy), never the command's output.
+- **Decision model** is only asked about short excerpts that you or the agent pass in.
+- **Memory** uses the description model for passive capture and session-end extraction. If the description provider is hosted, that exchange text leaves the machine. Set `memory.passiveCapture` and `memory.sessionEndExtraction` to `false` to keep extraction manual.
+- **Update check.** With `autoUpdate.enabled` on (the default), the plugin asks GitHub whether a newer release exists. No source code is sent, and `autoInstall` is off unless you turn it on.
+- **Trust monitor.** Every quirk write passes an immutable trust monitor that rejects destructive patterns.
+- **No analytics.** There is no telemetry service; the only network calls are the model providers you configure and the update check.
+
+---
+
+## Limitations
+
+- **Retrieval quality depends on the embedding model.** Small CPU-friendly models trade accuracy for speed. Measure with `eval:gate` and `eval:tune` rather than assuming a default.
+- **Image descriptions need a vision model.** This is the one feature that meaningfully wants a GPU to be pleasant. Disable it with `imageDescription.enabled: false` if you have none.
+- **Shell Guard costs one model call per shell command** (about 200 ms warm) and fails open by default. It is a safety net, not a sandbox, and it sees only the command text — a payload hidden in the middle of a very long command can survive.
+- **The decision model needs an endpoint that speaks `/v1/systemone`.** Ollama ≥ 0.35 works; so does a compatible llama-swap or llama.cpp proxy. The provider setting itself is fixed to the `ollama` request shape.
+- **ClickHouse is opt-in** and needs a running server. LanceDB is the default and needs none.
+- **Wiki and documentation modes add context.** Wiki mode injects a system prompt into every session; documentation mode adds a slash command and a system prompt only when enabled.
+- **Node.js v22+ is required.**
+- **This README is the entry point, not the manual.** Deep dives live in [`doc/`](doc/).
+
+---
+
+## Documentation index
+
+This README is the entry point. Deep dives live in [`doc/`](doc).
 
 | Document | Contents |
 |---|---|
 | [Architecture](doc/architecture.md) | Module design, data flow, tech stack |
 | [Installation](doc/installation.md) | Full install guide, global setup, uninstall |
-| [Configuration](doc/configuration.md) | All options: embedding, indexing, retrieval, description, image description, decision, shell guard, plugin |
+| [Configuration](doc/configuration.md) | All options, defaults, and merge rules |
 | [Chunking](doc/chunking.md) | Language matrix, adding new chunkers, custom chunkers |
 | [Embedding](doc/embedding.md) | Providers, model recommendations, proxy, dimension probing |
-| [ClickHouse store](doc/clickhouse.md) | Central vector store backend: setup, epochs, ANN, multi-machine sync |
+| [ClickHouse store](doc/clickhouse.md) | Central vector store: setup, epochs, ANN, multi-machine sync |
 | [Retrieval](doc/retrieval.md) | Pipeline, hybrid search, score fusion, caching |
 | [Plugin](doc/plugin.md) | OpenCode integration, tools, hooks, TUI, troubleshooting |
-| [CLI Reference](doc/cli.md) | All commands, options, examples |
+| [CLI reference](doc/cli.md) | All commands, options, examples |
 | [Web UI](doc/webui.md) | Dashboard, chunk browser, file explorer, compare view |
 | [Evaluation](doc/evaluation.md) | Token analysis, session logging, benchmark runner, accuracy guide |
 | [Development](doc/development.md) | Setup, testing, conventions, adding providers |
 | [Troubleshooting](doc/troubleshooting.md) | Common issues, logging, debugging |
-| [Roadmap](doc/roadmap.md) | Completed items, short/mid/long-term plans |
+| [Roadmap](doc/roadmap.md) | Completed items, short-, mid-, and long-term plans |
 
-## Privacy and Security
+---
 
-**100% local by default.** Embeddings are generated locally via Ollama, and the vector database stays in your project directory. **No source code or embeddings leave your machine** unless you explicitly configure a third-party API. The optional [Shell Guard](#shell-guard-optional) likewise sends command text only to the decision-model endpoint you configure (local Ollama or a local proxy).
+## Contributing and support
 
-Every quirk written to memory passes an immutable trust monitor that rejects destructive patterns, and the decision model is only ever asked about short excerpts you (or the agent) pass in.
-
-## Limitations and Non-Goals
-
-- **This README is the entry point, not the manual.** Deep dives live in [`doc/`](doc/); the project does not aim to duplicate API references here.
-- **Retrieval quality depends on the embedding model.** Small CPU-friendly models trade accuracy for speed; measure with `eval:gate` and `eval:tune` rather than assuming a default.
-- **Image descriptions need a vision model.** They are on by default; set `imageDescription.enabled: false` if you have none — it is the one feature that meaningfully wants a GPU to be pleasant.
-- **Shell Guard costs one model call per shell command** (~200 ms warm) and fails open by default; it is a safety net, not a sandbox.
-- **The decision model currently supports Ollama's `/v1/systemone` endpoint only.**
-- **The ClickHouse backend is opt-in** and requires a running ClickHouse server; LanceDB is the default and needs no server.
-
-## Contributing and Support
-
-- **Development setup, conventions, and testing:** [doc/development.md](doc/development.md)
+- **Development setup, conventions, and testing:** clone the repository, run `npm install` (no special flags) and `npm run build`. Then `npm test`, `npm run typecheck`, and `npm run test:integration` as needed. See [doc/development.md](doc/development.md).
 - **Troubleshooting and logging:** [doc/troubleshooting.md](doc/troubleshooting.md)
-- **Bug reports and feature requests:** [GitHub Issues](https://github.com/MrDoe/OpenCodeRAG/issues)
+- **Bugs and feature requests:** [GitHub Issues](https://github.com/MrDoe/OpenCodeRAG/issues)
 - **Roadmap:** [doc/roadmap.md](doc/roadmap.md)
 
 ## License
 
-MIT
+[MIT](LICENSE)
