@@ -469,28 +469,37 @@ Key requirements:
 
 ## Plugin Registration
 
-Do NOT register the plugin via `"plugin": ["opencode-rag-plugin"]` in OpenCode config. Instead, rely on plugin-directory auto-discovery:
+Do NOT register the plugin via `"plugin": ["opencode-rag-plugin"]` in OpenCode config. Instead, rely on plugin-directory auto-discovery. `opencode-rag setup` installs the plugin **once, globally**:
 
-1. Run `opencode-rag setup` to create the plugin directory `.opencode/plugins/opencode-rag/` and `.opencode/skills/opencode-rag/SKILL.md`
-2. The directory holds two entrypoints, each a bare re-export from the workspace `node_modules/`:
+1. `~/.config/opencode/plugins/opencode-rag/index.js` — server role
+2. `~/.config/opencode/plugins/opencode-rag/tui.js` — TUI role
+
+Both are bare re-exports from the runtime (`~/.opencode/node_modules/opencode-rag-plugin/dist/`):
 
 ```javascript
-// .opencode/plugins/opencode-rag/index.js — server (business) entrypoint
-import plugin from "../../node_modules/opencode-rag-plugin/dist/plugin-entry.js";
+// ~/.config/opencode/plugins/opencode-rag/index.js — server (business) entrypoint
+import plugin from "../../../../.opencode/node_modules/opencode-rag-plugin/dist/plugin-entry.js";
 export default plugin;
 ```
 
 ```javascript
-// .opencode/plugins/opencode-rag/tui.js — CLI (TUI) entrypoint
-import plugin from "../../node_modules/opencode-rag-plugin/dist/tui.js";
+// ~/.config/opencode/plugins/opencode-rag/tui.js — CLI (TUI) entrypoint
+import plugin from "../../../../.opencode/node_modules/opencode-rag-plugin/dist/tui.js";
 export default plugin;
 ```
 
 OpenCode 2 resolves a plugin *directory* as `index.*` (server entrypoint) + `tui.*` (CLI
 entrypoint beside it), and the terminal UI only discovers directories — a flat
 `.opencode/plugins/rag-tui.js` would only ever load in the server role, which is why the
-sidebar disappeared on V2. `setup` therefore also removes the V1-era flat files
-(`rag-plugin.js`, `rag-tui.js`, `.opencode/tui.json`) when their content is exactly what an
+sidebar disappeared on V2.
+
+Because the plugin is global, a repository only needs its config, skills, `AGENTS.md` and
+the `.gitignore` that protects its local `rag_db/`. The plugin also auto-scaffolds those
+files on first load (`setup.autoScaffold`, create-only).
+
+`--workspace-plugin` restores the per-repository layout (`.opencode/plugins/opencode-rag/`)
+for version pinning per repository. `setup` removes the V1-era flat files
+(`rag-plugin.js`, `rag-tui.js`, `.opencode/tui.json`) only when their content is exactly what an
 earlier `init`/`setup` generated; hand-written files and custom configs are left untouched.
 
 A bare default re-export satisfies both loaders because the shape (`{ id, setup }`) lives in
@@ -661,8 +670,8 @@ The two injection shortcuts read the current prompt text combined with the previ
 This occurs when OpenCode's Bun runtime tries to load the plugin via the `"plugin"` key in OpenCode config, causing module resolution issues.
 
 **Fix:**
-1. Ensure the plugin is loaded via `.opencode/plugins/opencode-rag/` auto-discovery, NOT via `"plugin"` config key
-2. Run `opencode-rag setup` to regenerate the workspace-local plugin files
+1. Ensure the plugin is loaded from `~/.config/opencode/plugins/opencode-rag/` (global, default) or `.opencode/plugins/opencode-rag/` (legacy) auto-discovery, NOT via `"plugin"` config key
+2. Run `opencode-rag setup` to refresh the plugin entrypoints
 3. Remove stale `"plugin"` entries from all OpenCode config files
 
 ### Debugging Plugin Loading

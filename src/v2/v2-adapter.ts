@@ -35,6 +35,7 @@
  */
 
 import { loadWorkspaceConfig, resolveConfigPaths } from "../core/config.js";
+import { autoScaffoldWorkspace } from "../core/auto-scaffold.js";
 import { ragPlugin, RAG_TOOL_NAMES } from "../plugin.js";
 import {
   createShellGuardForDirectory,
@@ -437,6 +438,14 @@ export async function installShellGuard(
  * disposes every registration and aborts the event subscription.
  */
 export async function registerRagPluginV2(ctx: V2Context): Promise<() => Promise<void>> {
+  // Global-plugin mode: make a fresh repository usable without a CLI run.
+  // Create-only, never overwrites, respects `setup.autoScaffold`.
+  try {
+    autoScaffoldWorkspace(ctx.location.directory);
+  } catch {
+    // Plugin load must never fail because scaffolding did.
+  }
+
   // The V1 factory only consumes `input.directory`; project/client/$ are unused.
   const hooks = (await ragPlugin(
     { directory: ctx.location.directory } as never,

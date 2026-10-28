@@ -15,6 +15,13 @@ import { answersFromFlags, hasExplicitSetupFlags, runSetupWizard } from "../../c
 import type { Prompter, SelectPromptOptions } from "../../cli/prompt.js";
 import { fetchModelCatalog, inferCapabilities } from "../../cli/wizard/model-catalog.js";
 import { createPrompter } from "../../cli/prompt.js";
+import {
+  OLLAMA_CPU_PRESET,
+  OLLAMA_GPU_PRESET,
+  describePreset,
+  presetForBackend,
+  presetModelStatus,
+} from "../../cli/wizard/presets.js";
 import type { WizardAnswers } from "../../cli/wizard/types.js";
 
 const ANSWERS: WizardAnswers = {
@@ -206,7 +213,15 @@ class ScriptedPrompter implements Prompter {
 }
 
 describe("wizard flow", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
   it("walks an Ollama setup with manual model entry and no optional features", async () => {
+    // Unreachable Ollama -> the recommended path is skipped, full wizard runs.
+    globalThis.fetch = (async () => new Response("nope", { status: 500 })) as typeof fetch;
     const prompter = new ScriptedPrompter({
       selects: ["__default__"],
       texts: ["http://127.0.0.1:1/api", "my-embed"],
@@ -222,9 +237,66 @@ describe("wizard flow", () => {
     assert.equal(answers.embedding.apiKey, undefined);
   });
 
+  it("offers a one-question recommended setup when Ollama is reachable", async () => {
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/api/tags")) {
+        return new Response(
+          JSON.stringify({
+            models: [
+              { name: "qwen3-embedding:0.6b" },
+              { name: "qwen3-embedding:1.7b" },
+              { name: "qwen2.5:3b" },
+              { name: "minicpm-v4.6" },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("nope", { status: 500 });
+    }) as typeof fetch;
+
+    const prompter = new ScriptedPrompter({ selects: [], texts: [], confirms: [true] });
+    const answers = await runSetupWizard({ prompter, existing: {}, proxy: undefined });
+    assert.ok(answers, "recommended setup should produce answers");
+    assert.equal(answers.recommended, true);
+    assert.equal(answers.embedding.provider, "ollama");
+    assert.ok(
+      [OLLAMA_CPU_PRESET.embedding, OLLAMA_GPU_PRESET.embedding].includes(answers.embedding.model),
+      "uses the CPU or GPU preset",
+    );
+    assert.equal(answers.descriptionEnabled, true);
+    assert.equal(answers.imageDescriptionEnabled, true);
+  });
+
   it("returns undefined when the user cancels the first question", async () => {
+    globalThis.fetch = (async () => new Response("nope", { status: 500 })) as typeof fetch;
     const prompter = new ScriptedPrompter({ selects: [undefined], texts: [], confirms: [] });
     const answers = await runSetupWizard({ prompter, existing: {}, proxy: undefined });
     assert.equal(answers, undefined);
+  });
+});
+
+describe("presets", () => {
+  it("selects the GPU preset only for a detected GPU backend", () => {
+    assert.equal(presetForBackend("gpu").id, "ollama-gpu");
+    assert.equal(presetForBackend("cpu").id, "ollama-cpu");
+    assert.equal(presetForBackend("unreachable").id, "ollama-cpu");
+    assert.equal(presetForBackend("unknown").id, "ollama-cpu");
+  });
+
+  it("marks pulled and missing models", () => {
+    const catalog = {
+      provider: "ollama",
+      baseUrl: "http://127.0.0.1:11434/api",
+      reachable: true,
+      models: [{ id: OLLAMA_CPU_PRESET.embedding, capabilities: ["embedding" as const] }],
+    };
+    const status = presetModelStatus(OLLAMA_CPU_PRESET, catalog);
+    assert.equal(status[0]?.installed, true);
+    assert.equal(status[1]?.installed, false);
+    const described = describePreset(OLLAMA_CPU_PRESET, catalog);
+    assert.ok(described[0]?.includes("installed"));
+    assert.ok(described[1]?.includes("will be pulled"));
   });
 });

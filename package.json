@@ -43,7 +43,8 @@
     "LICENSE"
   ],
   "bin": {
-    "opencode-rag": "./dist/cli/index.js"
+    "opencode-rag": "./dist/cli/index.js",
+    "opencode-rag-plugin": "./dist/cli/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json && vite build --config src/web/ui/vite.config.ts",

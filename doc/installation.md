@@ -8,7 +8,7 @@
 
 ## Ollama Setup
 
-If you don't have Ollama installed, download it from [ollama.com](https://ollama.com) and start the service. Then pull the required model:
+If you don't have Ollama installed, download it from [ollama.com](https://ollama.com) and start the service. **You do not need to pull models manually** — `opencode-rag setup` detects missing models and pulls them (with progress) as part of the recommended setup. To pre-pull them yourself:
 
 ```bash
 # Small embedding model (required for vector search)
@@ -35,10 +35,10 @@ OpenCodeRAG uses three models:
 ### Quick install (recommended)
 
 ```bash
-# Install globally via npm
+# Install globally via npm (postinstall sets up the runtime + global plugin)
 npm install -g opencode-rag-plugin
 
-# One command: set up the runtime, the workspace and the model wizard
+# One command: set up the workspace and pick the models
 cd /path/to/your/workspace
 opencode-rag setup
 ```
@@ -47,7 +47,7 @@ opencode-rag setup
 
 > `opencode-rag setup` is both a **machine-level** step (installs the plugin runtime into `~/.opencode/` once per machine; when outdated, fetches and installs the latest published npm version of itself) and a **workspace-level** step (scaffolds the current project - config, skill, AGENTS.md - and runs the model wizard on first use or with `--reconfigure`). Re-running `setup` syncs the files without asking questions; `opencode-rag init` no longer exists. See `opencode-rag setup --help` for all flags.
 
-Tree-sitter grammars ship as pre-built WASM files (bundled in `wasm/` and `@vscode/tree-sitter-wasm`). Native dependencies (`sharp`, `@lancedb/lancedb`) use pre-built platform binaries. The plugin is workspace-local — OpenCode loads it from `.opencode/plugins/`. Data (vector store, manifest) lives in the workspace.
+Tree-sitter grammars ship as pre-built WASM files (bundled in `wasm/` and `@vscode/tree-sitter-wasm`). Native dependencies (`sharp`, `@lancedb/lancedb`) use pre-built platform binaries. The plugin is installed once in OpenCode's global plugin directory (`~/.config/opencode/plugins/opencode-rag/`); each workspace keeps its own vector store, manifest and configuration.
 
 ### Updating
 
@@ -99,38 +99,47 @@ npm uninstall -g opencode-rag-plugin
 
 This removes all copies and config entries of OpenCodeRAG.
 
-## Workspace Initialization
+## Workspace Setup
 
-The install script only installs the CLI globally. Set up each workspace where you want to use OpenCodeRAG:
+The plugin, runtime and provider settings are machine-wide after `npm install -g`. Set up each workspace where you want to use OpenCodeRAG:
 
 ```bash
 cd /path/to/your/workspace
 opencode-rag setup
 ```
 
-On the first run, `setup` asks for the model host and models (see [the wizard](#the-setup-wizard)); re-running it syncs the files without questions.
+On the first run, `setup` offers a **one-question recommended setup** based on your Ollama backend; missing models are pulled automatically. Answer `n` to use the full wizard. Re-running `setup` syncs the files without questions.
 
-This creates:
-- `.opencode/opencode-rag.json` — Workspace-specific RAG configuration. Provider/model settings live in the global config instead (`~/.config/opencode/opencode-rag.json`). Embedding batch settings are **auto-tuned to your Ollama backend** (see below)
-- `.opencode/plugins/opencode-rag/index.js` — Server entrypoint (re-exports `dist/plugin-entry.js` from the workspace `node_modules/`)
-- `.opencode/plugins/opencode-rag/tui.js` — TUI entrypoint beside it (re-exports `dist/tui.js`); OpenCode 2 only discovers plugin *directories*, so both roles live in this folder
-- `.opencode/opencode.json` — OpenCode workspace config
-- `.opencode/package.json` — Workspace dependencies (links to the globally-installed plugin)
+**Recommended presets:**
+
+| Preset | Embedding | Description | Vision |
+|---|---|---|---|
+| Ollama · CPU | `qwen3-embedding:0.6b` | `qwen2.5:3b` | `minicpm-v4.6` |
+| Ollama · GPU | `qwen3-embedding:1.7b` | `qwen2.5:3b` | `minicpm-v4.6` |
+
+### What a workspace contains
+
+With the default global plugin install, a prepared workspace is small:
+
+- `.opencode/opencode-rag.json` — repository settings only (indexing scope, chunking, retrieval, feature toggles). Provider/model settings live in the global config (`~/.config/opencode/opencode-rag.json`)
 - `.opencode/skills/opencode-rag/SKILL.md` — AI agent skill file
 - `.opencode/skills/make-decision/SKILL.md` — decision-model skill
-- `.opencode/.gitignore` — ignores `node_modules/` and `rag_db/`
-- `AGENTS.md` — Always-loaded tool-usage directive (merged into existing content, never overwrites; includes mandatory tool guidance, decision tree, proactive triggers, anti-patterns, and conditional quirk-capture rules)
-- Runs `npm install` to install workspace dependencies
+- `.opencode/.gitignore` — ignores the local `rag_db/` and the log file
+- `AGENTS.md` — always-loaded tool-usage directive (merged into existing content via sentinel markers; never overwrites custom text)
 
-The `AGENTS.md` directive is wrapped in sentinel markers (`<!-- BEGIN opencode-rag -->` / `<!-- END opencode-rag -->`) so re-running `setup` replaces the section in-place without duplicating it. Existing content outside the markers is always preserved.
+There are **no plugin files in the repository** and no `.opencode/node_modules` junction. OpenCode loads the plugin once from `~/.config/opencode/plugins/opencode-rag/`.
 
-Use `--skip-install` to skip the npm install step. Use `--force` to rewrite generated files even when unchanged. Use `--skip-health-check` to skip provider validation (useful in offline environments). `--skip-runtime` performs the workspace step only.
+The `AGENTS.md` directive is wrapped in sentinel markers (`<!-- BEGIN opencode-rag -->` / `<!-- END opencode-rag -->`) so re-running `setup` replaces the section in-place without duplicating it.
 
-After applying the configuration, `setup` validates that your embedding provider is reachable and all configured models (embedding, description & visual) are available. For Ollama, if models are missing, you will be asked to pull them automatically.
+**Vector data stays local to the workspace.** `vectorStore.path` is resolved against the repository (default `.opencode/rag_db`), so every project keeps its own LanceDB store. A shared ClickHouse backend remains an explicit opt-in (`--vector-store clickhouse`).
+
+**Auto-scaffold:** the globally installed plugin also creates the missing workspace files on first load — useful when a repository is opened in OpenCode before running the CLI. It only creates files that do not exist and can be disabled with `setup.autoScaffold: false`.
+
+**Legacy workspace plugin layout:** pass `--workspace-plugin` to install the plugin into `.opencode/plugins/opencode-rag/` instead of globally. This restores the previous per-repository layout (plugin entries, `.opencode/package.json`, `.opencode/node_modules` link).
 
 ### The setup wizard
 
-`setup` runs an interactive wizard on the first run and with `--reconfigure`:
+`setup` asks one recommended question on the first run and with `--reconfigure`. Choosing “Custom setup” (or declining the preset) opens the detailed wizard:
 
 1. **Provider** — Ollama (local/remote), OpenAI-compatible (llama.cpp, LM Studio, vLLM, OpenRouter, …), Cohere, Anthropic or Google.
 2. **Base URL** — probed immediately; the wizard shows `✓ reachable, N models` or the exact error.
@@ -139,6 +148,19 @@ After applying the configuration, `setup` validates that your embedding provider
 5. **Optional features** — descriptions, vision, decision model, reranking, shell guard, quirk capture, ClickHouse backend.
 
 Every question defaults to the current value, so Enter keeps an existing setup. Ctrl+C cancels without writing anything. Non-interactive runs (`--yes`, CI, piped stdin) never prompt: flags win, then the stored config, then defaults.
+
+### Flags
+
+- `--reconfigure` — re-open the wizard
+- `--yes` — never prompt; keep the stored configuration (or use explicit flags)
+- `--provider`, `--base-url`, `--api-key`, `--embedding-model`, `--description-model`, `--vision-model`, `--decision-model` — scripted configuration
+- `--description [on|off]`, `--vision [on|off]`, `--decision [on|off]`, `--reranking`, `--shell-guard`, `--memory-capture` — feature toggles
+- `--vector-store lancedb|clickhouse` (+ `--clickhouse-*`) — backend
+- `--workspace-plugin` — per-repository plugin layout
+- `--skip-install`, `--skip-health-check`, `--skip-runtime`, `--no-index` — skip steps
+- `--check` — runtime and plugin-mode report
+
+After applying the configuration, `setup` validates that your embedding provider is reachable and all configured models are available. With the recommended setup, missing Ollama models are pulled automatically; otherwise you are asked first.
 
 ### Auto-tuned embedding batches (Ollama)
 
@@ -173,7 +195,8 @@ npm install --save-dev opencode-rag-plugin
 ## Verifying Your Installation
 
 ```bash
-opencode-rag status
+opencode-rag setup --check   # runtime + plugin mode (global/workspace)
+opencode-rag status          # index statistics, store path, provider, model
 ```
 
 This shows the index statistics, store path, provider, model, manifest status, and keyword index status.

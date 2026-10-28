@@ -49,6 +49,10 @@ export interface SetupOptions extends WizardFlags {
   skipHealthCheck?: boolean;
   /** Skip the machine-level runtime install (workspace setup only). */
   skipRuntime?: boolean;
+  /** Install the plugin into this workspace instead of the global config. */
+  workspacePlugin?: boolean;
+  /** Set to `false` by `--no-index`: do not offer to build the index. */
+  index?: boolean;
 }
 
 /** Shape of the `package.json` metadata required by CLI helpers. */

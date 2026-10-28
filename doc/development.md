@@ -28,11 +28,12 @@ After making source changes, sync them to the global runtime:
 ```bash
 npm run build                 # compile src/ → dist/
 npm link                      # link local package as global npm package
-opencode-rag setup --force    # sync symlink at ~/.opencode/ to your local build + refresh the workspace
+opencode-rag setup --force    # sync symlink at ~/.opencode/ to your local build, refresh the global plugin entrypoints + workspace
 # setup re-syncs AGENTS.md/skills/config on every run; --reconfigure re-opens the model wizard
+# pass --workspace-plugin to test the legacy per-repository plugin layout
 ```
 
-> **Note:** `npm i -g opencode-rag-plugin` installs from the npm registry, not your local source. Always use `npm run build && npm link && opencode-rag setup --force` to test local changes. `setup` syncs an existing workspace too — there is no separate `init` command anymore.
+> **Note:** `npm i -g opencode-rag-plugin` installs from the npm registry, not your local source. Always use `npm run build && npm link && opencode-rag setup --force` to test local changes. `setup` syncs an existing workspace too — there is no separate `init` command anymore. The global plugin entry lives at `~/.config/opencode/plugins/opencode-rag/` and imports your linked build through `~/.opencode/node_modules/`, so a rebuild is picked up by OpenCode on restart without re-running `setup` (run it with `--force` after changing the entrypoint layout).
 
 ## Testing
 

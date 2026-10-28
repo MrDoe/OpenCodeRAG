@@ -92,4 +92,9 @@ export interface WizardAnswers {
   indexing?: { embedDescriptions?: boolean };
   /** Optional: background indexing. */
   openCode?: { autoIndex?: boolean };
+  /**
+   * Set when the wizard applied a recommended preset. `setup` then pulls
+   * missing models without a second confirmation.
+   */
+  recommended?: boolean;
 }

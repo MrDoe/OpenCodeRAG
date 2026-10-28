@@ -21,6 +21,19 @@ process.env.HOME = isolatedHome;
 process.env.USERPROFILE = isolatedHome;
 process.env.XDG_CONFIG_HOME = join(isolatedHome, ".config");
 
+// Fake runtime so global-plugin mode is exercised without running the real
+// runtime installer (which would fetch from npm).
+const fakeRuntimeDist = join(isolatedHome, ".opencode", "node_modules", "opencode-rag-plugin", "dist");
+mkdirSync(fakeRuntimeDist, { recursive: true });
+for (const file of ["plugin-entry.js", "tui.js", "cli.js"]) {
+  writeFileSync(join(fakeRuntimeDist, file), "export default {};\n", "utf-8");
+}
+writeFileSync(
+  join(isolatedHome, ".opencode", "node_modules", "opencode-rag-plugin", "package.json"),
+  JSON.stringify({ name: "opencode-rag-plugin", version: "0.0.0" }),
+  "utf-8",
+);
+
 after(() => {
   if (originalHome === undefined) delete process.env.HOME; else process.env.HOME = originalHome;
   if (originalUserProfile === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = originalUserProfile;
@@ -63,19 +76,29 @@ describe("opencode-rag setup (workspace)", () => {
     const opencodePackagePath = join(opencodeDir, "package.json");
     const pluginEntryPath = join(opencodeDir, "plugins", "opencode-rag", "index.js");
     const tuiPluginEntryPath = join(opencodeDir, "plugins", "opencode-rag", "tui.js");
+    const globalPluginDir = join(isolatedHome, ".config", "opencode", "plugins", "opencode-rag");
 
     assert.ok(existsSync(opencodeDir), ".opencode/ should exist");
     assert.ok(existsSync(gitignorePath), ".opencode/.gitignore should exist");
-    assert.ok(existsSync(opencodeConfigPath), ".opencode/opencode.json should exist");
-    assert.ok(existsSync(opencodePackagePath), ".opencode/package.json should exist");
-    assert.ok(existsSync(pluginEntryPath), ".opencode/plugins/opencode-rag/index.js should exist");
-    assert.ok(existsSync(tuiPluginEntryPath), ".opencode/plugins/opencode-rag/tui.js should exist");
+    assert.ok(existsSync(configPath), ".opencode/opencode-rag.json should exist");
+    assert.equal(existsSync(join(tmpDir, "opencode-rag.json")), false, "config must not be created at the project root");
+
+    // Global plugin mode: the workspace contains no plugin files at all.
+    assert.equal(existsSync(pluginEntryPath), false, "workspace plugin entry must not be created");
+    assert.equal(existsSync(tuiPluginEntryPath), false, "workspace TUI entry must not be created");
+    assert.equal(existsSync(opencodeConfigPath), false, ".opencode/opencode.json is not needed in global mode");
+    assert.equal(existsSync(opencodePackagePath), false, ".opencode/package.json is not needed in global mode");
+    assert.ok(existsSync(join(globalPluginDir, "index.js")), "global server entry should exist");
+    assert.ok(existsSync(join(globalPluginDir, "tui.js")), "global TUI entry should exist");
+    assert.match(
+      readFileSync(join(globalPluginDir, "index.js"), "utf-8"),
+      /\.\.\/\.\.\/\.\.\/\.\.\/\.opencode\/node_modules\/opencode-rag-plugin\/dist\/plugin-entry\.js/,
+    );
+
     // V1 flat entries must not be written anymore (the TUI never loads them).
     assert.equal(existsSync(join(opencodeDir, "plugins", "rag-plugin.js")), false);
     assert.equal(existsSync(join(opencodeDir, "plugins", "rag-tui.js")), false);
     assert.equal(existsSync(join(opencodeDir, "tui.json")), false);
-    assert.ok(existsSync(configPath), ".opencode/opencode-rag.json should exist");
-    assert.equal(existsSync(join(tmpDir, "opencode-rag.json")), false, "config must not be created at the project root");
 
     // Check opencode-rag.json is valid JSON. Provider-scoped keys live in the
     // global config now, so the workspace file only carries repo settings.
@@ -92,27 +115,21 @@ describe("opencode-rag setup (workspace)", () => {
     assert.ok(gitignoreContent.includes("rag_db/"));
     assert.ok(gitignoreContent.includes("opencode-rag.log"));
 
-    const opencodeConfig = JSON.parse(readFileSync(opencodeConfigPath, "utf-8"));
-    assert.equal(opencodeConfig.$schema, "https://opencode.ai/config.json");
+    const skillContent = readFileSync(join(opencodeDir, "skills", "opencode-rag", "SKILL.md"), "utf-8");
+    assert.ok(skillContent.includes("search_semantic"), "skill file should be generated");
+  });
 
-    const opencodePackage = JSON.parse(readFileSync(opencodePackagePath, "utf-8"));
-    assert.equal(opencodePackage.type, "module");
-    assert.equal(opencodePackage.private, true);
-    // setup copies the version from this package's devDependencies (see
-    // buildWorkspacePackageJson) — derive it here so the test never goes stale.
-    const rootPackage = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf-8"));
-    assert.equal(
-      opencodePackage.dependencies["@opencode-ai/plugin"],
-      rootPackage.devDependencies["@opencode-ai/plugin"],
-    );
-    // The RAG plugin is extracted directly into node_modules/, not via npm
-    assert.equal("opencode-rag-plugin" in opencodePackage.dependencies, false);
+  it("supports the legacy workspace-local plugin layout with --workspace-plugin", async () => {
+    process.cwd = () => tmpDir;
 
-    const pluginEntry = readFileSync(pluginEntryPath, "utf-8");
-    assert.match(pluginEntry, /\.\.\/\.\.\/node_modules\/opencode-rag-plugin\/dist\/plugin-entry\.js/);
+    const { runCli } = await import("../cli.js");
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--workspace-plugin", "--skip-health-check"]);
 
-    const tuiPluginEntry = readFileSync(tuiPluginEntryPath, "utf-8");
-    assert.match(tuiPluginEntry, /\.\.\/\.\.\/node_modules\/opencode-rag-plugin\/dist\/tui\.js/);
+    const opencodeDir = join(tmpDir, ".opencode");
+    assert.ok(existsSync(join(opencodeDir, "plugins", "opencode-rag", "index.js")), "workspace server entry");
+    assert.ok(existsSync(join(opencodeDir, "plugins", "opencode-rag", "tui.js")), "workspace TUI entry");
+    assert.ok(existsSync(join(opencodeDir, "package.json")), ".opencode/package.json");
+    assert.ok(existsSync(join(opencodeDir, "opencode.json")), ".opencode/opencode.json");
   });
 
   it("does not overwrite existing files without --force", async () => {
@@ -190,7 +207,7 @@ describe("opencode-rag setup (workspace)", () => {
     );
 
     const { runCli } = await import("../cli.js");
-    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--skip-install", "--skip-health-check"]);
+    await runCli(["node", "cli.ts", "setup", "--yes", "--skip-runtime", "--workspace-plugin", "--skip-install", "--skip-health-check"]);
 
     const opencodeConfig = JSON.parse(readFileSync(opencodeConfigPath, "utf-8"));
     assert.equal(opencodeConfig.$schema, "https://opencode.ai/config.json");
@@ -242,12 +259,12 @@ describe("opencode-rag setup (workspace)", () => {
     assert.equal(parsed.embedding.model, "nonexistent", "config should not be overwritten");
   });
 
-  it("migrates the V1 flat plugin entries to the plugin directory layout", async () => {
+  it("migrates the V1 flat plugin entries and uses the global plugin", async () => {
     const legacyDir = join(tmpdir(), `opencode-rag-init-migrate-${Date.now()}`);
     const legacyPluginsDir = join(legacyDir, ".opencode", "plugins");
     mkdirSync(legacyPluginsDir, { recursive: true });
     writeFileSync(join(legacyDir, "package.json"), "{}", "utf-8");
-    // Exact V1-generated contents (init only removes files it wrote itself).
+    // Exact V1-generated contents (setup only removes files it wrote itself).
     writeFileSync(
       join(legacyPluginsDir, "rag-plugin.js"),
       'import plugin from "../node_modules/opencode-rag-plugin/dist/plugin-entry.js";\nexport default plugin;\n',
@@ -271,8 +288,11 @@ describe("opencode-rag setup (workspace)", () => {
       assert.equal(existsSync(join(legacyPluginsDir, "rag-tui.js")), false, "legacy TUI entry should be removed");
       assert.equal(existsSync(join(legacyDir, ".opencode", "tui.json")), false, "legacy V1 tui config should be removed");
       assert.ok(existsSync(join(legacyPluginsDir, "my-plugin.js")), "hand-written plugin files must be preserved");
-      assert.ok(existsSync(join(legacyPluginsDir, "opencode-rag", "index.js")), "server entrypoint should exist");
-      assert.ok(existsSync(join(legacyPluginsDir, "opencode-rag", "tui.js")), "TUI entrypoint should exist");
+      assert.equal(existsSync(join(legacyPluginsDir, "opencode-rag")), false, "global mode must not create workspace entries");
+      assert.ok(
+        existsSync(join(isolatedHome, ".config", "opencode", "plugins", "opencode-rag", "index.js")),
+        "global server entry should exist",
+      );
     } finally {
       try {
         rmSync(legacyDir, { recursive: true, force: true });

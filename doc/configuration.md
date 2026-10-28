@@ -17,6 +17,8 @@ Configuration is defined in `opencode-rag.json` inside the workspace's `.opencod
 - **Global config — `~/.config/opencode/opencode-rag.json`**: machine-wide defaults *and* **provider options** — the `provider`/`model`/`baseUrl`/`apiKey`/`vectorDimension` of the `embedding`, `description`, `imageDescription`, `decision` and `reranking` sections. These describe which models *this machine* serves, so the TUI settings dialog always saves them here (and only here): they never land in a committed repo file, and the API key sits outside any repository. The plugin re-reads this layer by file mtime — changes apply without a restart.
 - **Runtime overrides — `.opencode/rag_db/runtime-overrides.json`**: live TUI toggles for project-scoped options (retrieval, auto-index, chunking, …), reloaded on a 5-second TTL. Provider options are removed from this file when saved, so a stale override can never shadow the global config.
 
+**Plugin vs. data:** the plugin *code* is installed once globally (`~/.config/opencode/plugins/opencode-rag/`), but the configuration layers above and the vector store stay per workspace. `vectorStore.path` is resolved against the repository, so each project keeps its own LanceDB (or its own ClickHouse namespace).
+
 See [Architecture](architecture.md#configuration-layering).
 
 ## Full Configuration Reference
@@ -605,6 +607,26 @@ Controls the standalone MCP (Model Context Protocol) server.
 | `enabled` | `false` | Auto-start the standalone MCP server on plugin load. Agent tools (`search_semantic`, `get_file_skeleton`, `find_usages`, `describe_image`) and the `chat.message` hook run in-process regardless. Set to `true` only when an external MCP client needs to connect via `opencode-rag mcp`. |
 
 See the [MCP Server](../ReadMe.md#mcp-server) section in the README and [CLI Reference](cli.md#mcp).
+
+### `setup`
+
+Controls workspace setup behaviour. The OpenCode plugin is installed once in
+OpenCode's global plugin directory (`~/.config/opencode/plugins/opencode-rag/`),
+so a repository does not need plugin files of its own.
+
+```json
+{
+  "setup": {
+    "autoScaffold": true
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `autoScaffold` | `true` | Create missing workspace files (`.opencode/opencode-rag.json`, skills, `AGENTS.md`, `.gitignore`) when the plugin loads in a repository that has not been set up yet. Create-only: existing files are never overwritten. Set to `false` to require an explicit `opencode-rag setup`. |
+
+The vector store is **not** affected: `vectorStore.path` is resolved against the workspace, so every repository keeps its own local LanceDB (default `.opencode/rag_db`). Use `--workspace-plugin` if you prefer the per-repository plugin layout instead of the global install.
 
 ### `ui`
 

@@ -59,9 +59,11 @@ node "%dp0%\\node_modules\\opencode-rag-plugin\\dist\\cli\\index.js" %*
 
 // ── Runtime setup ────────────────────────────────────────────────
 let setupRuntime;
+let installGlobalPlugin;
 try {
   const mod = await import("../dist/core/setup-runtime.js");
   setupRuntime = mod.setupRuntime;
+  ({ installGlobalPlugin } = await import("../dist/core/global-plugin.js"));
 } catch {
   console.error("OpenCodeRAG: could not find runtime setup module.");
   console.error("Run `opencode-rag setup` manually after install.");
@@ -78,5 +80,19 @@ if (!result.success) {
   }
   console.error("");
   console.error("Run `opencode-rag setup` manually to retry.");
+  console.error("");
+} else {
+  // Install the plugin once into OpenCode's global plugin directory. This is
+  // what removes the per-repository plugin files; `opencode-rag setup` then
+  // only writes the workspace config, skills and AGENTS.md.
+  try {
+    const plugin = installGlobalPlugin();
+    console.error(`OpenCodeRAG: plugin installed at ${plugin.dir}`);
+  } catch (err) {
+    console.error(`OpenCodeRAG: could not install the global plugin (${err.message}).`);
+    console.error("Run `opencode-rag setup` in your project to finish.");
+  }
+  console.error("");
+  console.error("OpenCodeRAG: next step — cd <your-project> && opencode-rag setup");
   console.error("");
 }

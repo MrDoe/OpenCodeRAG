@@ -1,19 +1,35 @@
 /**
  * @fileoverview Workspace scaffolding shared by `opencode-rag setup`.
  *
- * Creates/updates the `.opencode/` tree, plugin entrypoints, skills,
- * `AGENTS.md` guidance and the workspace `package.json`. Configuration is
- * written separately (see `src/cli/wizard/apply.ts`) so the wizard can decide
- * what goes into the workspace file before `AGENTS.md` is rendered from the
- * effective `decision`/`memory` flags.
+ * Creates/updates the `.opencode/` tree, plugin entrypoints (workspace mode),
+ * skills, `AGENTS.md` guidance and the workspace `package.json`. Configuration
+ * is written separately (see `src/cli/wizard/apply.ts`) so the wizard can
+ * decide what goes into the workspace file before `AGENTS.md` is rendered from
+ * the effective `decision`/`memory` flags.
+ *
+ * By default the plugin is installed ONCE in OpenCode's global plugin
+ * directory (`~/.config/opencode/plugins/opencode-rag/`), so a workspace only
+ * receives the config, skills, `AGENTS.md` and the `.gitignore` that protects
+ * its local LanceDB store. `workspacePlugin: true` restores the legacy
+ * per-repository plugin layout.
  */
 
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { loadConfig, loadWorkspaceConfig, configuredSections, findConfigFile, projectConfigPath } from "../core/config.js";
 import { checkProviderHealth, pullOllamaModels } from "../embedder/health.js";
 import { c } from "./format.js";
 import { getPackageMetadata, readJsonObject, writeJsonFile } from "./helpers.js";
+import { isOllamaConnectionError, ollamaInstallHint } from "./ollama.js";
 import type { Prompter } from "./prompt.js";
 import {
   buildLegacyTuiConfig,
@@ -40,10 +56,15 @@ import {
 export interface WorkspaceScaffoldOptions {
   /** Rewrite generated files even when their content already matches. */
   force?: boolean;
-  /** Skip linking the plugin from the global runtime cache. */
+  /** Skip linking the plugin from the global runtime cache (workspace mode). */
   skipInstall?: boolean;
   /** Config path used to render the AGENTS.md guidance. */
   configPath?: string;
+  /**
+   * Install the plugin into this workspace (legacy layout) instead of using
+   * the global plugin directory. Defaults to `false`.
+   */
+  workspacePlugin?: boolean;
 }
 
 /**
@@ -68,6 +89,43 @@ export function isLikelyProjectRoot(cwd: string): boolean {
   return markers.some((marker) => existsSync(path.join(cwd, marker)));
 }
 
+/** Remove a file only when its content matches exactly what setup generates. */
+function removeGeneratedFile(filePath: string, expected: string, label: string): boolean {
+  if (!existsSync(filePath)) return false;
+  try {
+    if (readFileSync(filePath, "utf-8") !== expected) {
+      console.log(`  ${c.warn("Kept:")}     ${label} (modified locally)`);
+      return false;
+    }
+    unlinkSync(filePath);
+    console.log(`  ${c.updated("Removed:")}  ${label} (superseded by the global plugin)`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Remove a junction created by a previous workspace-mode install. */
+function removeJunction(linkPath: string, label: string): void {
+  if (!existsSync(linkPath)) return;
+  try {
+    if (!lstatSync(linkPath).isSymbolicLink()) return;
+    rmSync(linkPath, { recursive: true, force: true });
+    console.log(`  ${c.updated("Removed:")}  ${label} (global plugin mode)`);
+  } catch {
+    // Leave it; a stale link is harmless next to the global plugin.
+  }
+}
+
+/** Remove a directory when it is empty. */
+function removeIfEmpty(dirPath: string): void {
+  try {
+    if (existsSync(dirPath) && readdirSync(dirPath).length === 0) rmSync(dirPath, { recursive: true });
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Create or refresh the workspace files.
  *
@@ -78,6 +136,7 @@ export async function scaffoldWorkspace(options: WorkspaceScaffoldOptions = {}):
   const cwd = process.cwd();
   const packageMetadata = getPackageMetadata();
   const configPath = options.configPath ?? findConfigFile(cwd) ?? projectConfigPath(cwd);
+  const workspacePlugin = options.workspacePlugin ?? false;
   const opencodeDir = path.join(cwd, ".opencode");
   const gitignorePath = path.join(opencodeDir, ".gitignore");
   const opencodeConfigPath = path.join(opencodeDir, "opencode.json");
@@ -89,6 +148,8 @@ export async function scaffoldWorkspace(options: WorkspaceScaffoldOptions = {}):
   const legacyTuiPluginEntryPath = path.join(pluginsDir, "rag-tui.js");
   const legacyTuiConfigPath = path.join(opencodeDir, "tui.json");
   const opencodePackagePath = path.join(opencodeDir, "package.json");
+  const runtimePluginLink = path.join(opencodeDir, "node_modules", packageMetadata.name);
+  const runtimeSdkLink = path.join(opencodeDir, "node_modules", "@opencode-ai", "plugin");
 
   console.log(`\n${c.heading("Workspace files")}\n`);
 
@@ -105,13 +166,6 @@ export async function scaffoldWorkspace(options: WorkspaceScaffoldOptions = {}):
     console.log(`  ${c.exists("Preserved:")} .opencode/wiki/ (never modified by setup)`);
   }
 
-  if (!existsSync(pluginsDir)) {
-    mkdirSync(pluginsDir, { recursive: true });
-    console.log(`  ${c.created("Created:")}  .opencode/plugins/`);
-  } else {
-    console.log(`  ${c.exists("Exists:")}   .opencode/plugins/`);
-  }
-
   const gitignoreExists = existsSync(gitignorePath);
   const nextGitignoreContent = mergeGitignoreContent(
     gitignoreExists ? readFileSync(gitignorePath, "utf-8") : undefined,
@@ -123,48 +177,79 @@ export async function scaffoldWorkspace(options: WorkspaceScaffoldOptions = {}):
     console.log(`  ${c.exists("Exists:")}   .opencode/.gitignore`);
   }
 
-  const opencodeConfigExists = existsSync(opencodeConfigPath);
-  const nextOpencodeConfig = buildOpencodeConfig(readJsonObject(opencodeConfigPath));
-  if (!opencodeConfigExists || options.force) {
-    writeJsonFile(opencodeConfigPath, nextOpencodeConfig);
-    console.log(`  ${opencodeConfigExists ? c.updated("Updated:") : c.created("Created:")} .opencode/opencode.json`);
-  } else if (JSON.stringify(readJsonObject(opencodeConfigPath)) !== JSON.stringify(nextOpencodeConfig)) {
-    writeJsonFile(opencodeConfigPath, nextOpencodeConfig);
-    console.log(`  ${c.updated("Updated:")}  .opencode/opencode.json`);
-  } else {
-    console.log(`  ${c.exists("Exists:")}   .opencode/opencode.json`);
-  }
+  if (workspacePlugin) {
+    // ── Legacy per-repository plugin layout ──────────────────────────────
+    if (!existsSync(pluginsDir)) {
+      mkdirSync(pluginsDir, { recursive: true });
+      console.log(`  ${c.created("Created:")}  .opencode/plugins/`);
+    } else {
+      console.log(`  ${c.exists("Exists:")}   .opencode/plugins/`);
+    }
 
-  // OpenCode 2 discovers plugin *directories* under `.opencode/plugins/`:
-  // `index.js` is the server entrypoint and `tui.js` beside it is the CLI
-  // entrypoint. Flat `.js` files only reach the server role.
-  if (!existsSync(workspacePluginDir)) {
-    mkdirSync(workspacePluginDir, { recursive: true });
-    console.log(`  ${c.created("Created:")}  .opencode/plugins/${WORKSPACE_PLUGIN_DIR}/`);
-  }
+    const opencodeConfigExists = existsSync(opencodeConfigPath);
+    const nextOpencodeConfig = buildOpencodeConfig(readJsonObject(opencodeConfigPath));
+    if (!opencodeConfigExists || options.force) {
+      writeJsonFile(opencodeConfigPath, nextOpencodeConfig);
+      console.log(`  ${opencodeConfigExists ? c.updated("Updated:") : c.created("Created:")} .opencode/opencode.json`);
+    } else if (JSON.stringify(readJsonObject(opencodeConfigPath)) !== JSON.stringify(nextOpencodeConfig)) {
+      writeJsonFile(opencodeConfigPath, nextOpencodeConfig);
+      console.log(`  ${c.updated("Updated:")}  .opencode/opencode.json`);
+    } else {
+      console.log(`  ${c.exists("Exists:")}   .opencode/opencode.json`);
+    }
 
-  const pluginEntryExists = existsSync(pluginEntryPath);
-  const pluginEntryContent = generateWorkspacePluginFile(packageMetadata.name);
-  if (!pluginEntryExists || options.force) {
-    writeFileSync(pluginEntryPath, pluginEntryContent, "utf-8");
-    console.log(`  ${pluginEntryExists ? c.updated("Updated:") : c.created("Created:")} ${WORKSPACE_PLUGIN_ENTRY}`);
-  } else if (readFileSync(pluginEntryPath, "utf-8") !== pluginEntryContent) {
-    writeFileSync(pluginEntryPath, pluginEntryContent, "utf-8");
-    console.log(`  ${c.updated("Updated:")}  ${WORKSPACE_PLUGIN_ENTRY}`);
-  } else {
-    console.log(`  ${c.exists("Exists:")}   ${WORKSPACE_PLUGIN_ENTRY}`);
-  }
+    // OpenCode 2 discovers plugin *directories* under `.opencode/plugins/`:
+    // `index.js` is the server entrypoint and `tui.js` beside it is the CLI
+    // entrypoint. Flat `.js` files only reach the server role.
+    if (!existsSync(workspacePluginDir)) {
+      mkdirSync(workspacePluginDir, { recursive: true });
+      console.log(`  ${c.created("Created:")}  .opencode/plugins/${WORKSPACE_PLUGIN_DIR}/`);
+    }
 
-  const tuiPluginEntryExists = existsSync(tuiPluginEntryPath);
-  const tuiPluginEntryContent = generateWorkspaceTuiPluginFile(packageMetadata.name);
-  if (!tuiPluginEntryExists || options.force) {
-    writeFileSync(tuiPluginEntryPath, tuiPluginEntryContent, "utf-8");
-    console.log(`  ${tuiPluginEntryExists ? c.updated("Updated:") : c.created("Created:")} ${WORKSPACE_TUI_ENTRY}`);
-  } else if (readFileSync(tuiPluginEntryPath, "utf-8") !== tuiPluginEntryContent) {
-    writeFileSync(tuiPluginEntryPath, tuiPluginEntryContent, "utf-8");
-    console.log(`  ${c.updated("Updated:")}  ${WORKSPACE_TUI_ENTRY}`);
+    const pluginEntryExists = existsSync(pluginEntryPath);
+    const pluginEntryContent = generateWorkspacePluginFile(packageMetadata.name);
+    if (!pluginEntryExists || options.force) {
+      writeFileSync(pluginEntryPath, pluginEntryContent, "utf-8");
+      console.log(`  ${pluginEntryExists ? c.updated("Updated:") : c.created("Created:")} ${WORKSPACE_PLUGIN_ENTRY}`);
+    } else if (readFileSync(pluginEntryPath, "utf-8") !== pluginEntryContent) {
+      writeFileSync(pluginEntryPath, pluginEntryContent, "utf-8");
+      console.log(`  ${c.updated("Updated:")}  ${WORKSPACE_PLUGIN_ENTRY}`);
+    } else {
+      console.log(`  ${c.exists("Exists:")}   ${WORKSPACE_PLUGIN_ENTRY}`);
+    }
+
+    const tuiPluginEntryExists = existsSync(tuiPluginEntryPath);
+    const tuiPluginEntryContent = generateWorkspaceTuiPluginFile(packageMetadata.name);
+    if (!tuiPluginEntryExists || options.force) {
+      writeFileSync(tuiPluginEntryPath, tuiPluginEntryContent, "utf-8");
+      console.log(`  ${tuiPluginEntryExists ? c.updated("Updated:") : c.created("Created:")} ${WORKSPACE_TUI_ENTRY}`);
+    } else if (readFileSync(tuiPluginEntryPath, "utf-8") !== tuiPluginEntryContent) {
+      writeFileSync(tuiPluginEntryPath, tuiPluginEntryContent, "utf-8");
+      console.log(`  ${c.updated("Updated:")}  ${WORKSPACE_TUI_ENTRY}`);
+    } else {
+      console.log(`  ${c.exists("Exists:")}   ${WORKSPACE_TUI_ENTRY}`);
+    }
   } else {
-    console.log(`  ${c.exists("Exists:")}   ${WORKSPACE_TUI_ENTRY}`);
+    // ── Global plugin layout (default) ────────────────────────────────────
+    // Remove the entries an older workspace-mode setup generated. Only exact
+    // matches are removed; hand-written files are kept.
+    removeGeneratedFile(
+      pluginEntryPath,
+      generateWorkspacePluginFile(packageMetadata.name),
+      WORKSPACE_PLUGIN_ENTRY,
+    );
+    removeGeneratedFile(
+      tuiPluginEntryPath,
+      generateWorkspaceTuiPluginFile(packageMetadata.name),
+      WORKSPACE_TUI_ENTRY,
+    );
+    removeIfEmpty(workspacePluginDir);
+    removeIfEmpty(pluginsDir);
+    removeJunction(runtimePluginLink, `.opencode/node_modules/${packageMetadata.name}`);
+    removeJunction(runtimeSdkLink, ".opencode/node_modules/@opencode-ai/plugin");
+    removeIfEmpty(path.join(opencodeDir, "node_modules", "@opencode-ai"));
+    removeIfEmpty(path.join(opencodeDir, "node_modules"));
+    console.log(`  ${c.success("Plugin:")}   global (~/.config/opencode/plugins/opencode-rag/)`);
   }
 
   // Remove only the V1-era flat entries that an older `init` wrote verbatim;
@@ -260,26 +345,28 @@ export async function scaffoldWorkspace(options: WorkspaceScaffoldOptions = {}):
     console.log(`  ${c.exists("Exists:")}   AGENTS.md`);
   }
 
-  const workspacePackageExists = existsSync(opencodePackagePath);
-  const nextWorkspacePackage = buildWorkspacePackageJson(readJsonObject(opencodePackagePath), packageMetadata);
-  if (!workspacePackageExists || options.force) {
-    writeJsonFile(opencodePackagePath, nextWorkspacePackage);
-    console.log(`  ${workspacePackageExists ? c.updated("Updated:") : c.created("Created:")} .opencode/package.json`);
-  } else if (JSON.stringify(readJsonObject(opencodePackagePath)) !== JSON.stringify(nextWorkspacePackage)) {
-    writeJsonFile(opencodePackagePath, nextWorkspacePackage);
-    console.log(`  ${c.updated("Updated:")}  .opencode/package.json`);
-  } else {
-    console.log(`  ${c.exists("Exists:")}   .opencode/package.json`);
-  }
+  if (workspacePlugin) {
+    const workspacePackageExists = existsSync(opencodePackagePath);
+    const nextWorkspacePackage = buildWorkspacePackageJson(readJsonObject(opencodePackagePath), packageMetadata);
+    if (!workspacePackageExists || options.force) {
+      writeJsonFile(opencodePackagePath, nextWorkspacePackage);
+      console.log(`  ${workspacePackageExists ? c.updated("Updated:") : c.created("Created:")} .opencode/package.json`);
+    } else if (JSON.stringify(readJsonObject(opencodePackagePath)) !== JSON.stringify(nextWorkspacePackage)) {
+      writeJsonFile(opencodePackagePath, nextWorkspacePackage);
+      console.log(`  ${c.updated("Updated:")}  .opencode/package.json`);
+    } else {
+      console.log(`  ${c.exists("Exists:")}   .opencode/package.json`);
+    }
 
-  if (options.skipInstall) {
-    console.log(`\n  ${c.exists("Skipped:")}   plugin installation (--skip-install)`);
-    return;
+    if (options.skipInstall) {
+      console.log(`\n  ${c.exists("Skipped:")}   plugin installation (--skip-install)`);
+      return;
+    }
+    console.log(`\n${c.heading("Installing workspace-local plugin...")}\n`);
+    await installPluginFromGlobal(opencodeDir, packageMetadata.name, false);
+    console.log(`\n  ${c.success("Installed:")} .opencode/node_modules/`);
+    console.log(`  ${c.dim("Plugin is linked to the global runtime cache; no npm install was required.")}`);
   }
-  console.log(`\n${c.heading("Installing workspace-local plugin...")}\n`);
-  await installPluginFromGlobal(opencodeDir, packageMetadata.name, false);
-  console.log(`\n  ${c.success("Installed:")} .opencode/node_modules/`);
-  console.log(`  ${c.dim("Plugin is linked to the global runtime cache; no npm install was required.")}`);
 }
 
 /**
@@ -288,10 +375,14 @@ export async function scaffoldWorkspace(options: WorkspaceScaffoldOptions = {}):
  * Uses the effective config (global < workspace) so models chosen in the
  * wizard are probed even though most provider settings live in the global
  * file.
+ *
+ * @param options.autoPull Pull missing models without a second confirmation
+ *   (used by the one-question recommended setup).
  */
 export async function runWorkspaceHealthCheck(
   cwd: string,
   prompter: Prompter,
+  options: { autoPull?: boolean } = {},
 ): Promise<void> {
   console.log(`\n${c.heading("Checking provider connectivity...")}\n`);
   const ragConfig = loadWorkspaceConfig(cwd);
@@ -308,6 +399,13 @@ export async function runWorkspaceHealthCheck(
           : result.type;
     console.log(`  ${icon} ${c.value(result.model)} (${result.provider}) — ${typeLabel} model: ${result.status}`);
     if (result.error) console.log(`    ${c.dim(result.error)}`);
+  }
+
+  if (
+    results.some((result) => result.provider === "ollama" && result.status === "error" && isOllamaConnectionError(result.error))
+  ) {
+    console.log(`\n  ${c.warn("Ollama is not reachable.")} ${c.dim(ollamaInstallHint())}`);
+    console.log(`  ${c.dim("Start it with: ollama serve")}`);
   }
 
   const missingOllama = results.filter(
@@ -336,12 +434,14 @@ export async function runWorkspaceHealthCheck(
     });
     console.log(`\n  ${c.warn("Models not found:")} ${pullEntries.map((entry) => entry.model).join(", ")}`);
 
-    const pull = prompter.interactive
-      ? await prompter.confirm({
-          message: `Pull ${pullEntries.length === 1 ? "this model" : "these models"} now?`,
-          defaultValue: false,
-        })
-      : false;
+    const pull = options.autoPull
+      ? true
+      : prompter.interactive
+        ? await prompter.confirm({
+            message: `Pull ${pullEntries.length === 1 ? "this model" : "these models"} now?`,
+            defaultValue: missingOllama.some((result) => result.type === "embedding"),
+          })
+        : false;
     if (pull) {
       console.log();
       try {

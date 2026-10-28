@@ -504,6 +504,16 @@ export interface McpConfig {
   enabled: boolean;
 }
 
+/** Configuration for workspace setup behaviour. */
+export interface SetupConfig {
+  /**
+   * Create missing workspace files (config, skills, AGENTS.md) when the plugin
+   * loads in a repository that has not been set up yet. Create-only: existing
+   * files are never overwritten. Default true.
+   */
+  autoScaffold: boolean;
+}
+
 /** Configuration for automatic self-updates. */
 export interface AutoUpdateConfig {
   /** Whether update checking is enabled (defaults to true). */
@@ -808,6 +818,8 @@ export interface RagConfig {
   wikiMode?: WikiModeConfig;
   /** MCP server integration config. */
   mcp?: McpConfig;
+  /** Workspace setup behaviour (auto-scaffold). */
+  setup?: SetupConfig;
   /** Auto-update checking config. */
   autoUpdate?: AutoUpdateConfig;
   /** Quirk memory config for experiential agent memory. */
@@ -1155,6 +1167,9 @@ export const DEFAULT_CONFIG: RagConfig = {
   mcp: {
     enabled: false,
   },
+  setup: {
+    autoScaffold: true,
+  },
   autoUpdate: {
     enabled: true,
     autoInstall: false,
@@ -1247,7 +1262,7 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   const KNOWN_TOP_KEYS = new Set([
     "embedding", "indexing", "vectorStore", "retrieval", "reranking",
     "openCode", "chunkers", "chunking", "description",
-    "imageDescription", "decision", "shellGuard", "documentationMode", "wikiMode", "mcp", "autoUpdate", "memory", "ui", "tui", "logging",
+    "imageDescription", "decision", "shellGuard", "documentationMode", "wikiMode", "mcp", "autoUpdate", "memory", "ui", "tui", "logging", "setup",
   ]);
   const topKeys = new Set(Object.keys(config as unknown as Record<string, unknown>));
   for (const key of topKeys) {
@@ -1524,6 +1539,10 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
         warnings.push(`shellGuard.baseUrl "${sg.baseUrl}" is not a valid URL`);
       }
     }
+  }
+
+  if (config.setup && typeof config.setup.autoScaffold !== "boolean") {
+    warnings.push("setup.autoScaffold must be a boolean");
   }
 
   if (config.reranking?.enabled) {
@@ -1936,6 +1955,10 @@ function buildConfig(parsed: Partial<RagConfig>, validate: boolean): RagConfig {
       ...DEFAULT_CONFIG.mcp,
       ...(safeObj<McpConfig>((parsed as { mcp?: unknown }).mcp) ?? {}),
     } as McpConfig,
+    setup: {
+      ...DEFAULT_CONFIG.setup,
+      ...(safeObj<SetupConfig>((parsed as { setup?: unknown }).setup) ?? {}),
+    } as SetupConfig,
     autoUpdate: {
       ...DEFAULT_CONFIG.autoUpdate,
       ...(safeObj<AutoUpdateConfig>((parsed as { autoUpdate?: unknown }).autoUpdate) ?? {}),

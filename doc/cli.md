@@ -467,21 +467,24 @@ opencode-rag setup [options]
 | `--skip-install` | `false` | Skip linking workspace-local plugin dependencies |
 | `--skip-health-check` | `false` | Skip provider connectivity and model availability checks |
 | `--skip-runtime` | `false` | Workspace setup only (no machine-level runtime install) |
+| `--workspace-plugin` | `false` | Install the plugin into this workspace instead of the global config |
+| `--no-index` | — | Do not offer to build the index after setup |
 
 **Machine step — how it works:**
 1. Checks the installed version against the **latest version on npm**; when
    outdated, fetches and installs the new version (self-update, independent of
    how the package was installed - global prefix, runtime junction or dev link)
 2. Creates a junction/symlink at `~/.opencode/node_modules/opencode-rag-plugin` pointing to the global npm prefix
-3. Also links `@opencode-ai/plugin` for OpenCode compatibility
-4. Writes a version marker (`.bundle-version`)
-5. Verifies the installation
+3. Installs the plugin entrypoints once in OpenCode's global plugin directory (`~/.config/opencode/plugins/opencode-rag/{index.js,tui.js}`)
+4. Links `@opencode-ai/plugin` only when the peer dependency does not resolve from the plugin itself
+5. Writes a version marker (`.bundle-version`)
+6. Verifies the installation
 
 No `npm install` into `~/.opencode/` is needed - the junction-links resolve transparently through Node.js.
 
 **Workspace step — the wizard:**
 
-On the first run (no provider configuration yet) or with `--reconfigure`, `setup` asks for the basic setup:
+On the first run (no provider configuration yet) or with `--reconfigure`, `setup` first offers a **one-question recommended setup**: it probes Ollama, detects CPU vs GPU and proposes a preset (`qwen3-embedding:0.6b` / `qwen2.5:3b` / `minicpm-v4.6`, or the 1.7b embedding model on GPU). Accepting pulls missing models automatically. Declining opens the detailed wizard:
 
 1. **Provider** — Ollama (local/remote), OpenAI-compatible (llama.cpp, LM Studio, vLLM, OpenRouter, …), Cohere, Anthropic or Google.
 2. **Base URL** — the host answers a model-list probe (`/api/tags`, `/v1/models`), shown as `✓ reachable, N models` or the exact error.
@@ -494,7 +497,9 @@ Every question has a default taken from the current configuration, so pressing E
 
 **Config layering:** provider/model/baseUrl/apiKey/vectorDimension describe the machine and are written to `~/.config/opencode/opencode-rag.json`; feature toggles and repository settings go to `.opencode/opencode-rag.json`. Stale provider keys left in a workspace config by an older `init` are detected and removed (with a `.bak` backup) because the workspace layer would otherwise shadow the global choice.
 
-**Workspace files:** `.opencode/` tree, `.opencode/plugins/opencode-rag/{index.js,tui.js}`, `.opencode/opencode.json`, `.opencode/package.json`, `.opencode/.gitignore`, `.opencode/skills/opencode-rag/SKILL.md`, `.opencode/skills/make-decision/SKILL.md`, `AGENTS.md` (merged via sentinel markers) and the workspace config. `setup` re-syncs them on every run; `--force` rewrites generated files even when unchanged.
+**Workspace files (global plugin mode, default):** `.opencode/opencode-rag.json`, `.opencode/.gitignore`, `.opencode/skills/opencode-rag/SKILL.md`, `.opencode/skills/make-decision/SKILL.md` and `AGENTS.md` (merged via sentinel markers). No plugin entries, no `.opencode/node_modules` junction. `vectorStore.path` is resolved against the repository, so each workspace keeps its own local LanceDB. The plugin also performs this scaffolding automatically on first load (`setup.autoScaffold`, default on; create-only).
+
+`--workspace-plugin` restores the per-repository layout: `.opencode/plugins/opencode-rag/{index.js,tui.js}`, `.opencode/opencode.json`, `.opencode/package.json` and the `.opencode/node_modules` link.
 
 **Backend auto-tuning:** a fresh workspace config probes Ollama (`GET /api/ps`) and tunes embedding batches for the detected backend:
 - **GPU** (`size_vram > 0`): `embedBatchSize: 40`, `embedConcurrency: 4`, `ollamaMaxBatchSize: 40`
@@ -509,7 +514,7 @@ Every question has a default taken from the current configuration, so pressing E
 
 **Examples:**
 ```bash
-# First-time setup: runtime + workspace + model wizard
+# First-time setup: runtime + global plugin + workspace + recommended models
 opencode-rag setup
 
 # Re-sync after an update (no questions)
@@ -525,6 +530,9 @@ opencode-rag setup --provider openai --base-url http://127.0.0.1:11437/v1 \
 
 # Workspace files only
 opencode-rag setup --skip-runtime
+
+# Legacy per-repository plugin layout
+opencode-rag setup --workspace-plugin
 
 # Check status only / remove the runtime
 opencode-rag setup --check

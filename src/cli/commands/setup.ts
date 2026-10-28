@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import path from "node:path";
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { c } from "../format.js";
 import { getPackageMetadata } from "../helpers.js";
 import {
@@ -41,6 +41,13 @@ import {
   scaffoldWorkspace,
 } from "../workspace.js";
 import { destroyAllPooledConnections } from "../../embedder/http.js";
+import {
+  getGlobalPluginDir,
+  installGlobalPlugin,
+  isGlobalPluginInstalled,
+  isWorkspacePluginInstalled,
+  removeGlobalPlugin,
+} from "../../core/global-plugin.js";
 import type { SetupOptions } from "../types.js";
 
 const PLUGIN_NAME = "opencode-rag-plugin";
@@ -133,6 +140,8 @@ export function registerSetupCommand(program: Command): void {
     .option("--skip-install", "skip linking workspace-local plugin dependencies")
     .option("--skip-health-check", "skip provider connectivity and model availability check")
     .option("--skip-runtime", "skip the machine-level runtime install (workspace setup only)")
+    .option("--workspace-plugin", "install the plugin into this workspace instead of the global config")
+    .option("--no-index", "do not offer to build the search index after setup")
     .action(async (options: SetupOptions) => {
       await runSetup(options);
     });
@@ -179,6 +188,24 @@ async function writeDefaultWorkspaceConfig(configPath: string, configLabel: stri
   console.log(`\n  ${c.created("Created:")} ${c.file(configLabel)}`);
 }
 
+/**
+ * Run `opencode-rag index` in a child process so setup can finish with a
+ * ready-to-query index instead of requiring a second command.
+ */
+function buildIndexNow(): void {
+  const entry = process.argv[1];
+  if (!entry) return;
+  try {
+    console.log(`\n${c.heading("Building the search index...")}\n`);
+    execFileSync(process.execPath, [...process.execArgv, entry, "index"], {
+      stdio: "inherit",
+      windowsHide: true,
+    });
+  } catch {
+    console.log(`\n  ${c.warn("Indexing did not finish.")} Run \`opencode-rag index\` to retry.`);
+  }
+}
+
 /** The `setup` action body. */
 async function runSetup(rawOptions: SetupOptions): Promise<void> {
   const options = normalizeFlags(rawOptions);
@@ -210,6 +237,16 @@ async function runSetup(rawOptions: SetupOptions): Promise<void> {
         }
       })() : "missing"}`);
       console.log(`  ${c.label("SDK:")}       ${existsSync(runtimeSdkPluginDir) ? "present" : "missing"}`);
+      {
+        const globalDir = getGlobalPluginDir();
+        if (isGlobalPluginInstalled()) {
+          console.log(`  ${c.label("Plugin mode:")} ${c.success("global")} at ${c.file(globalDir)}`);
+        } else if (isWorkspacePluginInstalled(process.cwd())) {
+          console.log(`  ${c.label("Plugin mode:")} ${c.value("workspace")} (legacy layout in this project)`);
+        } else {
+          console.log(`  ${c.label("Plugin mode:")} ${c.warn("not installed")} — run \`opencode-rag setup\``);
+        }
+      }
     } else {
       console.log(`  ${c.label("Runtime:")}    ${c.warn("not installed")}`);
       console.log(`  ${c.label("Run:")}       ${c.file("opencode-rag setup")} to install`);
@@ -226,6 +263,9 @@ async function runSetup(rawOptions: SetupOptions): Promise<void> {
     // shared with other OpenCode plugins/tools.
     removeIfExists(runtimeSdkPluginDir);
     removeIfExists(versionFile);
+    if (removeGlobalPlugin()) {
+      console.log(`  ${c.updated("Removed:")} ${c.file(getGlobalPluginDir())}`);
+    }
     console.log(`  ${c.updated("Removed:")} ${c.file(runtimePluginDir)}`);
     console.log(`  ${c.updated("Removed:")} ${c.file(runtimeSdkPluginDir)}`);
     const uninstallPm = bestAvailablePackageManager() ?? "npm";
@@ -260,6 +300,20 @@ async function runSetup(rawOptions: SetupOptions): Promise<void> {
       console.error(`\n  ${c.error("Setup failed. Please check the errors above or run with --force.\n")}`);
       process.exitCode = 1;
       return;
+    }
+  }
+
+  // --- global plugin (default) ---
+  let pluginMode: "global" | "workspace" = options.workspacePlugin ? "workspace" : "global";
+  if (pluginMode === "global") {
+    try {
+      const installed = installGlobalPlugin({ force: options.force });
+      const label = installed.written.length > 0 ? c.created("Installed:") : c.exists("Exists:");
+      console.log(`\n  ${label}   global plugin at ${c.file(installed.dir)}`);
+    } catch (err) {
+      console.log(`\n  ${c.warn("Global plugin install skipped:")} ${(err as Error).message}`);
+      console.log(`  ${c.dim("Falling back to the workspace-local plugin layout.")}`);
+      pluginMode = "workspace";
     }
   }
 
@@ -357,10 +411,19 @@ async function runSetup(rawOptions: SetupOptions): Promise<void> {
       force: options.force,
       skipInstall: options.skipInstall,
       configPath,
+      workspacePlugin: pluginMode === "workspace",
     });
 
     if (!options.skipHealthCheck) {
-      await runWorkspaceHealthCheck(cwd, prompter);
+      await runWorkspaceHealthCheck(cwd, prompter, { autoPull: answers?.recommended === true });
+    }
+
+    if (options.index !== false && prompter.interactive) {
+      const buildIndex = await prompter.confirm({
+        message: "Build the search index now? (can take a few minutes)",
+        defaultValue: true,
+      });
+      if (buildIndex) buildIndexNow();
     }
   } catch (err) {
     console.error(`\n  ${c.error("Setup failed:")} ${(err as Error).message}`);

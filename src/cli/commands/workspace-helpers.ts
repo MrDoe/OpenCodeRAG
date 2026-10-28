@@ -702,6 +702,9 @@ export function generateDefaultConfigJson(
       mcp: {
         enabled: DEFAULT_CONFIG.mcp!.enabled,
       },
+      setup: {
+        autoScaffold: DEFAULT_CONFIG.setup!.autoScaffold,
+      },
       logging: {
         level: DEFAULT_CONFIG.logging.level,
         logFilePath: DEFAULT_CONFIG.logging.logFilePath,

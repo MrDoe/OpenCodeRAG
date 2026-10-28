@@ -10,7 +10,9 @@
 import { DEFAULT_CONFIG, type ProxyConfig } from "../../core/config.js";
 import { getProviderDefault, supportsChat, supportsEmbedding } from "../../core/provider-defaults.js";
 import { c } from "../format.js";
+import { ollamaInstallHint } from "../ollama.js";
 import type { Prompter, SelectOption } from "../prompt.js";
+import { detectOllamaBackend } from "../commands/backend-detect.js";
 import {
   fetchModelCatalog,
   probeEmbeddingDimension,
@@ -18,6 +20,7 @@ import {
   type ModelCatalog,
   type ModelCapability,
 } from "./model-catalog.js";
+import { describePreset, presetForBackend } from "./presets.js";
 import type {
   ChatChoice,
   DecisionChoice,
@@ -661,6 +664,98 @@ export function answersFromFlags(
 }
 
 /**
+ * Offer the one-question recommended setup.
+ *
+ * Returns `{ kind: "answers" }` when the user accepted the preset,
+ * `{ kind: "custom" }` when the full wizard should run instead, and
+ * `{ kind: "cancel" }` when the user aborted.
+ */
+async function offerRecommendedSetup(
+  prompter: Prompter,
+  options: WizardRunOptions,
+): Promise<{ kind: "answers"; answers: WizardAnswers } | { kind: "custom" } | { kind: "cancel" }> {
+  const { existing, proxy } = options;
+  const embeddingSection = section(existing, "embedding");
+  const existingProvider = readString(embeddingSection, "provider");
+  // Non-Ollama setups are already deliberate; keep the detailed wizard.
+  if (existingProvider && existingProvider !== "ollama") return { kind: "custom" };
+
+  const baseUrl = readString(embeddingSection, "baseUrl") ?? "http://127.0.0.1:11434/api";
+  console.log(`\n  ${c.dim(`Checking Ollama at ${baseUrl}…`)}`);
+  const catalog = await fetchModelCatalog({ provider: "ollama", baseUrl, proxy });
+  if (!catalog.reachable) {
+    console.log(`  ${c.warn("Ollama is not reachable.")} ${c.dim(ollamaInstallHint())}`);
+    console.log(`  ${c.dim("Continuing with manual setup.")}`);
+    return { kind: "custom" };
+  }
+
+  const info = await detectOllamaBackend(catalog.baseUrl, proxy);
+  const preset = presetForBackend(info.backend);
+  console.log(`\n${c.heading("Recommended setup")} ${c.dim(`(${preset.label} — ${preset.description})`)}\n`);
+  for (const model of describePreset(preset, catalog)) {
+    console.log(`  ${c.value(model)}`);
+  }
+
+  const accept = await prompter.confirm({
+    message: `Use this recommended ${preset.label} setup?`,
+    defaultValue: true,
+  });
+  if (accept === undefined) return { kind: "cancel" };
+  if (!accept) return { kind: "custom" };
+
+  const dimension = await probeEmbeddingDimension({
+    provider: "ollama",
+    baseUrl: catalog.baseUrl,
+    model: preset.embedding,
+    proxy,
+  });
+  if (dimension) console.log(`\n  ${c.success("✓")} ${c.value(preset.embedding)} produces ${dimension}-dimensional vectors`);
+
+  const decisionSection = section(existing, "decision");
+  const decisionEnabled = readBoolean(decisionSection, "enabled") ?? false;
+  const decision: DecisionChoice = decisionEnabled
+    ? {
+        enabled: true,
+        baseUrl: readString(decisionSection, "baseUrl") ?? catalog.baseUrl,
+        model: readString(decisionSection, "model") ?? DEFAULT_CONFIG.decision?.model ?? "tev1:4b",
+        routeBeforeAsking: readBoolean(decisionSection, "routeBeforeAsking") ?? false,
+      }
+    : { enabled: false };
+
+  const answers: WizardAnswers = {
+    embedding: {
+      provider: "ollama",
+      baseUrl: catalog.baseUrl,
+      model: preset.embedding,
+      ...(dimension ? { vectorDimension: dimension } : {}),
+    },
+    ...(preset.descriptionModel
+      ? {
+          description: {
+            provider: "ollama",
+            baseUrl: catalog.baseUrl,
+            model: preset.descriptionModel,
+          },
+        }
+      : {}),
+    descriptionEnabled: Boolean(preset.descriptionModel),
+    ...(preset.visionModel
+      ? {
+          imageDescription: {
+            provider: "ollama",
+            baseUrl: catalog.baseUrl,
+            model: preset.visionModel,
+          },
+        }
+      : {}),
+    imageDescriptionEnabled: Boolean(preset.visionModel),
+    decision,
+    recommended: true,
+  };
+  return { kind: "answers", answers };
+}
+
+/**
  * Run the interactive wizard.
  *
  * @returns The collected answers, or `undefined` when the user cancelled or
@@ -670,6 +765,11 @@ export async function runSetupWizard(options: WizardRunOptions): Promise<WizardA
   const { prompter, existing } = options;
   const flags: WizardFlags = options;
   console.log(`\n${c.heading("OpenCodeRAG setup")}`);
+
+  const recommended = await offerRecommendedSetup(prompter, options);
+  if (recommended.kind === "cancel") return undefined;
+  if (recommended.kind === "answers") return recommended.answers;
+
   console.log(`\n  ${c.dim("Answer the questions below. Enter accepts the value in [brackets].")}\n`);
 
   const primary = await askHost(prompter, {

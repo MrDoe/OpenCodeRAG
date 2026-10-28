@@ -1,5 +1,6 @@
 import path from "node:path";
 import os from "node:os";
+import { createRequire } from "node:module";
 import {
   existsSync,
   mkdirSync,
@@ -195,33 +196,46 @@ export async function setupRuntime(options?: {
     cpSync(globalPluginDir, runtimePluginDir, { recursive: true });
   }
 
-  // Ensure the @opencode-ai/plugin SDK is available globally.
-  // We must NOT run a package install inside the runtime dir because the
-  // package manager re-resolves all of node_modules/ and replaces the plugin
-  // junction with the published npm version (corrupting the local link).
-  if (!existsSync(globalSdkPluginDir)) {
-    const sdkPm = install.pm ?? bestAvailablePackageManager();
-    if (!sdkPm) {
-      errors.push(
-        "No package manager (npm/pnpm/yarn/bun) found on PATH — cannot install the @opencode-ai/plugin SDK globally.",
-      );
-      return { success: false, errors };
-    }
-    const sdkInstallCommand = globalInstallCommand(sdkPm, "@opencode-ai/plugin");
-    try {
-      execSync(sdkInstallCommand, {
-        stdio: "pipe",
-        timeout: 60_000,
-        windowsHide: true,
-      });
-    } catch (cause) {
-      errors.push(`Failed to install @opencode-ai/plugin SDK globally (${sdkInstallCommand}): ${(cause as Error).message}`);
-      return { success: false, errors };
+  // Ensure the @opencode-ai/plugin SDK is resolvable from the plugin itself.
+  // It is a peer dependency: npm installs it automatically next to the global
+  // package, so the common path needs no extra install. Only fall back to a
+  // global install + junction when resolution actually fails (pnpm/yarn/bun).
+  let sdkResolvable = false;
+  try {
+    const requireFromPlugin = createRequire(path.join(globalPluginDir, "package.json"));
+    requireFromPlugin.resolve("@opencode-ai/plugin/tool");
+    sdkResolvable = true;
+  } catch {
+    // Fall through to the global install.
+  }
+
+  if (!sdkResolvable) {
+    if (!existsSync(globalSdkPluginDir)) {
+      const sdkPm = install.pm ?? bestAvailablePackageManager();
+      if (!sdkPm) {
+        errors.push(
+          "No package manager (npm/pnpm/yarn/bun) found on PATH — cannot install the @opencode-ai/plugin SDK globally.",
+        );
+        return { success: false, errors };
+      }
+      const sdkInstallCommand = globalInstallCommand(sdkPm, "@opencode-ai/plugin");
+      try {
+        execSync(sdkInstallCommand, {
+          stdio: "pipe",
+          timeout: 60_000,
+          windowsHide: true,
+        });
+      } catch (cause) {
+        errors.push(`Failed to install @opencode-ai/plugin SDK globally (${sdkInstallCommand}): ${(cause as Error).message}`);
+        return { success: false, errors };
+      }
     }
   }
 
-  // Create junction from global SDK to runtime (same pattern as plugin above)
-  if (existsSync(globalSdkPluginDir)) {
+  // Create junction from global SDK to runtime (same pattern as plugin above).
+  // Skipped when the peer already resolves from the plugin's own install.
+  const needsSdkJunction = !sdkResolvable;
+  if (needsSdkJunction && existsSync(globalSdkPluginDir)) {
     removeIfExists(runtimeSdkPluginDir);
     retries = 3;
     while (retries > 0 && existsSync(runtimeSdkPluginDir)) {
@@ -249,7 +263,7 @@ export async function setupRuntime(options?: {
       const { cpSync } = await import("node:fs") as typeof import("node:fs");
       cpSync(globalSdkPluginDir, runtimeSdkPluginDir, { recursive: true });
     }
-  } else {
+  } else if (needsSdkJunction) {
     errors.push(`@opencode-ai/plugin SDK not available after global install`);
     return { success: false, errors };
   }
@@ -262,11 +276,11 @@ export async function setupRuntime(options?: {
   const pluginEntry = path.join(runtimePluginDir, "dist", "plugin-entry.js");
   const sdkPkg = path.join(runtimeSdkPluginDir, "package.json");
 
-  const success = existsSync(cliEntry) && existsSync(pluginEntry) && existsSync(sdkPkg);
+  const success = existsSync(cliEntry) && existsSync(pluginEntry) && (sdkResolvable || existsSync(sdkPkg));
   if (!success) {
     if (!existsSync(cliEntry)) errors.push(`CLI entry missing: ${cliEntry}`);
     if (!existsSync(pluginEntry)) errors.push(`Plugin entry missing: ${pluginEntry}`);
-    if (!existsSync(sdkPkg)) errors.push(`Plugin SDK missing: ${sdkPkg}`);
+    if (!sdkResolvable && !existsSync(sdkPkg)) errors.push(`Plugin SDK missing: ${sdkPkg}`);
   }
 
   return { success, errors };
