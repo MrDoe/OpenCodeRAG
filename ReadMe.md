@@ -79,7 +79,7 @@ Searching 1240 indexed chunks...
 
 That is the whole setup. Open OpenCode in the same directory and the agent can use the retrieval tools right away.
 
-`opencode-rag setup` does the whole onboarding in one command: it installs or verifies the machine-level runtime in `~/.opencode/`, scaffolds the current workspace (`.opencode/` config, plugin entries, skill files), and — on the first run, or whenever you pass `--reconfigure` — walks you through a **model wizard** for the embedding, description, vision, and decision models. A plain re-run just syncs the workspace files. The wizard is scriptable (`--yes`, `--provider`, `--base-url`, `--embedding-model`, `--no-description`, …), and `--skip-runtime` limits the run to the workspace. Use `opencode-rag update` to upgrade the runtime to a newer release.
+`opencode-rag setup` does the whole onboarding in one command: it installs or verifies the machine-level runtime in `~/.opencode/`, scaffolds the current workspace (`.opencode/` config, plugin entries, skill files), and — on the first run, or whenever you pass `--reconfigure` — walks you through a **model wizard** for the embedding, description, vision, and decision models. A plain re-run just syncs the workspace files. The wizard is scriptable (`--yes`, `--provider`, `--base-url`, `--embedding-model`, `--description off`, …), and `--skip-runtime` limits the run to the workspace. Use `opencode-rag update` to upgrade the runtime to a newer release.
 
 **Other package managers:** `pnpm add -g opencode-rag-plugin`, `yarn global add opencode-rag-plugin`, and `bun add -g opencode-rag-plugin` work as drop-in replacements. Setup and update detect the package manager that owns the install, so npm does not need to be on `PATH`.
 
