@@ -43,12 +43,21 @@ export interface SetupOptions extends WizardFlags {
   reconfigure?: boolean;
   /** Non-interactive: never prompt and keep the existing configuration. */
   yes?: boolean;
-  /** Skip linking workspace-local plugin dependencies. */
-  skipInstall?: boolean;
-  /** Skip provider connectivity and model availability checks. */
-  skipHealthCheck?: boolean;
-  /** Skip the machine-level runtime install (workspace setup only). */
-  skipRuntime?: boolean;
+  /**
+   * Skip linking workspace-local plugin dependencies. Commander optional
+   * value: `--skip-install`, `--skip-install=false`, `--skip-install off`.
+   */
+  skipInstall?: boolean | string;
+  /**
+   * Skip provider connectivity and model availability checks. Commander
+   * optional value, like {@link skipInstall}.
+   */
+  skipHealthCheck?: boolean | string;
+  /**
+   * Skip the machine-level runtime install (workspace setup only). Commander
+   * optional value, like {@link skipInstall}.
+   */
+  skipRuntime?: boolean | string;
   /** Install the plugin into this workspace instead of the global config. */
   workspacePlugin?: boolean;
   /** Set to `false` by `--no-index`: do not offer to build the index. */

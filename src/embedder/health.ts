@@ -306,7 +306,14 @@ async function checkOpenAiEmbed(
     }
 
     if (response.status === 401 || response.status === 403) {
-      return { provider: "openai", model, type: "embedding", status: "error", error: `Invalid API key (HTTP ${response.status})` };
+      const detail = await summarizeAuthError(response);
+      return {
+        provider: "openai",
+        model,
+        type: "embedding",
+        status: "error",
+        error: `Invalid API key (HTTP ${response.status})${detail ? `: ${detail}` : ""}`,
+      };
     }
 
     const body = await response.text();
@@ -315,6 +322,29 @@ async function checkOpenAiEmbed(
     const msg = (err as Error).message || String(err);
     return { provider: "openai", model, type: "embedding", status: "error", error: msg.slice(0, 200) };
   }
+}
+
+/** Summarize a provider auth error body (OpenAI-compatible JSON or plain text). */
+async function summarizeAuthError(response: Response): Promise<string | undefined> {
+  const body = await response.text().catch(() => "");
+  const trimmed = body.trim();
+  if (!trimmed) return undefined;
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const error = parsed.error;
+    if (error && typeof error === "object") {
+      const entry = error as Record<string, unknown>;
+      const code = typeof entry.code === "string" ? entry.code : undefined;
+      const message = typeof entry.message === "string" ? entry.message : undefined;
+      if (code && message) return `${code} — ${message}`.replace(/\s+/g, " ").slice(0, 220);
+      if (message) return message.replace(/\s+/g, " ").slice(0, 220);
+      if (code) return code;
+    }
+    if (typeof parsed.message === "string") return parsed.message.replace(/\s+/g, " ").slice(0, 220);
+  } catch {
+    // Not JSON — fall through to the plain-text summary.
+  }
+  return trimmed.replace(/\s+/g, " ").slice(0, 220);
 }
 
 /** Check OpenAI-compatible chat endpoint via the /models endpoint. */
@@ -342,7 +372,14 @@ async function checkOpenAiChat(
     }
 
     if (response.status === 401 || response.status === 403) {
-      return { provider: "openai", model, type, status: "error", error: `Invalid API key (HTTP ${response.status})` };
+      const detail = await summarizeAuthError(response);
+      return {
+        provider: "openai",
+        model,
+        type,
+        status: "error",
+        error: `Invalid API key (HTTP ${response.status})${detail ? `: ${detail}` : ""}`,
+      };
     }
 
     const body = await response.text();

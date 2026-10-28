@@ -1,6 +1,7 @@
-import { describe, it, afterEach } from "node:test";
+import { after, afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,7 +13,7 @@ import {
   writeConfigPatch,
 } from "../../cli/wizard/apply.js";
 import { answersFromFlags, hasExplicitSetupFlags, runSetupWizard } from "../../cli/wizard/flow.js";
-import type { Prompter, SelectPromptOptions } from "../../cli/prompt.js";
+import type { Prompter, SelectPromptOptions, TextPromptOptions } from "../../cli/prompt.js";
 import { fetchModelCatalog, inferCapabilities } from "../../cli/wizard/model-catalog.js";
 import { createPrompter } from "../../cli/prompt.js";
 import {
@@ -23,6 +24,8 @@ import {
   presetModelStatus,
 } from "../../cli/wizard/presets.js";
 import type { WizardAnswers } from "../../cli/wizard/types.js";
+import { destroyAllPooledConnections } from "../../embedder/http.js";
+import { buildRepairPatch, offerHealthRepairs, resolveRepairLayer } from "../../cli/wizard/repair.js";
 
 const ANSWERS: WizardAnswers = {
   embedding: {
@@ -121,10 +124,46 @@ describe("answersFromFlags", () => {
     assert.equal(answers.embedding.provider, "openai");
     assert.equal(answers.embedding.baseUrl, "http://localhost:11437/v1");
     assert.equal(answers.embedding.model, "custom-embed");
-    assert.equal(answers.embedding.vectorDimension, 1024, "dimension survives a flag-driven reconfigure");
+    assert.equal(answers.embedding.vectorDimension, undefined, "a changed model drops the old dimension");
     assert.equal(answers.description, undefined);
     assert.equal(answers.descriptionEnabled, false);
     assert.equal(answers.decision, undefined, "no decision flag must leave the section untouched");
+  });
+
+  it("keeps the configured dimension when the embedding target is unchanged", () => {
+    const answers = answersFromFlags(
+      { description: false },
+      {
+        embedding: {
+          provider: "ollama",
+          baseUrl: "http://127.0.0.1:11434/api",
+          model: "qwen3-embedding:0.6b",
+          vectorDimension: 1024,
+        },
+      },
+    );
+    assert.equal(answers.embedding.vectorDimension, 1024, "an unrelated flag keeps the dimension");
+  });
+
+  it("clears a stale dimension from the config when the model changes", () => {
+    const answers = answersFromFlags(
+      { embeddingModel: "qwen3-embedding:4b" },
+      {
+        embedding: {
+          provider: "ollama",
+          baseUrl: "http://127.0.0.1:11434/api",
+          model: "qwen3-embedding:0.6b",
+          vectorDimension: 1024,
+        },
+      },
+    );
+    const { global } = buildConfigPatch(answers);
+    assert.equal((global.embedding as Record<string, unknown>).vectorDimension, null, "null asks the merge to delete the key");
+    const merged = mergeConfigObjects(
+      { embedding: { provider: "ollama", model: "qwen3-embedding:0.6b", vectorDimension: 1024 } },
+      global,
+    );
+    assert.equal("vectorDimension" in (merged.embedding as Record<string, unknown>), false);
   });
 });
 
@@ -180,23 +219,27 @@ class ScriptedPrompter implements Prompter {
   private texts: (string | undefined)[];
   private confirms: (boolean | undefined)[];
   private selects: (string | undefined)[];
+  private passwords: (string | undefined)[];
 
   constructor(script: {
     texts: (string | undefined)[];
     confirms: (boolean | undefined)[];
     selects: (string | undefined)[];
+    passwords?: (string | undefined)[];
   }) {
     this.texts = [...script.texts];
     this.confirms = [...script.confirms];
     this.selects = [...script.selects];
+    this.passwords = [...(script.passwords ?? [])];
   }
 
-  async text(): Promise<string | undefined> {
-    return this.texts.shift();
+  async text(options: TextPromptOptions): Promise<string | undefined> {
+    const next = this.texts.shift();
+    return next === "__default__" ? options.defaultValue : next;
   }
 
   async password(): Promise<string | undefined> {
-    return undefined;
+    return this.passwords.shift();
   }
 
   async confirm(): Promise<boolean | undefined> {
@@ -212,22 +255,85 @@ class ScriptedPrompter implements Prompter {
   close(): void {}
 }
 
-describe("wizard flow", () => {
-  const originalFetch = globalThis.fetch;
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
+/**
+ * Minimal Ollama stand-in for the flow tests.
+ *
+ * `postJson` bypasses the proxy (and therefore any `globalThis.fetch` stub)
+ * for loopback hosts via a pooled socket, so a stubbed fetch alone would let
+ * these tests talk to a real Ollama on 127.0.0.1:11434. A real local server
+ * keeps them deterministic and hermetic.
+ */
+async function startFakeOllama(
+  options: { models?: string[]; gpu?: boolean; dimension?: number; embedStatus?: number } = {},
+): Promise<{ baseUrl: string; close: () => Promise<void> }> {
+  const models = options.models ?? ["qwen3-embedding:0.6b", "qwen2.5:3b", "minicpm-v4.6:latest"];
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    request.on("end", () => {
+      const send = (status: number, body: unknown): void => {
+        response.writeHead(status, { "content-type": "application/json" });
+        response.end(JSON.stringify(body));
+      };
+      const url = request.url ?? "/";
+      const body =
+        chunks.length > 0
+          ? (JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>)
+          : {};
+      if (url === "/api/tags") {
+        send(200, { models: models.map((name) => ({ name })) });
+        return;
+      }
+      if (url === "/api/show") {
+        const id = typeof body.model === "string" ? body.model : "";
+        send(200, { capabilities: id.includes("embed") ? ["embedding"] : ["completion", "tools"] });
+        return;
+      }
+      if (url === "/api/ps") {
+        send(200, { models: [{ name: models[0], size_vram: options.gpu === false ? 0 : 1024 * 1024 }] });
+        return;
+      }
+      if (url === "/api/embed") {
+        if (options.embedStatus !== undefined && options.embedStatus !== 200) {
+          send(options.embedStatus, { error: "embed unavailable" });
+          return;
+        }
+        send(200, { embeddings: [new Array(options.dimension ?? 1024).fill(0.1)] });
+        return;
+      }
+      send(404, { error: "not found" });
+    });
   });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  return {
+    baseUrl: `http://127.0.0.1:${port}/api`,
+    async close(): Promise<void> {
+      destroyAllPooledConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}
 
+after(() => {
+  // The raw HTTP pool keeps sockets (and the process) alive for 30 s otherwise.
+  destroyAllPooledConnections();
+});
+
+describe("wizard flow", () => {
   it("walks an Ollama setup with manual model entry and no optional features", async () => {
     // Unreachable Ollama -> the recommended path is skipped, full wizard runs.
-    globalThis.fetch = (async () => new Response("nope", { status: 500 })) as typeof fetch;
     const prompter = new ScriptedPrompter({
       selects: ["__default__"],
       texts: ["http://127.0.0.1:1/api", "my-embed"],
       confirms: [false, false, false, false, true],
     });
-    const answers = await runSetupWizard({ prompter, existing: {}, proxy: undefined });
+    const answers = await runSetupWizard({
+      prompter,
+      existing: { embedding: { baseUrl: "http://127.0.0.1:1/api" } },
+      proxy: undefined,
+    });
     assert.ok(answers, "wizard should produce answers");
     assert.equal(answers.embedding.provider, "ollama");
     assert.equal(answers.embedding.model, "my-embed");
@@ -238,41 +344,57 @@ describe("wizard flow", () => {
   });
 
   it("offers a one-question recommended setup when Ollama is reachable", async () => {
-    globalThis.fetch = (async (input: string | URL | Request) => {
-      const url = String(input);
-      if (url.includes("/api/tags")) {
-        return new Response(
-          JSON.stringify({
-            models: [
-              { name: "qwen3-embedding:0.6b" },
-              { name: "qwen3-embedding:1.7b" },
-              { name: "qwen2.5:3b" },
-              { name: "minicpm-v4.6" },
-            ],
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        );
-      }
-      return new Response("nope", { status: 500 });
-    }) as typeof fetch;
+    const ollama = await startFakeOllama({ gpu: true });
+    try {
+      const prompter = new ScriptedPrompter({ selects: [], texts: [], confirms: [true] });
+      const answers = await runSetupWizard({
+        prompter,
+        existing: { embedding: { baseUrl: ollama.baseUrl } },
+        proxy: undefined,
+      });
+      assert.ok(answers, "recommended setup should produce answers");
+      assert.equal(answers.recommended, true);
+      assert.equal(answers.embedding.provider, "ollama");
+      assert.equal(answers.embedding.model, OLLAMA_GPU_PRESET.embedding, "the GPU backend selects the GPU preset");
+      assert.equal(answers.embedding.vectorDimension, 1024, "the probe result is recorded");
+      assert.equal(answers.descriptionEnabled, true);
+      assert.equal(answers.imageDescriptionEnabled, true);
+      assert.equal(answers.decision?.enabled, false, "the preset does not enable the decision model");
+    } finally {
+      await ollama.close();
+    }
+  });
 
-    const prompter = new ScriptedPrompter({ selects: [], texts: [], confirms: [true] });
-    const answers = await runSetupWizard({ prompter, existing: {}, proxy: undefined });
-    assert.ok(answers, "recommended setup should produce answers");
-    assert.equal(answers.recommended, true);
-    assert.equal(answers.embedding.provider, "ollama");
-    assert.ok(
-      [OLLAMA_CPU_PRESET.embedding, OLLAMA_GPU_PRESET.embedding].includes(answers.embedding.model),
-      "uses the CPU or GPU preset",
-    );
-    assert.equal(answers.descriptionEnabled, true);
-    assert.equal(answers.imageDescriptionEnabled, true);
+  it("keeps a known dimension when the preset target already matches but the probe fails", async () => {
+    const ollama = await startFakeOllama({ gpu: true, embedStatus: 500 });
+    try {
+      const prompter = new ScriptedPrompter({ selects: [], texts: [], confirms: [true] });
+      const answers = await runSetupWizard({
+        prompter,
+        existing: {
+          embedding: {
+            provider: "ollama",
+            baseUrl: ollama.baseUrl,
+            model: OLLAMA_GPU_PRESET.embedding,
+            vectorDimension: 2048,
+          },
+        },
+        proxy: undefined,
+      });
+      assert.ok(answers);
+      assert.equal(answers.embedding.vectorDimension, 2048);
+    } finally {
+      await ollama.close();
+    }
   });
 
   it("returns undefined when the user cancels the first question", async () => {
-    globalThis.fetch = (async () => new Response("nope", { status: 500 })) as typeof fetch;
     const prompter = new ScriptedPrompter({ selects: [undefined], texts: [], confirms: [] });
-    const answers = await runSetupWizard({ prompter, existing: {}, proxy: undefined });
+    const answers = await runSetupWizard({
+      prompter,
+      existing: { embedding: { baseUrl: "http://127.0.0.1:1/api" } },
+      proxy: undefined,
+    });
     assert.equal(answers, undefined);
   });
 });
@@ -298,5 +420,227 @@ describe("presets", () => {
     const described = describePreset(OLLAMA_CPU_PRESET, catalog);
     assert.ok(described[0]?.includes("installed"));
     assert.ok(described[1]?.includes("will be pulled"));
+  });
+
+  it("treats an implicit :latest tag as installed", () => {
+    const catalog = {
+      provider: "ollama",
+      baseUrl: "http://127.0.0.1:11434/api",
+      reachable: true,
+      models: [{ id: "minicpm-v4.6:latest", capabilities: ["vision" as const] }],
+    };
+    const vision = presetModelStatus(OLLAMA_CPU_PRESET, catalog).find(
+      (model) => model.id === OLLAMA_CPU_PRESET.visionModel,
+    );
+    assert.equal(vision?.installed, true);
+  });
+});
+
+/** Fake OpenAI-compatible host: `/v1/models` + `/v1/embeddings`. */
+async function startFakeOpenAi(options: { models?: string[] } = {}): Promise<{
+  baseUrl: string;
+  close: () => Promise<void>;
+}> {
+  const models = options.models ?? ["repaired-model"];
+  const server = createServer((request, response) => {
+    const send = (status: number, body: unknown): void => {
+      response.writeHead(status, { "content-type": "application/json" });
+      response.end(JSON.stringify(body));
+    };
+    const url = request.url ?? "";
+    if (url.endsWith("/models")) {
+      send(200, { data: models.map((id) => ({ id })) });
+      return;
+    }
+    if (url.includes("/embeddings")) {
+      send(200, { data: [{ embedding: new Array(8).fill(0.1) }] });
+      return;
+    }
+    send(404, { error: "not found" });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const port = typeof address === "object" && address ? address.port : 0;
+  return {
+    baseUrl: `http://127.0.0.1:${port}/v1`,
+    close: async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}
+
+/** Silence the wizard's console output; the test runner parses stdout for its protocol. */
+async function withQuietConsole<T>(fn: () => Promise<T>): Promise<T> {
+  const log = console.log;
+  const error = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    return await fn();
+  } finally {
+    console.log = log;
+    console.error = error;
+  }
+}
+
+describe("health repair patches", () => {
+  it("nests an on-demand repair and clears a stale key", () => {
+    assert.deepEqual(
+      buildRepairPatch("imageDescription", "onDemand", { provider: "opencode-go", model: "mimo-v2.5" }),
+      {
+        imageDescription: {
+          onDemand: { provider: "opencode-go", model: "mimo-v2.5", apiKey: null },
+        },
+      },
+    );
+  });
+
+  it("clears the dimension when the embedding model is replaced", () => {
+    assert.deepEqual(buildRepairPatch("embedding", undefined, { provider: "openai", model: "new" }), {
+      embedding: { provider: "openai", model: "new", apiKey: null, vectorDimension: null },
+    });
+  });
+
+  it("repairs a section in the layer that owns it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rag-repair-layer-"));
+    try {
+      const workspace = join(dir, "workspace.json");
+      const global = join(dir, "global.json");
+      writeFileSync(workspace, JSON.stringify({ imageDescription: { onDemand: { provider: "opencode-go" } } }));
+      writeFileSync(global, JSON.stringify({ embedding: {} }));
+      assert.equal(resolveRepairLayer(workspace, global, "imageDescription", "onDemand"), workspace);
+      assert.equal(resolveRepairLayer(workspace, global, "embedding"), global);
+      assert.equal(resolveRepairLayer(workspace, global, "description"), workspace);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("asks for URL, key and model and writes the repaired section", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "rag-repair-flow-"));
+    const home = join(dir, "home");
+    const project = join(dir, "project");
+    const configPath = join(project, ".opencode", "opencode-rag.json");
+    const globalPath = join(home, ".config", "opencode", "opencode-rag.json");
+    mkdirSync(join(project, ".opencode"), { recursive: true });
+    const server = await startFakeOpenAi({ models: ["repaired-model"] });
+    const savedHome = process.env.HOME;
+    const savedXdg = process.env.XDG_CONFIG_HOME;
+    try {
+      writeFileSync(
+        configPath,
+        JSON.stringify(
+          {
+            embedding: { provider: "openai", baseUrl: server.baseUrl, model: "embed", apiKey: "k" },
+            description: {
+              enabled: true,
+              provider: "openai",
+              baseUrl: server.baseUrl,
+              model: "old-model",
+              apiKey: "old-key",
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      process.env.HOME = home;
+      process.env.XDG_CONFIG_HOME = join(home, ".config");
+
+      const prompter = new ScriptedPrompter({
+        selects: ["__default__", "repaired-model"],
+        texts: ["__default__"],
+        confirms: [true],
+        passwords: ["new-key"],
+      });
+      const repaired = await withQuietConsole(() => offerHealthRepairs({
+        cwd: project,
+        workspaceConfigPath: configPath,
+        globalConfigPath: globalPath,
+        prompter,
+        results: [
+          {
+            provider: "openai",
+            model: "old-model",
+            type: "description",
+            status: "error",
+            error: "Invalid API key (HTTP 401)",
+          },
+        ],
+      }));
+
+      assert.equal(repaired, 1);
+      const saved = JSON.parse(readFileSync(configPath, "utf-8")) as {
+        description: { provider: string; baseUrl: string; model: string; apiKey: string };
+      };
+      assert.equal(saved.description.provider, "openai");
+      assert.equal(saved.description.baseUrl, server.baseUrl);
+      assert.equal(saved.description.model, "repaired-model");
+      assert.equal(saved.description.apiKey, "new-key");
+    } finally {
+      process.env.HOME = savedHome;
+      process.env.XDG_CONFIG_HOME = savedXdg;
+      await server.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("offers to remove the on-demand override instead", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "rag-repair-ondemand-"));
+    const home = join(dir, "home");
+    const project = join(dir, "project");
+    const configPath = join(project, ".opencode", "opencode-rag.json");
+    mkdirSync(join(project, ".opencode"), { recursive: true });
+    const savedHome = process.env.HOME;
+    const savedXdg = process.env.XDG_CONFIG_HOME;
+    try {
+      writeFileSync(
+        configPath,
+        JSON.stringify({
+          embedding: { provider: "openai", baseUrl: "http://127.0.0.1:1/v1", model: "embed", apiKey: "k" },
+          imageDescription: {
+            enabled: true,
+            provider: "openai",
+            baseUrl: "http://127.0.0.1:1/v1",
+            model: "vision",
+            onDemand: { provider: "opencode-go", model: "mimo-v2.5-free" },
+          },
+        }),
+      );
+      process.env.HOME = home;
+      process.env.XDG_CONFIG_HOME = join(home, ".config");
+
+      const prompter = new ScriptedPrompter({
+        selects: [],
+        texts: [],
+        confirms: [true, true],
+      });
+      const repaired = await withQuietConsole(() => offerHealthRepairs({
+        cwd: project,
+        workspaceConfigPath: configPath,
+        globalConfigPath: join(home, ".config", "opencode", "opencode-rag.json"),
+        prompter,
+        results: [
+          {
+            provider: "opencode-go",
+            model: "mimo-v2.5-free",
+            type: "image_description_on_demand",
+            status: "error",
+            error: "api_key_expired",
+          },
+        ],
+      }));
+
+      assert.equal(repaired, 1);
+      const saved = JSON.parse(readFileSync(configPath, "utf-8")) as {
+        imageDescription: Record<string, unknown>;
+      };
+      assert.equal("onDemand" in saved.imageDescription, false);
+      assert.equal(saved.imageDescription.model, "vision");
+    } finally {
+      process.env.HOME = savedHome;
+      process.env.XDG_CONFIG_HOME = savedXdg;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

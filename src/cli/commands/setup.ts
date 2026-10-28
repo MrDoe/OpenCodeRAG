@@ -33,6 +33,7 @@ import {
   removeConfigPaths,
   writeConfigPatch,
 } from "../wizard/apply.js";
+import { offerHealthRepairs } from "../wizard/repair.js";
 import { generateDefaultConfigJson } from "./workspace-helpers.js";
 import { detectOllamaBackend } from "./backend-detect.js";
 import {
@@ -137,9 +138,9 @@ export function registerSetupCommand(program: Command): void {
     .option("--clickhouse-user <name>", "ClickHouse user (default default)")
     .option("--clickhouse-password-env <name>", "env var holding the ClickHouse password")
     .option("--clickhouse-namespace <name>", "project namespace / table suffix")
-    .option("--skip-install", "skip linking workspace-local plugin dependencies")
-    .option("--skip-health-check", "skip provider connectivity and model availability check")
-    .option("--skip-runtime", "skip the machine-level runtime install (workspace setup only)")
+    .option("--skip-install [on|off]", "skip linking workspace-local plugin dependencies")
+    .option("--skip-health-check [on|off]", "skip provider connectivity and model availability check")
+    .option("--skip-runtime [on|off]", "skip the machine-level runtime install (workspace setup only)")
     .option("--workspace-plugin", "install the plugin into this workspace instead of the global config")
     .option("--no-index", "do not offer to build the search index after setup")
     .action(async (options: SetupOptions) => {
@@ -158,8 +159,15 @@ function parseToggle(value: unknown): boolean | undefined {
   return undefined;
 }
 
+/** Setup options with the optional-value booleans already parsed. */
+type NormalizedSetupOptions = Omit<SetupOptions, "skipInstall" | "skipHealthCheck" | "skipRuntime"> & {
+  skipInstall?: boolean;
+  skipHealthCheck?: boolean;
+  skipRuntime?: boolean;
+};
+
 /** Normalize the raw Commander options into the wizard flag shape. */
-function normalizeFlags(options: SetupOptions): SetupOptions {
+function normalizeFlags(options: SetupOptions): NormalizedSetupOptions {
   return {
     ...options,
     description: parseToggle(options.description),
@@ -168,6 +176,10 @@ function normalizeFlags(options: SetupOptions): SetupOptions {
     reranking: parseToggle(options.reranking),
     shellGuard: parseToggle(options.shellGuard),
     memoryCapture: parseToggle(options.memoryCapture),
+    // Optional-value booleans: `--skip-x`, `--skip-x=false`, `--skip-x off`.
+    skipInstall: parseToggle(options.skipInstall),
+    skipHealthCheck: parseToggle(options.skipHealthCheck),
+    skipRuntime: parseToggle(options.skipRuntime),
   };
 }
 
@@ -339,19 +351,19 @@ async function runSetup(rawOptions: SetupOptions): Promise<void> {
     const existing = loadWorkspaceRawConfig(cwd);
     const configured = hasConfiguredEmbedding(existing);
     const explicitFlags = hasExplicitSetupFlags(options);
+    const existingEmbedding = existing.embedding;
+    const configProxy =
+      existingEmbedding && typeof existingEmbedding === "object" && !Array.isArray(existingEmbedding)
+        ? ((existingEmbedding as Record<string, unknown>).proxy as ProxyConfig | undefined)
+        : undefined;
 
     let answers;
     if (prompter.interactive && (options.reconfigure || !configured)) {
-      const existingEmbedding = existing.embedding;
-      const proxy =
-        existingEmbedding && typeof existingEmbedding === "object" && !Array.isArray(existingEmbedding)
-          ? (existingEmbedding as Record<string, unknown>).proxy
-          : undefined;
       answers = await runSetupWizard({
         ...options,
         prompter,
         existing,
-        proxy: proxy as ProxyConfig | undefined,
+        proxy: configProxy,
       });
       if (answers === undefined) {
         console.log(`\n  ${c.warn("Setup cancelled.")} No configuration was changed.\n`);
@@ -415,7 +427,15 @@ async function runSetup(rawOptions: SetupOptions): Promise<void> {
     });
 
     if (!options.skipHealthCheck) {
-      await runWorkspaceHealthCheck(cwd, prompter, { autoPull: answers?.recommended === true });
+      const health = await runWorkspaceHealthCheck(cwd, prompter, { autoPull: answers?.recommended === true });
+      await offerHealthRepairs({
+        cwd,
+        workspaceConfigPath: configPath,
+        globalConfigPath: globalConfigPath(),
+        prompter,
+        results: health,
+        ...(configProxy ? { proxy: configProxy } : {}),
+      });
     }
 
     if (options.index !== false && prompter.interactive) {

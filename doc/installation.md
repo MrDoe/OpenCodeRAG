@@ -160,7 +160,7 @@ Every question defaults to the current value, so Enter keeps an existing setup. 
 - `--skip-install`, `--skip-health-check`, `--skip-runtime`, `--no-index` — skip steps
 - `--check` — runtime and plugin-mode report
 
-After applying the configuration, `setup` validates that your embedding provider is reachable and all configured models are available. With the recommended setup, missing Ollama models are pulled automatically; otherwise you are asked first.
+After applying the configuration, `setup` validates that your embedding provider is reachable and all configured models are available. With the recommended setup, missing Ollama models are pulled automatically; otherwise you are asked first. A failing model (expired key, wrong URL) triggers a repair prompt for that section — provider, base URL, key and model — and an on-demand image override can be removed entirely.
 
 ### Auto-tuned embedding batches (Ollama)
 

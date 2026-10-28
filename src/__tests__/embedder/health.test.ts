@@ -1,7 +1,8 @@
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { checkProviderHealth, pullOllamaModels } from "../../embedder/health.js";
+import { destroyAllPooledConnections } from "../../embedder/http.js";
 import type { RagConfig } from "../../core/config.js";
 
 function baseConfig(overrides: Partial<RagConfig["embedding"]> = {}): RagConfig {
@@ -431,6 +432,35 @@ describe("checkProviderHealth", () => {
       }
     });
 
+    it("includes the provider's auth error code and message", async () => {
+      const { server, port } = await startMockServer((_req, res) => {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: {
+              type: "authentication_error",
+              code: "api_key_expired",
+              message: "This API key has expired. Create a new API key in OpenCode Console.",
+            },
+          }),
+        );
+      });
+
+      try {
+        const config = baseConfig({
+          provider: "openai",
+          baseUrl: `http://127.0.0.1:${port}/v1`,
+          apiKey: "expired-key",
+        });
+        const results = await checkProviderHealth(config);
+        assert.equal(results[0]!.status, "error");
+        assert.match(results[0]!.error!, /api_key_expired/);
+        assert.match(results[0]!.error!, /This API key has expired/);
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      }
+    });
+
     it("returns error when no API key configured", async () => {
       const config = baseConfig({
         provider: "openai",
@@ -633,4 +663,10 @@ describe("checkProviderHealth configured-model gating", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+});
+
+after(() => {
+  // postJson keeps loopback sockets pooled for 30 s, which would otherwise hold
+  // the test process open after the last assertion.
+  destroyAllPooledConnections();
 });

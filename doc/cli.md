@@ -470,6 +470,8 @@ opencode-rag setup [options]
 | `--workspace-plugin` | `false` | Install the plugin into this workspace instead of the global config |
 | `--no-index` | — | Do not offer to build the index after setup |
 
+`--skip-install`, `--skip-health-check` and `--skip-runtime` accept an optional value (`--skip-health-check=false`, `--skip-install off`), like the `[on|off]` toggles.
+
 **Machine step — how it works:**
 1. Checks the installed version against the **latest version on npm**; when
    outdated, fetches and installs the new version (self-update, independent of
@@ -489,7 +491,7 @@ On the first run (no provider configuration yet) or with `--reconfigure`, `setup
 1. **Provider** — Ollama (local/remote), OpenAI-compatible (llama.cpp, LM Studio, vLLM, OpenRouter, …), Cohere, Anthropic or Google.
 2. **Base URL** — the host answers a model-list probe (`/api/tags`, `/v1/models`), shown as `✓ reachable, N models` or the exact error.
 3. **API key** — only when the provider needs one; an existing `<PROVIDER>_API_KEY` environment variable or a stored key is reused. Masked input, never written as a placeholder.
-4. **Embedding model** — picked from the probed list (Ollama capabilities via `/api/show`), with manual entry for models the host does not list. The vector dimension is probed and stored so the store schema stays stable.
+4. **Embedding model** — picked from the probed list (Ollama capabilities via `/api/show`), with manual entry for models the host does not list. The vector dimension is probed and stored so the store schema stays stable; choosing a different provider, base URL or model clears the stored value so it is probed again (a stale dimension would make the store reject the new vectors).
 5. **Description / vision / decision** — each is enabled with a yes/no question and a model picker. The decision model uses Ollama's `/v1/systemone` (`ollama pull tev1:0.8b`).
 6. **Advanced** — reranking, shell guard, memory capture, ClickHouse backend, `embedDescriptions`, background indexing.
 
@@ -506,7 +508,7 @@ Every question has a default taken from the current configuration, so pressing E
 - **CPU**: `embedBatchSize: 20`, `embedConcurrency: 1`, `ollamaMaxBatchSize: 20`
 - **Ollama unreachable / undetermined**: defaults (100 / 3 / 100)
 
-**Health check:** after applying the configuration, `setup` validates provider connectivity and model availability (embedding + description + image description + reranking when enabled). Missing Ollama models can be pulled in place. Use `--skip-health-check` for offline environments.
+**Health check:** after applying the configuration, `setup` validates provider connectivity and model availability (embedding + description + image description + on-demand image description + reranking when enabled). API keys are resolved the way the runtime resolves them (config → env var → OpenCode provider config → `~/.local/share/opencode/auth.json`), so an on-demand override with no key of its own is checked with the provider's real key. Missing Ollama models can be pulled in place. When a model fails, an interactive run offers to rebuild that section — provider, base URL, API key (required for a 401) and model — and writes the result into the config layer that already owns the section; an `imageDescription.onDemand` failure first offers to remove the override and fall back to the indexing vision model. `--skip-health-check` skips the whole step (offline environments); `--yes` reports failures without prompting.
 
 **Updating from npm:** After `npm update -g opencode-rag-plugin`, run `opencode-rag setup` to sync the runtime.
 

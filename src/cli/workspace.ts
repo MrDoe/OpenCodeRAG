@@ -26,7 +26,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { loadConfig, loadWorkspaceConfig, configuredSections, findConfigFile, projectConfigPath } from "../core/config.js";
-import { checkProviderHealth, pullOllamaModels } from "../embedder/health.js";
+import { resolveApiKey } from "../core/resolve-api-key.js";
+import { checkProviderHealth, pullOllamaModels, type HealthCheckResult } from "../embedder/health.js";
 import { c } from "./format.js";
 import { getPackageMetadata, readJsonObject, writeJsonFile } from "./helpers.js";
 import { isOllamaConnectionError, ollamaInstallHint } from "./ollama.js";
@@ -383,9 +384,13 @@ export async function runWorkspaceHealthCheck(
   cwd: string,
   prompter: Prompter,
   options: { autoPull?: boolean } = {},
-): Promise<void> {
+): Promise<HealthCheckResult[]> {
   console.log(`\n${c.heading("Checking provider connectivity...")}\n`);
   const ragConfig = loadWorkspaceConfig(cwd);
+  // Resolve keys the way the runtime does (env vars, OpenCode provider config,
+  // auth store). Without this an on-demand override with no own key inherits
+  // the indexing section's key and reports a misleading 401.
+  resolveApiKey(ragConfig, cwd);
   const results = await checkProviderHealth(ragConfig, configuredSections(cwd));
 
   for (const result of results) {
@@ -463,4 +468,6 @@ export async function runWorkspaceHealthCheck(
       `\n  ${c.warn("Some providers are not reachable.")} Check configuration and network, then run ${c.file("'opencode-rag index'")}.`,
     );
   }
+
+  return results;
 }

@@ -32,7 +32,7 @@ import type {
 } from "./types.js";
 
 /** Provider entries offered by the wizard. */
-interface ProviderEntry {
+export interface ProviderEntry {
   id: string;
   label: string;
   description: string;
@@ -178,7 +178,7 @@ function printCatalogStatus(catalog: ModelCatalog): void {
 }
 
 /** Ask for a provider + base URL + optional API key, then probe its models. */
-async function askHost(
+export async function askHost(
   prompter: Prompter,
   options: {
     message: string;
@@ -187,11 +187,19 @@ async function askHost(
     proxy?: ProxyConfig;
     requireEmbedding?: boolean;
     requireChat?: boolean;
+    /** Extra entries appended to the built-in list (repair keeps an unlisted provider selectable). */
+    extraProviders?: readonly ProviderEntry[];
+    /** Ask for a new key even when one is stored (used after an auth failure). */
+    forceKeyPrompt?: boolean;
   },
 ): Promise<{ host: HostChoice; catalog: ModelCatalog } | undefined> {
   const { message, existing, flags } = options;
   const previous = section(existing, "embedding");
-  const candidates = PROVIDERS.filter((entry) =>
+  const entries = [...PROVIDERS];
+  for (const extra of options.extraProviders ?? []) {
+    if (!entries.some((entry) => entry.id === extra.id)) entries.push(extra);
+  }
+  const candidates = entries.filter((entry) =>
     (options.requireEmbedding ? entry.embedding : true) &&
     (options.requireChat ? entry.chat : true),
   );
@@ -252,12 +260,20 @@ async function askHost(
 
   if (flagKey) {
     apiKey = flagKey;
+  } else if (options.forceKeyPrompt && entry.id !== "ollama") {
+    if (existingKey && !existingKey.startsWith("env:")) {
+      console.log(`  ${c.dim("The stored key was rejected — paste a new one, or press Enter to keep it.")}`);
+    }
+    const typed = await prompter.password("API key (Enter keeps the current one)");
+    if (typed === undefined) return undefined;
+    if (typed.trim().length > 0) apiKey = typed.trim();
+    else if (existingKey && !existingKey.startsWith("env:")) apiKey = existingKey;
   } else if (existingKey && !existingKey.startsWith("env:")) {
     apiKey = existingKey;
     console.log(`  ${c.dim("Using the API key already stored in the config.")}`);
   } else if (envValue) {
     console.log(`  ${c.dim(`Using ${envVar} from the environment (not written to the config).`)}`);
-  } else if (entry.id === "openai" || entry.id === "cohere" || entry.id === "anthropic" || entry.id === "google") {
+  } else if (entry.id !== "ollama") {
     console.log(
       `  ${c.dim(envVar ? `No ${envVar} set. Paste a key or leave empty to add it later.` : "Paste an API key or leave empty to add it later.")}`,
     );
@@ -291,7 +307,7 @@ async function askHost(
  * `__custom__` is always offered so a model that the provider does not list
  * (or a freshly pulled one) can still be typed.
  */
-async function pickModel(
+export async function pickModel(
   prompter: Prompter,
   options: {
     message: string;
@@ -545,14 +561,28 @@ export function answersFromFlags(
     flags.apiKey?.startsWith("env:")
       ? process.env[flags.apiKey.slice(4)]
       : flags.apiKey ?? readString(embeddingSection, "apiKey");
+  const configuredModel = readString(embeddingSection, "model");
+  const model = flags.embeddingModel ?? configuredModel ?? DEFAULT_CONFIG.embedding.model;
+  // A configured dimension belongs to the configured model *and* host. Keep
+  // it only when neither changes: carrying it to a different model would make
+  // the store reject the new vectors (see concepts/embedding-dimension-integrity).
+  const sameTarget =
+    configuredModel !== undefined &&
+    configuredModel === model &&
+    provider === (readString(embeddingSection, "provider") ?? DEFAULT_CONFIG.embedding.provider) &&
+    baseUrl ===
+      (readString(embeddingSection, "baseUrl") ??
+        (provider === "ollama" ? "http://127.0.0.1:11434/api" : defaultBaseUrl(provider)));
   const vectorDimension =
-    typeof embeddingSection?.vectorDimension === "number" ? embeddingSection.vectorDimension : undefined;
+    sameTarget && typeof embeddingSection?.vectorDimension === "number"
+      ? embeddingSection.vectorDimension
+      : undefined;
 
   const embedding: EmbeddingChoice = {
     provider,
     baseUrl,
     ...(apiKey ? { apiKey } : {}),
-    model: flags.embeddingModel ?? readString(embeddingSection, "model") ?? DEFAULT_CONFIG.embedding.model,
+    model,
     ...(vectorDimension ? { vectorDimension } : {}),
   };
 
@@ -709,7 +739,18 @@ async function offerRecommendedSetup(
     model: preset.embedding,
     proxy,
   });
-  if (dimension) console.log(`\n  ${c.success("✓")} ${c.value(preset.embedding)} produces ${dimension}-dimensional vectors`);
+  // Re-running the preset for the same model/host must not discard a known
+  // dimension just because the probe failed (the model may be unloaded).
+  const configuredDimension =
+    typeof embeddingSection?.vectorDimension === "number" ? embeddingSection.vectorDimension : undefined;
+  const sameModel = readString(embeddingSection, "model") === preset.embedding;
+  const sameHost = (readString(embeddingSection, "baseUrl") ?? "http://127.0.0.1:11434/api") === catalog.baseUrl;
+  const vectorDimension = dimension ?? (sameModel && sameHost ? configuredDimension : undefined);
+  if (dimension) {
+    console.log(`\n  ${c.success("✓")} ${c.value(preset.embedding)} produces ${dimension}-dimensional vectors`);
+  } else if (vectorDimension) {
+    console.log(`\n  ${c.dim(`Kept the configured vector dimension (${vectorDimension}).`)}`);
+  }
 
   const decisionSection = section(existing, "decision");
   const decisionEnabled = readBoolean(decisionSection, "enabled") ?? false;
@@ -727,7 +768,7 @@ async function offerRecommendedSetup(
       provider: "ollama",
       baseUrl: catalog.baseUrl,
       model: preset.embedding,
-      ...(dimension ? { vectorDimension: dimension } : {}),
+      ...(vectorDimension ? { vectorDimension } : {}),
     },
     ...(preset.descriptionModel
       ? {
@@ -806,10 +847,19 @@ export async function runSetupWizard(options: WizardRunOptions): Promise<WizardA
   });
   if (embeddingModel === undefined) return undefined;
 
+  const previousSection = section(existing, "embedding");
+  const previousDimension = previousSection?.vectorDimension;
+  const previousModel = readString(previousSection, "model");
+  const previousProvider = readString(previousSection, "provider");
+  const previousBaseUrl = readString(previousSection, "baseUrl");
+  const unchangedTarget =
+    typeof previousDimension === "number" &&
+    previousModel === embeddingModel &&
+    (previousProvider === undefined || previousProvider === embeddingHost.host.provider) &&
+    (previousBaseUrl === undefined || previousBaseUrl === embeddingHost.host.baseUrl);
+
   let vectorDimension: number | undefined;
   if (embeddingHost.catalog.reachable) {
-    const previousDimension = section(existing, "embedding")?.vectorDimension;
-    const previousModel = readString(section(existing, "embedding"), "model");
     vectorDimension = await probeEmbeddingDimension({
       provider: embeddingHost.host.provider,
       baseUrl: embeddingHost.host.baseUrl,
@@ -819,12 +869,15 @@ export async function runSetupWizard(options: WizardRunOptions): Promise<WizardA
     });
     if (vectorDimension) {
       console.log(`  ${c.success("✓")} ${c.value(embeddingModel)} produces ${vectorDimension}-dimensional vectors`);
-    } else if (typeof previousDimension === "number" && previousModel === embeddingModel) {
-      vectorDimension = previousDimension;
-      console.log(`  ${c.dim(`Kept the configured vector dimension (${previousDimension}).`)}`);
+    } else if (unchangedTarget) {
+      vectorDimension = previousDimension as number;
+      console.log(`  ${c.dim(`Kept the configured vector dimension (${vectorDimension}).`)}`);
     } else {
       console.log(`  ${c.warn("Could not probe the vector dimension.")} It will be detected on the first index run.`);
     }
+  } else if (unchangedTarget) {
+    // Offline reconfigure of the same target: keep the known dimension.
+    vectorDimension = previousDimension as number;
   }
 
   const embedding: EmbeddingChoice = {

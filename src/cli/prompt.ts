@@ -14,7 +14,7 @@
  * when stdin is not a TTY, so a piped/CI invocation can never block forever.
  */
 
-import { createInterface } from "node:readline";
+import { createInterface, type Interface } from "node:readline";
 
 /** One selectable entry in {@link Prompter.select}. */
 export interface SelectOption<T> {
@@ -132,37 +132,94 @@ function writeLine(output: NodeJS.WriteStream, line: string): void {
 }
 
 /**
- * Prompt implementation backed by `node:readline`.
+ * Prompt implementation backed by one persistent `node:readline` interface.
  *
- * A readline interface is created lazily for each text/select prompt and
- * closed in a `finally` block; this keeps cancellation (SIGINT) and terminal
- * state predictable even when the user aborts halfway through the wizard.
+ * The interface stays attached for the whole wizard and queues lines that
+ * arrive while no question is pending: a paste, a piped stdin or a pty script
+ * can deliver several answers at once, and a per-prompt interface would drop
+ * the extra lines (readline emits them as `line` events with no listener).
+ *
+ * Exporting the class is deliberate — the queue behaviour is covered by
+ * `src/__tests__/cli/prompt.test.ts`, which injects two `PassThrough` streams.
  */
-class ReadlinePrompter implements Prompter {
+export class ReadlinePrompter implements Prompter {
   readonly interactive = true;
+
+  private rl: Interface | undefined;
+  /** Bumped on every attach/detach so stale listeners from an old interface are ignored. */
+  private generation = 0;
+  private readonly buffered: string[] = [];
+  private waiter: ((line: string | undefined) => void) | undefined;
+  private inputClosed = false;
+  private cancelled = false;
 
   constructor(
     private readonly input: NodeJS.ReadStream,
     private readonly output: NodeJS.WriteStream,
   ) {}
 
+  /** Attach (or re-attach) the line reader. */
+  private ensureInterface(): Interface {
+    if (this.rl) return this.rl;
+    const generation = ++this.generation;
+    const rl = createInterface({ input: this.input, output: this.output, terminal: true });
+    rl.on("line", (line) => {
+      if (generation === this.generation) this.deliver(line);
+    });
+    rl.on("SIGINT", () => {
+      if (generation !== this.generation) return;
+      writeLine(this.output, "\n");
+      this.cancelled = true;
+      this.detach();
+      this.deliver(undefined);
+    });
+    rl.once("close", () => {
+      if (generation !== this.generation) return;
+      this.rl = undefined;
+      this.inputClosed = true;
+      this.deliver(undefined);
+    });
+    this.rl = rl;
+    return rl;
+  }
+
+  /** Close the reader without ending the wizard (used by the raw-mode password path). */
+  private detach(): void {
+    const rl = this.rl;
+    this.rl = undefined;
+    this.generation += 1;
+    rl?.close();
+  }
+
+  /** Hand a line to the waiting question, or queue it for the next one. */
+  private deliver(line: string | undefined): void {
+    const waiter = this.waiter;
+    if (waiter) {
+      this.waiter = undefined;
+      waiter(line);
+      return;
+    }
+    if (line !== undefined) this.buffered.push(line);
+  }
+
   /** Ask one line, resolving `undefined` on abort. */
   private ask(question: string): Promise<string | undefined> {
+    // Buffered answers win over EOF: a pipe ends the stream right after the
+    // last answer, and the wizard must still apply them.
+    const buffered = this.buffered.shift();
+    if (buffered !== undefined) {
+      // The answer arrived before the question was displayed (paste / piped
+      // input): echo both so the transcript still reads like a session.
+      writeLine(this.output, `${question}${buffered}\n`);
+      return Promise.resolve(buffered);
+    }
+    if (this.cancelled || this.inputClosed) return Promise.resolve(undefined);
+
+    const rl = this.ensureInterface();
     return new Promise((resolve) => {
-      const rl = createInterface({ input: this.input, output: this.output, terminal: true });
-      let settled = false;
-      const finish = (value: string | undefined): void => {
-        if (settled) return;
-        settled = true;
-        rl.close();
-        resolve(value);
-      };
-      rl.once("SIGINT", () => {
-        writeLine(this.output, "\n");
-        finish(undefined);
-      });
-      rl.once("close", () => finish(undefined));
-      rl.question(question, (answer) => finish(answer));
+      this.waiter = resolve;
+      rl.setPrompt(question);
+      rl.prompt();
     });
   }
 
@@ -190,6 +247,9 @@ class ReadlinePrompter implements Prompter {
       return this.ask(`  ${message}: `);
     }
 
+    // Raw mode must own the stream: the line reader would otherwise echo and
+    // consume the characters. Re-attached lazily by the next `ask`.
+    this.detach();
     writeLine(this.output, `  ${message}: `);
     this.input.setRawMode(true);
     this.input.resume();
@@ -297,7 +357,9 @@ class ReadlinePrompter implements Prompter {
   }
 
   close(): void {
-    // Interfaces are per-prompt; nothing persistent to release.
+    this.cancelled = true;
+    this.detach();
+    this.deliver(undefined);
   }
 }
 

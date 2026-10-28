@@ -30,8 +30,10 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
 /**
  * Deep-merge `patch` into `base`, returning a new object.
  *
- * Arrays and scalars replace the base value; plain objects merge recursively.
- * `undefined` values are ignored so callers can omit optional keys.
+ * Arrays, scalars and `null` replace the base value; a `null` value removes
+ * the key instead (used to drop a stale `vectorDimension`). Plain objects
+ * merge recursively, and `undefined` values are ignored so callers can omit
+ * optional keys.
  */
 export function mergeConfigObjects(
   base: Record<string, unknown>,
@@ -40,6 +42,10 @@ export function mergeConfigObjects(
   const next: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
+    if (value === null) {
+      delete next[key];
+      continue;
+    }
     const existing = next[key];
     if (isPlainObject(existing) && isPlainObject(value)) {
       next[key] = mergeConfigObjects(existing, value);
@@ -72,7 +78,10 @@ export function buildConfigPatch(answers: WizardAnswers): ConfigPatch {
       baseUrl: answers.embedding.baseUrl,
       model: answers.embedding.model,
       apiKey: answers.embedding.apiKey,
-      vectorDimension: answers.embedding.vectorDimension,
+      // `null` removes a stale dimension from the config file. The wizard only
+      // omits the key when it could not establish the value for this model —
+      // keeping a previous model's dimension would break the store.
+      vectorDimension: answers.embedding.vectorDimension ?? null,
     }),
   };
 

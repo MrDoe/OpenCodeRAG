@@ -28,8 +28,6 @@ export interface Preset {
   descriptionModel?: string;
   /** Vision model, when the preset enables image descriptions. */
   visionModel?: string;
-  /** Whether the decision model is included (Ollama presets). */
-  decisionModel?: string;
 }
 
 /** CPU-friendly Ollama preset (small models, fast on consumer hardware). */
@@ -82,6 +80,16 @@ export interface PresetModelStatus {
 }
 
 /**
+ * Whether a model id is present in the catalog.
+ *
+ * Ollama lists the implicit `:latest` tag explicitly, so `minicpm-v4.6` and
+ * `minicpm-v4.6:latest` are the same model for the "installed" display.
+ */
+function isInstalled(installed: ReadonlySet<string>, id: string): boolean {
+  return installed.has(id) || installed.has(`${id.replace(/:latest$/i, "")}:latest`);
+}
+
+/**
  * List the preset's models with their installation status.
  *
  * An unreachable catalog reports every model as not installed (the caller
@@ -93,7 +101,7 @@ export function presetModelStatus(preset: Preset, catalog?: ModelCatalog): Prese
   const ids = [preset.embedding, preset.descriptionModel, preset.visionModel].filter(
     (id): id is string => typeof id === "string" && id.length > 0,
   );
-  return ids.map((id) => ({ id, installed: installed.has(id) }));
+  return ids.map((id) => ({ id, installed: isInstalled(installed, id) }));
 }
 
 /** Render the preset's model list for the confirmation prompt. */
