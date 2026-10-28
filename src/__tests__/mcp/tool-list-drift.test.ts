@@ -84,10 +84,10 @@ function readRepoFile(relPath: string): string {
 }
 
 /** Collect the tool names from the first table column after a heading (until the next heading). */
-function toolNamesInSection(markdown: string, heading: string): string[] {
-  const after = markdown.split(heading)[1];
-  if (!after) return [];
-  const section = after.split(/\r?\n#{2,3} /)[0] ?? "";
+function toolNamesInSection(markdown: string, heading: RegExp): string[] {
+  const parts = markdown.split(heading);
+  if (parts.length < 2) return [];
+  const section = (parts[1] ?? "").split(/\r?\n#{2,3} /)[0] ?? "";
   return [...section.matchAll(/^\|\s*`([a-z_]+)`/gm)].map((m) => m[1]!).sort();
 }
 
@@ -117,8 +117,10 @@ describe("tool list drift", () => {
     const readme = readRepoFile("ReadMe.md");
 
     // The README MCP table must match the live MCP set exactly — no stale names.
+    // The heading wording is not part of the contract (the README was
+    // restructured to "### MCP tools (plugin and MCP server)"), the table is.
     assert.deepEqual(
-      toolNamesInSection(readme, "### MCP Tools"),
+      toolNamesInSection(readme, /^###\s+MCP tools?\b.*$/im),
       [...EXPECTED_MCP_TOOLS].sort(),
       "README '### MCP Tools' table must list exactly the served MCP tools",
     );
