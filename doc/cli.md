@@ -348,6 +348,9 @@ opencode-rag quirk list [options]
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
 
+Lists quirks newest-first. Each entry prints its full `quirk:<uuid>` ID on the line below the
+content — pass that ID unchanged to `quirk update` or `quirk rm` (the bare UUID is not found).
+
 #### `quirk update`
 
 ```bash

@@ -563,7 +563,8 @@ export function createRecallQuirksTool(options: RecallQuirksToolOptions): ToolDe
       "environment constraints discovered during previous sessions. " +
       "Leverage when you encounter an error, need to recall how something works, " +
       "or want to avoid known pitfalls. Results are filtered by confidence and " +
-      "relevance.",
+      "relevance. Each result lists its full quirk ID — pass it unchanged to " +
+      "`update_quirk` or `delete_quirk` to maintain memory.",
 
     args: {
       query: tool.schema.string().min(1, "A search query is required."),
@@ -602,7 +603,7 @@ export function createRecallQuirksTool(options: RecallQuirksToolOptions): ToolDe
           const score = r.score.toFixed(3);
           lines.push(
             `- ${badge}${r.chunk.content}${tags}`,
-            `  _score=${score}${confidence}_`,
+            `  id: \`${r.chunk.id}\` | _score=${score}${confidence}_`,
           );
         }
 
@@ -613,6 +614,7 @@ export function createRecallQuirksTool(options: RecallQuirksToolOptions): ToolDe
             tool: "recall_quirks",
             query: args.query,
             matches: results.length,
+            quirkIds: results.map((r) => r.chunk.id),
           },
         };
       } catch (err) {

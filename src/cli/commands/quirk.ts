@@ -111,6 +111,7 @@ export function registerQuirkCommand(program: Command): void {
           const tags = q.tags.length > 0 ? ` (${q.tags.join(", ")})` : "";
           const date = q.lastObserved ? new Date(q.lastObserved).toLocaleDateString() : "";
           logCliInfo(ctx.logFilePath, "quirk list", `  ${c.value(badge)}${c.file(q.content)}${c.dim(tags)} ${c.dim(date)}`);
+          logCliInfo(ctx.logFilePath, "quirk list", `    ${c.dim(`id: ${q.id}`)}`);
         }
         await cleanupContext(ctx);
       } catch (err) {
