@@ -2369,8 +2369,28 @@ async function loadKeywordIndex(storePath: string, logFilePath: string, logLevel
     const index = await KeywordIndex.load(storePath);
     appendDebugLog(logFilePath, {
       scope: "plugin",
-      message: `Keyword index loaded (${index.count()} chunks)`,
+      message: `Keyword index loaded (${index.count()} chunks, ${index.postingCount()} postings)`,
     }, logLevel);
+    // One-time migration from the legacy v3 (Map-era) serialization: the
+    // freshly parsed file was the fat sidecar, so persist once in the compact
+    // v4 format and later boots skip the multi-hundred-MB v3 parse spike.
+    // Fire-and-forget — startup must never block on the disk write.
+    if (index.needsFormatMigration()) {
+      void index.save()
+        .then(() => {
+          appendDebugLog(logFilePath, {
+            scope: "plugin",
+            message: "Keyword index migrated to v4 format",
+          }, logLevel);
+        })
+        .catch((err) => {
+          appendDebugLog(logFilePath, {
+            scope: "plugin",
+            message: "Keyword index v4 migration save failed",
+            error: err,
+          }, logLevel);
+        });
+    }
     return index;
   } catch (err) {
     appendDebugLog(logFilePath, {
