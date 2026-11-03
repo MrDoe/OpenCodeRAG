@@ -5,6 +5,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { sidebarOpen, currentView, sidebarWidth } from "./state/store";
 import { ToastContainer } from "./components/Toast";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { ConfigButton } from "./components/ConfigButton";
 import { GlobalSearch } from "./components/GlobalSearch";
 import { FileTree } from "./components/FileTree";
 import { ScopeSelector } from "./components/ScopeSelector";
@@ -63,6 +64,7 @@ export function App() {
           ))}
         </nav>
         <GlobalSearch />
+        <ConfigButton />
         <ThemeToggle />
         <button
           className="p-2 rounded-lg transition-colors hidden lg:block"

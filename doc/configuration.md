@@ -19,6 +19,8 @@ Configuration is defined in `opencode-rag.json` inside the workspace's `.opencod
 
 **Plugin vs. data:** the plugin *code* is installed once globally (`~/.config/opencode/plugins/opencode-rag/`), but the configuration layers above and the vector store stay per workspace. `vectorStore.path` is resolved against the repository, so each project keeps its own LanceDB (or its own ClickHouse namespace).
 
+**Editing from the browser:** the Web UI's **Configuration** view edits both file layers through `PATCH /api/config`. It writes the project layer to the canonical `.opencode/opencode-rag.json` (or to the legacy root file when that is what the workspace already uses) and the global layer to `~/.config/opencode/opencode-rag.json`. The complete patch is validated before the file is touched, the previous content is kept as `.bak`, and matching `runtime-overrides.json` entries are cleared so a saved value is not shadowed. Secrets are write-only in the browser: the API reports only whether a key is set.
+
 See [Architecture](architecture.md#configuration-layering).
 
 ## Full Configuration Reference
@@ -636,7 +638,8 @@ Controls the web dashboard UI server.
 {
   "ui": {
     "port": 3210,
-    "openBrowser": true
+    "openBrowser": true,
+    "theme": "dark"
   }
 }
 ```
@@ -645,8 +648,9 @@ Controls the web dashboard UI server.
 |---|---|---|
 | `port` | `3210` | HTTP port for the UI server |
 | `openBrowser` | `true` | Automatically open the browser on startup |
+| `theme` | `"dark"` | Dashboard theme: `"dark"`, `"light"`, `"plasma"` or `"drama"`. Machine-wide preference — always saved to the global config, editable in the Web UI Config view or via the header toggle (which writes it back). |
 
-Launch with `opencode-rag ui`. See [Web UI documentation](webui.md).
+Launch with `opencode-rag ui` — or let an interactive `opencode-rag setup` open it on the Configuration view. See [Web UI documentation](webui.md).
 
 ### `tui`
 

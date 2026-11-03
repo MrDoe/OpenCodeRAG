@@ -30,12 +30,38 @@ function toQuery(params: Record<string, string | number | boolean>): string {
   return p.toString();
 }
 
+/** API error carrying the HTTP status and any per-field validation messages. */
+export class ConfigApiError extends Error {
+  status: number;
+  code?: string;
+  fieldErrors?: Record<string, string>;
+
+  constructor(
+    message: string,
+    status: number,
+    options: { code?: string; fieldErrors?: Record<string, string> } = {},
+  ) {
+    super(message);
+    this.name = "ConfigApiError";
+    this.status = status;
+    this.code = options.code;
+    this.fieldErrors = options.fieldErrors;
+  }
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const headers = { ...(options?.headers ?? {}), ...authHeaders() };
   const r = await fetch(BASE + url, { ...options, headers });
   const body = await r.json();
   if (!r.ok) {
-    throw new Error(body.error ?? r.statusText);
+    const message = typeof body?.error === "string" ? body.error : r.statusText;
+    throw new ConfigApiError(message, r.status, {
+      code: typeof body?.code === "string" ? body.code : undefined,
+      fieldErrors:
+        body?.fieldErrors && typeof body.fieldErrors === "object"
+          ? (body.fieldErrors as Record<string, string>)
+          : undefined,
+    });
   }
   return body;
 }
@@ -69,6 +95,17 @@ export const API = {
   indexStatus: () => request<any>("/indexing/status"),
   triggerReindex: () => request<any>("/indexing/reindex", { method: "POST" }),
   config: () => request<any>("/config"),
+  configLayers: () => request<any>("/config"),
+  patchConfig: (patch: {
+    layer: "project" | "global" | "runtime";
+    operations: Array<{ op: "set" | "unset"; path: string[]; value?: unknown }>;
+    base?: Record<string, { mtimeMs: number }>;
+  }) =>
+    request<any>("/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
   updateConfig: (patch: Record<string, any>) =>
     request<any>("/config", {
       method: "PUT",

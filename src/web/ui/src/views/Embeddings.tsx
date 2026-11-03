@@ -8,6 +8,7 @@ import { ViewSkeleton } from "../components/ViewSkeleton";
 import { ErrorState } from "../components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
 import { ScatterPlot, type ScatterPlotPoint } from "../charts/ScatterPlot";
+import { EmbedSplitter } from "../components/EmbedSplitter";
 import { kmeans, findOutliers } from "../lib/kmeans";
 import { navigate, searchResults } from "../state/store";
 
@@ -84,6 +85,34 @@ export function Embeddings() {
   const [selectedChunk, setSelectedChunk] = useState<ChunkDetail | null>(null);
   const [selectedLoading, setSelectedLoading] = useState(false);
   const clickSeqRef = useRef(0);
+
+  // Movable splitter between the plot and the selection details. The 2D
+  // canvas has a fixed internal size, so the measured pane width is fed back
+  // as its width prop; the 3D view self-sizes through its own ResizeObserver.
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const plotRef = useRef<HTMLDivElement | null>(null);
+  const [plotWidth, setPlotWidth] = useState(900);
+
+  const showSplit = selectedChunk !== null || selectedLoading;
+
+  useEffect(() => {
+    if (!showSplit || viewMode !== "2d") return;
+    const el = plotRef.current;
+    if (!el) return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const w = Math.round(el.clientWidth);
+        setPlotWidth((prev) => (Math.abs(prev - w) >= 4 ? Math.max(320, w) : prev));
+      });
+    });
+    ro.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [showSplit, viewMode]);
 
   const [clusterAssignments, setClusterAssignments] = useState<number[] | null>(null);
   const [outliers, setOutliers] = useState<Set<number>>(new Set());
@@ -222,6 +251,39 @@ export function Embeddings() {
     });
   };
 
+  // Card body shared by the split and stacked layouts. Both call sites guard
+  // on `selectedChunk`, so the access below is null-safe.
+  const detailsBody = selectedChunk ? (
+    <>
+      <div className="flex items-center gap-3 mb-1 flex-wrap">
+        <span className="text-yellow-400 font-mono text-sm">{escapeHtml(selectedChunk.filePath)}</span>
+        <span className="text-slate-400 text-xs">Lines {selectedChunk.startLine}-{selectedChunk.endLine}</span>
+        <span dangerouslySetInnerHTML={{ __html: langBadge(selectedChunk.language) }} />
+        {selectedChunk.id && <span className="text-xs text-slate-600 font-mono">{selectedChunk.id}</span>}
+        <button
+          className="ml-auto px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs text-white transition-colors"
+          onClick={() => navigate(`chunks?id=${encodeURIComponent(selectedChunk.id)}`)}
+        >
+          Open in Chunks
+        </button>
+      </div>
+      {selectedChunk.description && (
+        <div className="mb-3">
+          <h3 className="text-xs font-semibold text-slate-400 mb-1">Description</h3>
+          <p className="text-sm text-slate-300">{escapeHtml(selectedChunk.description)}</p>
+        </div>
+      )}
+      {selectedChunk.content && (
+        <div>
+          <h3 className="text-xs font-semibold text-slate-400 mb-1">Content</h3>
+          <pre className="text-xs text-slate-300 bg-slate-900 border border-slate-700 rounded p-3 overflow-auto max-h-64 font-mono whitespace-pre">
+            {escapeHtml(selectedChunk.content)}
+          </pre>
+        </div>
+      )}
+    </>
+  ) : null;
+
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Embedding Space Explorer</h1>
@@ -349,70 +411,95 @@ export function Embeddings() {
         </div>
       )}
 
-      {/* Plot */}
-      {viewMode === "3d" ? (
-        <Suspense fallback={<ViewSkeleton type="chart" />}>
-          <ScatterPlot3D
-            points={displayPoints}
-            width={900}
-            height={600}
-            onPointClick={handlePointClick}
-            pointSize={pointSize}
-            resetKey={resetKey}
-            selectedId={selectedChunk?.id ?? null}
-          />
-        </Suspense>
-      ) : (
-        <ScatterPlot
-          points={displayPoints}
-          width={900}
-          height={600}
-          onPointClick={handlePointClick}
-          renderTooltip={(p: ScatterPlotPoint) => {
-            const raw = rawPoints.find((rp) => rp.id === p.id);
-            return (
-              <div>
-                <div className="text-yellow-400 font-mono text-xs">{escapeHtml(p.label)}</div>
-                {raw?.description && (
-                  <div className="text-slate-400 text-xs mt-1">{escapeHtml(truncate(raw.description, 80))}</div>
-                )}
-              </div>
-            );
-          }}
-        />
-      )}
-
-      {/* Selected chunk details */}
-      {selectedLoading && <ViewSkeleton type="detail" />}
-      {selectedChunk && !selectedLoading && (
-        <div className="kpi-card p-4 mt-4">
-          <div className="flex items-center gap-3 mb-1 flex-wrap">
-            <span className="text-yellow-400 font-mono text-sm">{escapeHtml(selectedChunk.filePath)}</span>
-            <span className="text-slate-400 text-xs">Lines {selectedChunk.startLine}-{selectedChunk.endLine}</span>
-            <span dangerouslySetInnerHTML={{ __html: langBadge(selectedChunk.language) }} />
-            {selectedChunk.id && <span className="text-xs text-slate-600 font-mono">{selectedChunk.id}</span>}
-            <button
-              className="ml-auto px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs text-white transition-colors"
-              onClick={() => navigate(`chunks?id=${encodeURIComponent(selectedChunk.id)}`)}
-            >
-              Open in Chunks
-            </button>
+      {/* Plot + selection details — side by side with a movable splitter
+          once a chunk is selected, stacked otherwise */}
+      {showSplit ? (
+        <div ref={splitRef} className="embed-split">
+          <div ref={plotRef} className="embed-plot">
+            {viewMode === "3d" ? (
+              <Suspense fallback={<ViewSkeleton type="chart" />}>
+                <ScatterPlot3D
+                  points={displayPoints}
+                  width={900}
+                  height={600}
+                  onPointClick={handlePointClick}
+                  pointSize={pointSize}
+                  resetKey={resetKey}
+                  selectedId={selectedChunk?.id ?? null}
+                />
+              </Suspense>
+            ) : (
+              <ScatterPlot
+                points={displayPoints}
+                width={plotWidth}
+                height={600}
+                onPointClick={handlePointClick}
+                renderTooltip={(p: ScatterPlotPoint) => {
+                  const raw = rawPoints.find((rp) => rp.id === p.id);
+                  return (
+                    <div>
+                      <div className="text-yellow-400 font-mono text-xs">{escapeHtml(p.label)}</div>
+                      {raw?.description && (
+                        <div className="text-slate-400 text-xs mt-1">{escapeHtml(truncate(raw.description, 80))}</div>
+                      )}
+                    </div>
+                  );
+                }}
+              />
+            )}
           </div>
-          {selectedChunk.description && (
-            <div className="mb-3">
-              <h3 className="text-xs font-semibold text-slate-400 mb-1">Description</h3>
-              <p className="text-sm text-slate-300">{escapeHtml(selectedChunk.description)}</p>
-            </div>
-          )}
-          {selectedChunk.content && (
-            <div>
-              <h3 className="text-xs font-semibold text-slate-400 mb-1">Content</h3>
-              <pre className="text-xs text-slate-300 bg-slate-900 border border-slate-700 rounded p-3 overflow-auto max-h-64 font-mono whitespace-pre">
-                {escapeHtml(selectedChunk.content)}
-              </pre>
-            </div>
-          )}
+          <EmbedSplitter containerRef={splitRef} />
+          <div className="embed-details mt-4 lg:mt-0">
+            {selectedLoading && <ViewSkeleton type="detail" />}
+            {selectedChunk && !selectedLoading && (
+              <div className="kpi-card p-4">
+                {detailsBody}
+              </div>
+            )}
+          </div>
         </div>
+      ) : (
+        <>
+          {viewMode === "3d" ? (
+            <Suspense fallback={<ViewSkeleton type="chart" />}>
+              <ScatterPlot3D
+                points={displayPoints}
+                width={900}
+                height={600}
+                onPointClick={handlePointClick}
+                pointSize={pointSize}
+                resetKey={resetKey}
+                selectedId={null}
+              />
+            </Suspense>
+          ) : (
+            <ScatterPlot
+              points={displayPoints}
+              width={900}
+              height={600}
+              onPointClick={handlePointClick}
+              renderTooltip={(p: ScatterPlotPoint) => {
+                const raw = rawPoints.find((rp) => rp.id === p.id);
+                return (
+                  <div>
+                    <div className="text-yellow-400 font-mono text-xs">{escapeHtml(p.label)}</div>
+                    {raw?.description && (
+                      <div className="text-slate-400 text-xs mt-1">{escapeHtml(truncate(raw.description, 80))}</div>
+                    )}
+                  </div>
+                );
+              }}
+            />
+          )}
+
+          {/* Selected chunk details */}
+          {selectedLoading && <ViewSkeleton type="detail" />}
+          {selectedChunk && !selectedLoading && (
+            <div className="kpi-card p-4 mt-4">
+              {detailsBody}
+            </div>
+          )}
+        </>
       )}
 
       <p className="text-xs text-slate-500 mt-2">

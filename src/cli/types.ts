@@ -62,6 +62,11 @@ export interface SetupOptions extends WizardFlags {
   workspacePlugin?: boolean;
   /** Set to `false` by `--no-index`: do not offer to build the index. */
   index?: boolean;
+  /**
+   * Set to `false` by `--no-ui`: do not open the web UI Configuration page
+   * when an interactive setup finishes.
+   */
+  ui?: boolean;
 }
 
 /** Shape of the `package.json` metadata required by CLI helpers. */

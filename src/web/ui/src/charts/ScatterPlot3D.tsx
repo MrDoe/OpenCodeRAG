@@ -241,7 +241,10 @@ export function ScatterPlot3D({
     <div
       ref={containerRef}
       className="relative overflow-hidden rounded-lg border border-slate-700 bg-slate-900"
-      style={{ width, height }}
+      // Fluid width capped at the `width` prop: the ResizeObserver below
+      // keeps the renderer fitted when the pane shrinks (e.g. beside the
+      // selection details), while the default full-width layout is unchanged.
+      style={{ width: "100%", maxWidth: width, height }}
     />
   );
 }

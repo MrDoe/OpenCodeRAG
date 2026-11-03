@@ -340,6 +340,13 @@ export interface UiConfig {
   port: number;
   /** Whether to automatically open the browser on startup. */
   openBrowser: boolean;
+  /**
+   * Dashboard color theme: `dark`, `light`, `plasma` or `drama`.
+   * Machine-wide preference, so it lives in the global config; the web UI
+   * caches it in localStorage for first paint and treats this as the source
+   * of truth on snapshot load.
+   */
+  theme: string;
 }
 
 /** Configuration for the automated documentation mode that adds JSDoc/TSDoc to source files. */
@@ -1215,6 +1222,7 @@ export const DEFAULT_CONFIG: RagConfig = {
   ui: {
     port: 3210,
     openBrowser: true,
+    theme: "dark",
   },
   tui: {
     fileListKeybinding: "ctrl+enter",
@@ -1466,6 +1474,9 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   if (config.ui) {
     if (config.ui.port < 1 || config.ui.port > 65535) {
       warnings.push("ui.port must be between 1 and 65535");
+    }
+    if (!["dark", "light", "plasma", "drama"].includes(config.ui.theme)) {
+      warnings.push(`ui.theme "${config.ui.theme}" — expected "dark", "light", "plasma" or "drama"`);
     }
   }
 

@@ -282,8 +282,10 @@ opencode-rag ui [options]
 | Flag | Default | Description |
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
+| `-p, --port <number>` | `3210` | Port to listen on (`ui.port` in the config) |
+| `--no-open` | — | Skip the automatic browser launch |
 
-Launches a local HTTP server (default port `3210`, configurable via `ui.port`). Opens the browser automatically unless `ui.openBrowser` is `false`. See [Web UI documentation](webui.md).
+Launches a local HTTP server (default port `3210`, configurable via `ui.port`). Opens the browser automatically unless `ui.openBrowser` is `false`. The hash route selects the initial view — `#config` opens the Configuration page, `#search` the search playground. See [Web UI documentation](webui.md).
 
 ### `mcp`
 
@@ -472,6 +474,7 @@ opencode-rag setup [options]
 | `--skip-runtime` | `false` | Workspace setup only (no machine-level runtime install) |
 | `--workspace-plugin` | `false` | Install the plugin into this workspace instead of the global config |
 | `--no-index` | — | Do not offer to build the index after setup |
+| `--no-ui` | — | Do not open the Web UI Configuration page after setup |
 
 `--skip-install`, `--skip-health-check` and `--skip-runtime` accept an optional value (`--skip-health-check=false`, `--skip-install off`), like the `[on|off]` toggles.
 
@@ -512,6 +515,8 @@ Every question has a default taken from the current configuration, so pressing E
 - **Ollama unreachable / undetermined**: defaults (100 / 3 / 100)
 
 **Health check:** after applying the configuration, `setup` validates provider connectivity and model availability (embedding + description + image description + on-demand image description + reranking when enabled). API keys are resolved the way the runtime resolves them (config → env var → OpenCode provider config → `~/.local/share/opencode/auth.json`), so an on-demand override with no key of its own is checked with the provider's real key. Missing Ollama models can be pulled in place. When a model fails, an interactive run offers to rebuild that section — provider, base URL, API key (required for a 401) and model — and writes the result into the config layer that already owns the section; an `imageDescription.onDemand` failure first offers to remove the override and fall back to the indexing vision model. `--skip-health-check` skips the whole step (offline environments); `--yes` reports failures without prompting.
+
+**Configuration UI:** a successful interactive run starts the Web UI on its **Configuration** view (`http://127.0.0.1:<ui.port>/?token=…#config`) and keeps it running until you press Ctrl+C, so the generated settings can be reviewed right away. The launch is skipped with `--no-ui`, with `--yes`, in non-TTY/scripted runs, after a failed setup, and when `ui.openBrowser` is `false` (the URL is printed instead). If `ui.port` is already taken, setup falls back to a free port.
 
 **Updating from npm:** After `npm update -g opencode-rag-plugin`, run `opencode-rag setup` to sync the runtime.
 

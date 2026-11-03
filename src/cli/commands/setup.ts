@@ -42,6 +42,7 @@ import {
   scaffoldWorkspace,
 } from "../workspace.js";
 import { destroyAllPooledConnections } from "../../embedder/http.js";
+import { launchSetupConfigUi, shouldLaunchSetupUi } from "../setup-ui.js";
 import {
   getGlobalPluginDir,
   installGlobalPlugin,
@@ -110,6 +111,9 @@ export function registerSetupCommand(program: Command): void {
       "    Use --reconfigure to re-open the wizard, or pass flags for scripted setups.\n" +
       "  - Updating: use 'opencode-rag update' to install a newer release.\n" +
       "  - Troubleshooting: use --check to inspect the runtime, or --force to reinstall.\n" +
+      "\nAfter an interactive run the web UI opens on the Configuration page so the\n" +
+      "generated settings can be reviewed; press Ctrl+C there to finish. Use --no-ui\n" +
+      "to keep setup headless.\n" +
       "\nProvider/model settings are written to the global config\n" +
       "(~/.config/opencode/opencode-rag.json); feature toggles to the workspace\n" +
       "config (.opencode/opencode-rag.json).\n",
@@ -143,6 +147,7 @@ export function registerSetupCommand(program: Command): void {
     .option("--skip-runtime [on|off]", "skip the machine-level runtime install (workspace setup only)")
     .option("--workspace-plugin", "install the plugin into this workspace instead of the global config")
     .option("--no-index", "do not offer to build the search index after setup")
+    .option("--no-ui", "do not open the web UI Configuration page after setup")
     .action(async (options: SetupOptions) => {
       await runSetup(options);
     });
@@ -458,6 +463,14 @@ async function runSetup(rawOptions: SetupOptions): Promise<void> {
   console.log(`  ${c.dim("  1. Restart OpenCode if it is running")}`);
   console.log(`  ${c.dim("  2. Run `opencode-rag index` to build the search index")}`);
   checkOpenCodeRunning();
+
+  // Interactive runs hand off to the Configuration page so the generated
+  // settings can be reviewed immediately; the process stays alive until the
+  // user presses Ctrl+C. Never in scripted (`-y`) or failed runs.
+  if ((process.exitCode ?? 0) === 0 && shouldLaunchSetupUi(options)) {
+    await launchSetupConfigUi(process.cwd());
+  }
+
   console.log();
 }
 

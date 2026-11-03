@@ -11,9 +11,21 @@ import { analyzeTokenUsage, compareTokenAnalyses, projectTokenSavings } from "..
 import { listQuirks, lintQuirks, removeQuirk, type QuirkStoreDeps } from "../quirks/quirk-store.js";
 import { retrieve, type RetrieveOptions } from "../retriever/retriever.js";
 import { getRerankerFor } from "../reranker/factory.js";
-import { updateConfigValue, ensureConfigFile, type RagConfig } from "../core/config.js";
+import {
+  updateConfigValue,
+  ensureConfigFile,
+  globalConfigPath,
+  projectConfigPath,
+  type RagConfig,
+} from "../core/config.js";
 import { createExcludeMatcher } from "../core/exclude.js";
 import { CODE_SEARCH_FILTER, type ChunkBrowseStore, type EmbeddingProvider } from "../core/interfaces.js";
+import {
+  handleConfigLayers,
+  handleConfigPatch,
+  type ConfigApiContext,
+} from "./config-api.js";
+import { redactConfigSecrets } from "./config-schema.js";
 
 const FILE_MIME_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -83,7 +95,7 @@ function tokensEqual(a: string, b: string): boolean {
 function sendJson(res: ServerResponse, response: ApiResponse, origin: string | null): void {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "X-Content-Type-Options": "nosniff",
   };
@@ -113,6 +125,7 @@ function sendJson(res: ServerResponse, response: ApiResponse, origin: string | n
  * @param getEmbedder  - Lazily-created embedder for /api/retrieve and reindex passes.
  * @param token        - Per-run auth token required on every request.
  * @param configPath   - Path to the opencode-rag.json config file, used by PUT /api/config.
+ * @param onConfigChanged - Called after a layered config write (reset embedder/caches).
  * @returns An async handler that returns `true` when a route matched or `false` otherwise.
  */
 export function createApiHandler(
@@ -123,12 +136,23 @@ export function createApiHandler(
   cfg?: RagConfig,
   getEmbedder?: () => Promise<EmbeddingProvider>,
   token?: string,
-  configPath?: string
+  configPath?: string,
+  onConfigChanged?: (cfg: RagConfig, changedPaths: string[][]) => void
 ) {
   // Mutable config reference so PUT /api/config can update the in-memory
   // config used by subsequent requests (retrieve, reindex, quirk endpoints).
   const configRef: { current?: RagConfig } = { current: cfg };
   const effectiveConfig = (): RagConfig => configRef.current ?? cfg ?? ({} as RagConfig);
+
+  const workspaceDir = cwd ?? process.cwd();
+  const configCtx: ConfigApiContext = {
+    workspaceDir,
+    projectConfigPath: configPath ?? projectConfigPath(workspaceDir),
+    globalConfigPath: globalConfigPath(),
+    storePath,
+    configRef,
+    ...(onConfigChanged ? { onConfigChanged } : {}),
+  };
 
   return async (req: IncomingMessage, res: ServerResponse): Promise<boolean> => {
     const url = req.url ?? "/";
@@ -147,7 +171,7 @@ export function createApiHandler(
       res.writeHead(204, {
         "Access-Control-Allow-Origin": origin,
         "Vary": "Origin",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
       });
       res.end();
@@ -206,7 +230,10 @@ export function createApiHandler(
       } else if (path === "/api/indexing/reindex" && method === "POST") {
         response = await handleReindex(cwd!, effectiveConfig(), storePath, store, getEmbedder);
       } else if (path === "/api/config" && method === "GET") {
-        response = await handleConfig(effectiveConfig());
+        response = handleConfigLayers(configCtx);
+      } else if (path === "/api/config" && method === "PATCH") {
+        const body = await readBody(req);
+        response = handleConfigPatch(configCtx, body);
       } else if (path === "/api/config" && method === "PUT") {
         const body = await readBody(req);
         response = handleConfigUpdate(configPath, configRef, body);
@@ -720,21 +747,20 @@ async function handleReindex(
 
 /**
  * Return the effective configuration with API keys redacted.
+ *
+ * Retained for the legacy `/api/config` contract used by embedded clients.
  */
-function handleConfig(cfg: import("../core/config.js").RagConfig): ApiResponse {
-  const redacted = JSON.parse(JSON.stringify(cfg));
+export function handleConfig(cfg: RagConfig): ApiResponse {
+  const redacted = JSON.parse(JSON.stringify(cfg)) as Record<string, unknown>;
   redactKeys(redacted);
   return { status: 200, body: { config: redacted } };
 }
 
 function redactKeys(obj: Record<string, unknown>): void {
-  for (const key of Object.keys(obj)) {
-    if (/api\s*key|apikey|password|passwd|secret|token|authorization|credential/i.test(key)) {
-      obj[key] = "***";
-    } else if (typeof obj[key] === "object" && obj[key] !== null) {
-      redactKeys(obj[key] as Record<string, unknown>);
-    }
-  }
+  // Schema-aware: only real credential paths are redacted. The old
+  // `/token/i` substring rule also matched numeric settings such as
+  // `memory.autoInjectMinTokenOverlap`.
+  redactConfigSecrets(obj);
 }
 
 /**

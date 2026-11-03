@@ -120,19 +120,35 @@ export async function startWebUi(
   const keywordIndex = await KeywordIndex.load(storePath);
   const browseStore = asBrowseStore(store);
 
-  // Lazy embedder for /api/retrieve — initialized on first use
+  // Lazy embedder for /api/retrieve — initialized on first use.
+  // `activeCfg` is refreshed after a config write so a changed embedding model
+  // is picked up instead of reusing the startup snapshot.
+  let activeCfg = cfg;
   let embedderPromise: Promise<import("../core/interfaces.js").EmbeddingProvider> | null = null;
   async function getEmbedder(): Promise<import("../core/interfaces.js").EmbeddingProvider> {
     if (!embedderPromise) {
       const { createEmbedder } = await import("../embedder/factory.js");
-      embedderPromise = Promise.resolve(createEmbedder(cfg!));
+      embedderPromise = Promise.resolve(createEmbedder(activeCfg!));
     }
     return embedderPromise;
   }
 
   const html = getStaticHtml();
   const token = randomBytes(24).toString("hex");
-  const apiHandler = createApiHandler(browseStore, keywordIndex, storePath, cwd, cfg, getEmbedder, token, configPath);
+  const apiHandler = createApiHandler(
+    browseStore,
+    keywordIndex,
+    storePath,
+    cwd,
+    cfg,
+    getEmbedder,
+    token,
+    configPath,
+    (nextCfg) => {
+      activeCfg = nextCfg;
+      embedderPromise = null;
+    },
+  );
 
   const server: Server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
@@ -196,8 +212,12 @@ export async function startWebUi(
   return new Promise((resolve, reject) => {
     server.on("error", reject);
     server.listen(port, "127.0.0.1", () => {
+      // Report the bound port, not the requested one: `port: 0` asks the OS
+      // for a free port and callers print this value in the UI URL.
+      const address = server.address();
+      const boundPort = typeof address === "object" && address ? address.port : port;
       resolve({
-        port,
+        port: boundPort,
         token,
         close: () =>
           new Promise<void>((resolveClose) => {

@@ -79,7 +79,8 @@ No GPU is required, although it is recommended when using code and image descrip
 npm install -g opencode-rag-plugin
 
 # 2. Set up the runtime, the workspace, and your models
-#    (a short interactive wizard guides you through the configuration)
+#    (a short interactive wizard guides you through the configuration;
+#     the web UI then opens on the Configuration page)
 cd /path/to/your/project
 opencode-rag setup
 
@@ -114,6 +115,7 @@ It handles the whole onboarding in one command:
 - installs or verifies the machine-level runtime in `~/.opencode/`
 - scaffolds the current workspace (`.opencode/` config, plugin entries, skill files)
 - on the first run, or with `--reconfigure`, starts a **model wizard** for the embedding, description, vision, and decision models
+- an interactive run finishes by opening the **Web UI on its Configuration page**, so the generated settings can be reviewed and adjusted; the server stays up until you press `Ctrl+C` (`--no-ui` keeps setup headless)
 
 A plain re-run only syncs the workspace files. The wizard is scriptable (`--yes`, `--provider`, `--base-url`, `--embedding-model`, `--description off`, and more), and `--skip-runtime` limits the run to the workspace. Use `opencode-rag update` to upgrade the runtime to a newer release.
 
@@ -387,7 +389,7 @@ Image files (PNG, JPEG, WebP, and others) are sent to a vision-capable LLM, and 
 
 ### 7. Web UI, evaluation, and calibration
 
-**Web UI.** A browser dashboard for exploring the vector database: browse, visualize, and inspect chunks, and evaluate OpenCode sessions by retrieved chunks and consumed tokens. Launch it with `opencode-rag ui`. See the [Web UI docs](doc/webui.md).
+**Web UI.** A browser dashboard for exploring the vector database: browse, visualize, and inspect chunks side-by-side with a movable splitter, edit the global and project configuration layers, switch between dark, plasma, drama, and light themes, and evaluate OpenCode sessions by retrieved chunks and consumed tokens. Launch it with `opencode-rag ui` (or let `opencode-rag setup` open it on the Configuration page). See the [Web UI docs](doc/webui.md).
 
 [![OpenCodeRAG Web UI](doc/assets/webui-3d.png)](doc/assets/webui-3d.png)
 

@@ -22,6 +22,8 @@ Opens `http://127.0.0.1:3210` in your browser automatically.
 
 The server binds to `127.0.0.1` only (localhost). Press `Ctrl+C` to stop.
 
+`opencode-rag setup` reuses the same server: a successful interactive run opens the **Configuration** view directly (`…/?token=…#config`) and keeps the server running until you press `Ctrl+C`. The launch is skipped with `--no-ui`, with `--yes`, and in non-interactive terminals.
+
 ## Configuration
 
 ```json
@@ -108,7 +110,7 @@ Selecting **Color by: Cluster** runs the client-side K-Means and shows the **K**
 
 **3D mode:** Three.js point cloud with orbit controls (drag to rotate, wheel to zoom, right-drag to pan, damped). The point cloud is centered and scaled to a unit cube; axes are anchored at the data bounding-box minimum corner.
 
-**Clicking any point (either mode)** selects the chunk: an RGB crosshair marks it in 3D and a details panel appears below the plot showing the file path, line range, language, chunk ID, **Description** card, and the chunk content. The "Open in Chunks" button jumps to the full Chunks view.
+**Clicking any point (either mode)** selects the chunk: an RGB crosshair marks it in 3D and a details panel opens **beside** the plot — file path, line range, language, chunk ID, **Description** card, and chunk content, with an "Open in Chunks" button jumping to the full Chunks view. A movable splitter divides plot and details (drag, arrow keys when focused, double-click to reset to 62/38); the position persists across visits. Below `lg` breakpoints the panes stack and the splitter hides. In split mode the 2D canvas shrinks with its pane; the 3D view resizes itself.
 
 ![Embeddings View](assets/webui-embeddings.png)
 
@@ -220,6 +222,36 @@ This sections shows the experiential memory stored in th vector database — got
 - **Lint button** — health-check quirks (low confidence, stale, duplicates)
 - **Delete** — remove a quirk with confirmation
 
+### Config
+
+![Config View](assets/webui-config.png)
+
+Editable view of the configuration schema — the third tab is the read-only merged result that the old effective-config viewer showed.
+
+**Layer tabs:**
+
+| Tab | File | Purpose |
+|---|---|---|
+| Project | `.opencode/opencode-rag.json` | Repository settings (indexing, retrieval, chunking, …) |
+| Global | `~/.config/opencode/opencode-rag.json` | Machine-wide provider and model settings |
+| Effective | — | Read-only merge of defaults → global → project → runtime overrides, with a provenance badge per value |
+
+**Editing:**
+
+- Settings are grouped into sections with a sticky section navigation; the header search filters by label or config path (e.g. `retrieval`, `embedding.model`).
+- The **Advanced** switch reveals the rarely changed fields (the badge counts them); the common settings are always visible.
+- Controls match the setting type: switch, number (min/max/step), enum select, tag list (`includeExtensions`, `includeDirs`), key/value editor (HTTP headers, ClickHouse settings), free-form JSON, and masked secret fields.
+- Provider and model settings are **global-only**. On the Project tab they are disabled with an “Edit in Global” hint, because a workspace value would shadow the machine-wide model choice.
+- A **provenance badge** (`Project`, `Global`, `Default`, `Runtime`) marks where the effective value comes from; on a layer tab, **Reset** removes the value from that layer.
+
+**Secrets:** API keys never leave the server. A stored key renders as `•••••••• (set — type to replace)`; typing replaces it, clearing removes it. The raw JSON preview omits secrets and reports them as set.
+
+**Saving:** the sticky save bar shows how many settings in the active layer are dirty. Save validates the whole patch first, replaces the file atomically (keeping a `.bak`), rejects a stale write with `409` when the file changed on disk since it was loaded (`Reload` and reapply), and removes matching runtime overrides so the edited value actually wins. The result banner reports the impact: **live** for most settings, **reindex** for embedding/indexing/chunking, **restart** for vector-store, UI/TUI/MCP.
+
+**Raw JSON:** a collapsible preview per layer, plus the effective configuration and the runtime overrides written by the TUI settings dialog.
+
+**Opening it:** the **⚙ button in the top bar** (right of the global search), the `Ctrl/Cmd+,` shortcut, or a `#config` URL. The button is highlighted while the view is open.
+
 ## File Tree Sidebar
 
 A collapsible directory tree in the left sidebar:
@@ -247,11 +279,27 @@ A quick keyword search input in the top-right header:
 - Results appear in a dropdown panel showing file path, line range, language badge, and a code snippet
 - Click a result to navigate to that chunk in the Chunks view
 
+## Themes
+
+Three themes, one token contract (`src/web/ui/src/app.css`). The header toggle cycles **dark → plasma → drama → light** — each icon carries its destination theme's signature color (fuchsia sparkles for plasma, orange flame for drama, amber sun for light, slate moon for dark). The choice persists in `localStorage` for first paint **and** in the global config as `ui.theme` (the source of truth — the Config page adopts it on load, and the header toggle writes it back).
+
+| Theme | Character |
+|---|---|
+| Dark (default) | Deep-navy OLED surfaces, cyan accent, minimal glow |
+| Plasma | Deep-space violet surfaces, fuchsia → violet → cyan aurora accent, stronger ambient glow |
+| Drama | DramaLlama-inspired stage: near-black violet room, signal-orange accent, blueprint grid, Space Grotesk + Archivo type |
+| Light | Soft blue-gray surfaces, white glass cards, same elevation language |
+
+![Drama theme](assets/webui-drama.png)
+
+Subtle effects everywhere: sticky glass header with backdrop blur, gradient title text, KPI cards with a gradient hairline that lift on hover, pill nav with a glowing active state, focus rings with an accent glow, and a short rise-in on view change. All motion is disabled under `prefers-reduced-motion`.
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
 |---|---|
 | `Ctrl/Cmd+K` | Open Search view (from anywhere) |
+| `Ctrl/Cmd+,` | Open the Configuration view |
 | `g + d` | Navigate to Dashboard |
 | `g + s` | Navigate to Search |
 | `g + c` | Navigate to Chunks |
@@ -284,7 +332,9 @@ The web server exposes a REST API under `/api/`:
 | `/api/quirks/:id` | DELETE | Delete a quirk |
 | `/api/file?path=` | GET | Serve workspace file content (base64-encoded); used for displaying image files in the chunk detail view |
 | `/api/tree` | GET | Workspace directory tree (dirs only, `excludeDirs` applied) for the scope editor |
-| `/api/config` | GET/PUT | Read redacted config / write validated `indexing` string-array values (e.g. `includeDirs`) to the config file |
+| `/api/config` | GET | Layered snapshot: both file layers (secrets omitted, `secretSet` flags), the merged effective config with provenance, runtime overrides and warnings |
+| `/api/config` | PATCH | Validated layered write — `{ layer, operations: [{ op, path, value }], base: { <layer>: { mtimeMs } } }`; atomic replacement with `.bak`, `409` on a stale mtime, clears matching runtime overrides |
+| `/api/config` | PUT | Legacy write of validated `indexing`/`chunking` values (used by the indexing-scope editor) |
 
 All endpoints return JSON with `Access-Control-Allow-Origin: *`.
 

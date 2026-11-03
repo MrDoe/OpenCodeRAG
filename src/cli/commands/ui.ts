@@ -8,6 +8,7 @@
 import type { Command } from "commander";
 import path from "node:path";
 import { c, resolveCliContext, cleanupContext, logCliError, logCliInfo } from "../format.js";
+import { openInBrowser } from "../browser.js";
 import type { CliOptions } from "../types.js";
 
 /**
@@ -58,15 +59,8 @@ export function registerUiCommand(program: Command): void {
         logCliInfo(logFilePath, "ui", `  ${c.dim("Press Ctrl+C to stop")}\n`);
 
         if (openBrowser) {
-          const { spawn } = await import("node:child_process");
-          try {
-            if (process.platform === "win32") {
-              spawn("cmd.exe", ["/c", "start", url], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-            } else {
-              const cmd = process.platform === "darwin" ? "open" : "xdg-open";
-              spawn(cmd, [url], { detached: true, stdio: "ignore" }).unref();
-            }
-          } catch {
+          const opened = await openInBrowser(url);
+          if (!opened) {
             console.error(c.dim(`Could not open browser automatically. Open ${url} manually.`));
           }
         }

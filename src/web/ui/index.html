@@ -3,10 +3,27 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#070b16" />
+  <script>
+    // Apply the stored theme before first paint so there is no flash.
+    try {
+      var t = localStorage.getItem("theme");
+      var root = document.documentElement;
+      root.classList.toggle("dark", t !== "light" && t !== "plasma" && t !== "drama");
+      root.classList.toggle("theme-plasma", t === "plasma");
+      root.classList.toggle("theme-drama", t === "drama");
+    } catch (e) {}
+  </script>
   <title>OpenCodeRAG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Archivo:wght@600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔎</text></svg>">
 </head>
-<body class="h-screen flex flex-col overflow-hidden bg-slate-900 text-slate-200">
+<body class="h-screen flex flex-col overflow-hidden">
   <div id="app"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

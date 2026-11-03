@@ -346,10 +346,23 @@ describe("validateConfig", () => {
   });
 
   it("warns about invalid ui.port", () => {
-    const cfg = { ...DEFAULT_CONFIG, ui: { port: 99999, openBrowser: false } };
+    const cfg = { ...DEFAULT_CONFIG, ui: { port: 99999, openBrowser: false, theme: "dark" } };
     const result = validateConfig(cfg);
     assert.equal(result.valid, false);
     assert.ok(result.warnings.some(w => w.includes("ui.port")));
+  });
+
+  it("warns about invalid ui.theme", () => {
+    const cfg = { ...DEFAULT_CONFIG, ui: { port: 3210, openBrowser: true, theme: "neon" } };
+    const result = validateConfig(cfg);
+    assert.equal(result.valid, false);
+    assert.ok(result.warnings.some(w => w.includes("ui.theme")));
+  });
+
+  it("accepts drama as a valid ui.theme", () => {
+    const cfg = { ...DEFAULT_CONFIG, ui: { port: 3210, openBrowser: true, theme: "drama" } };
+    const result = validateConfig(cfg);
+    assert.ok(!result.warnings.some(w => w.includes("ui.theme")));
   });
 
   it("warns about invalid description provider", () => {

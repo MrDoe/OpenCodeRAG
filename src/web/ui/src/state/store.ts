@@ -46,13 +46,25 @@ export const evalSessionDetail = signal<any>(null);
 export const quirkTypeFilter = signal<string | null>(null);
 
 // UI
-// Read the stored theme synchronously so a light-theme user never gets a
-// dark flash before the effect runs.
-export const theme = signal<"dark" | "light">(
-  typeof localStorage !== "undefined"
-    ? (localStorage.getItem("theme") as "dark" | "light" | null) ?? "dark"
-    : "dark",
-);
+// Read the stored theme synchronously so the first paint already uses the
+// right theme (see the inline script in index.html) — no wrong-theme flash.
+export type ThemeName = "dark" | "light" | "plasma" | "drama";
+
+function readStoredTheme(): ThemeName {
+  if (typeof localStorage === "undefined") return "dark";
+  const stored = localStorage.getItem("theme");
+  return stored === "light" || stored === "plasma" || stored === "drama" ? stored : "dark";
+}
+
+export const theme = signal<ThemeName>(readStoredTheme());
+
+/** Header-toggle order: dark → plasma → drama → light → dark. */
+const THEME_ORDER: ThemeName[] = ["dark", "plasma", "drama", "light"];
+
+/** Next theme in the header-toggle cycle. */
+export function nextThemeName(current: ThemeName): ThemeName {
+  return THEME_ORDER[(THEME_ORDER.indexOf(current) + 1) % THEME_ORDER.length] ?? "dark";
+}
 export const sidebarOpen = signal<boolean>(true);
 
 // Sidebar resize (drag the border between file tree and main content)
@@ -84,6 +96,39 @@ export function persistSidebarWidth(): void {
     localStorage.setItem("sidebarWidth", String(sidebarWidth.value));
   } catch {
     // Storage unavailable — the width still applies for this session.
+  }
+}
+
+// Embeddings split (drag the handle between the plot and the selection details)
+export const EMBED_PLOT_FRAC_DEFAULT = 0.62; // plot share of the split container
+export const EMBED_PLOT_FRAC_MIN = 0.25;
+export const EMBED_PLOT_FRAC_MAX = 0.85;
+export const EMBED_PLOT_FRAC_STEP = 0.04; // fraction per arrow-key press
+
+/** Clamp a plot fraction to the supported range. */
+export function clampEmbedPlotFrac(frac: number): number {
+  if (!Number.isFinite(frac)) return EMBED_PLOT_FRAC_DEFAULT;
+  return Math.min(EMBED_PLOT_FRAC_MAX, Math.max(EMBED_PLOT_FRAC_MIN, frac));
+}
+
+function readStoredEmbedPlotFrac(): number {
+  if (typeof localStorage === "undefined") return EMBED_PLOT_FRAC_DEFAULT;
+  const stored = Number(localStorage.getItem("embedPlotFrac"));
+  return Number.isFinite(stored) && stored > 0 ? clampEmbedPlotFrac(stored) : EMBED_PLOT_FRAC_DEFAULT;
+}
+
+/** Plot share of the embeddings split container. Applied to the DOM imperatively; persist with persistEmbedPlotFrac(). */
+export const embedPlotFrac = signal<number>(readStoredEmbedPlotFrac());
+
+export function setEmbedPlotFrac(frac: number): void {
+  embedPlotFrac.value = clampEmbedPlotFrac(frac);
+}
+
+export function persistEmbedPlotFrac(): void {
+  try {
+    localStorage.setItem("embedPlotFrac", String(embedPlotFrac.value));
+  } catch {
+    // Storage unavailable — the fraction still applies for this session.
   }
 }
 

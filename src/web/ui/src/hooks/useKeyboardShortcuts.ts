@@ -21,6 +21,13 @@ export function useKeyboardShortcuts() {
       const target = e.target as HTMLElement;
       const isInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
 
+      // Ctrl/Cmd+, — open configuration (the conventional settings shortcut)
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        navigate("config");
+        return;
+      }
+
       // Ctrl/Cmd+K — focus search
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
