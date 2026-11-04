@@ -280,12 +280,13 @@ export const SETTINGS_SECTIONS: SettingSection[] = [
   {
     id: "decision",
     label: "Decision Model",
-    description: "Local tev1 model behind the make_decision tool.",
+    description: "Local decision model behind the make_decision tool (Ollama /v1/systemone or a compatible server such as llama-swap).",
     fields: [
       boolean(["decision", "enabled"], "Enable make_decision"),
       enumField(["decision", "provider"], "Provider", ["ollama"]),
       string(["decision", "model"], "Model"),
       string(["decision", "baseUrl"], "Base URL"),
+      string(["decision", "apiKey"], "API key"),
       number(["decision", "timeoutMs"], "Request timeout (ms)", { minimum: 1 }),
       string(["decision", "keepAlive"], "Ollama keep-alive", { advanced: true }),
       boolean(["decision", "routeBeforeAsking"], "Route choices before asking"),
@@ -340,6 +341,7 @@ export const SETTINGS_SECTIONS: SettingSection[] = [
       string(["shellGuard", "provider"], "Provider override", { advanced: true }),
       string(["shellGuard", "baseUrl"], "Base URL override", { advanced: true }),
       string(["shellGuard", "model"], "Model override", { advanced: true }),
+      string(["shellGuard", "apiKey"], "API key override", { advanced: true, scope: "global" }),
       number(["shellGuard", "cacheTtlMs"], "Verdict cache TTL (ms)", {
         advanced: true,
         minimum: 0,
