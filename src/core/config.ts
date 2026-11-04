@@ -252,14 +252,21 @@ export interface DecisionConfig {
   /** Decision provider name. Only "ollama" is supported for now. */
   provider: string;
   /**
-   * Base URL of the Ollama server. Both root URLs (`http://127.0.0.1:11434`)
-   * and the `/api`-suffixed convention used by the other sections are
-   * accepted — `/api` is stripped because decision models are served at
-   * `/v1/systemone`.
+   * Base URL of the decision server. Root URLs (`http://127.0.0.1:11434`),
+   * the `/api`-suffixed convention used by the other sections, and the
+   * `/v1`-suffixed convention used by OpenAI-compatible servers (e.g.
+   * llama-swap) are accepted - the suffixes are stripped because decision
+   * models are served at `/v1/systemone`.
    */
   baseUrl: string;
   /** Decision model name (`tev1`/`tev1:4b` or `tev1:0.8b`). */
   model: string;
+  /**
+   * Optional bearer key for the decision endpoint. Some servers (e.g.
+   * llama-swap) protect every route with an API key; when set, requests
+   * carry `Authorization: Bearer <apiKey>`.
+   */
+  apiKey?: string;
   /** Request timeout in milliseconds. The first call may load the model. */
   timeoutMs: number;
   /** Ollama keep_alive value (e.g. "30m", "-1" for keep-in-memory). */
@@ -292,13 +299,13 @@ export interface DecisionConfig {
  * `destructive` or `malicious` probability reaches `threshold` is escalated to
  * OpenCode's permission prompt; a clean command executes unchanged.
  *
- * The guard reuses the `decision` backend unless `provider`/`baseUrl`/`model`
- * override it here. It is applied through OpenCode V2's permission
+ * The guard reuses the `decision` backend unless `provider`/`baseUrl`/`model`/
+ * `apiKey` override it here. It is applied through OpenCode V2's permission
  * `evaluate` hook, so it needs no rule changes in `opencode.json`.
  */
 export interface ShellGuardConfig {
   /**
-   * Master gate. Default false — the guard is opt-in because every shell
+   * Master gate. Default false - the guard is opt-in because every shell
    * command then waits for the local decision model.
    */
   enabled: boolean;
@@ -308,6 +315,8 @@ export interface ShellGuardConfig {
   baseUrl?: string;
   /** Model override (defaults to `decision.model`). */
   model?: string;
+  /** API-key override (defaults to `decision.apiKey`). */
+  apiKey?: string;
   /**
    * Flag a command when `p(destructive)` or `p(malicious)` reaches this
    * probability (0-1). Default 0.5. Lower = more prompts; tune against the
@@ -1518,6 +1527,9 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     if (config.decision.maxStateChars != null && config.decision.maxStateChars <= 0) {
       warnings.push("decision.maxStateChars must be > 0");
     }
+    if (config.decision.apiKey != null && typeof config.decision.apiKey !== "string") {
+      warnings.push("decision.apiKey must be a string when set");
+    }
     try { new URL(config.decision.baseUrl); } catch {
       warnings.push(`decision.baseUrl "${config.decision.baseUrl}" is not a valid URL`);
     }
@@ -1540,7 +1552,7 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
     if (sg.maxCacheEntries != null && (typeof sg.maxCacheEntries !== "number" || !Number.isFinite(sg.maxCacheEntries) || sg.maxCacheEntries < 0)) {
       warnings.push("shellGuard.maxCacheEntries must be >= 0");
     }
-    for (const key of ["provider", "baseUrl", "model"] as const) {
+    for (const key of ["provider", "baseUrl", "model", "apiKey"] as const) {
       if (sg[key] != null && typeof sg[key] !== "string") {
         warnings.push(`shellGuard.${key} must be a string when set`);
       }

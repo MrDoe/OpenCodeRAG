@@ -280,7 +280,9 @@ export class ShellGuard {
     }
 
     const { guard, decision, logging } = cfg;
-    const signature = `${decision.provider}|${decision.baseUrl}|${decision.model}`;
+    // The API key participates in the signature so a key change rebuilds the
+    // provider (the key never leaves this in-memory cache/state).
+    const signature = `${decision.provider}|${decision.baseUrl}|${decision.model}|${decision.apiKey ?? ""}`;
     const cacheKey = `${signature}\u0000${command}`;
     const cacheTtlMs = guard.cacheTtlMs ?? 0;
 
@@ -482,6 +484,7 @@ export function resolveShellGuardRuntimeConfig(
     provider: guard.provider?.trim() || base.provider,
     baseUrl: guard.baseUrl?.trim() || base.baseUrl,
     model: guard.model?.trim() || base.model,
+    apiKey: guard.apiKey?.trim() || base.apiKey,
   };
   const log = resolveLogConfig(cfg);
   return {

@@ -48,7 +48,21 @@ export const SYSTEMONE_MAX_OPTIONS = 24;
  */
 export function resolveSystemOneUrl(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, "");
-  const root = trimmed.endsWith("/api") ? trimmed.slice(0, -"/api".length) : trimmed;
+  // Accept root, the `/api` suffix used by the embedding/description
+  // sections, and the `/v1` suffix used by OpenAI-compatible servers
+  // (e.g. llama-swap). Both suffixes are stripped because the decision
+  // route is `/v1/systemone`.
+  let root = trimmed;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const suffix of ["/api", "/v1"]) {
+      if (root.endsWith(suffix)) {
+        root = root.slice(0, -suffix.length).replace(/\/+$/, "");
+        changed = true;
+      }
+    }
+  }
   return `${root}/v1/systemone`;
 }
 
@@ -144,6 +158,7 @@ export class OllamaDecisionProvider implements DecisionProvider {
 
   private readonly baseUrl: string;
   private readonly model: string;
+  private readonly apiKey?: string;
   private readonly timeoutMs: number;
   private readonly keepAlive?: string;
   private readonly proxy?: ProxyConfig;
@@ -151,11 +166,12 @@ export class OllamaDecisionProvider implements DecisionProvider {
   private readonly retryBaseDelayMs: number;
 
   /**
-   * @param config - Decision-model configuration (endpoint, model, timeout, proxy, retries).
+   * @param config - Decision-model configuration (endpoint, model, api key, timeout, proxy, retries).
    */
   constructor(config: DecisionConfig) {
     this.baseUrl = config.baseUrl;
     this.model = config.model;
+    this.apiKey = config.apiKey?.trim() || undefined;
     this.timeoutMs = config.timeoutMs > 0 ? config.timeoutMs : 120000;
     this.keepAlive = config.keepAlive;
     this.proxy = config.proxy;
@@ -196,12 +212,15 @@ export class OllamaDecisionProvider implements DecisionProvider {
     }
 
     const url = resolveSystemOneUrl(this.baseUrl);
+    const headers: Record<string, string> = this.apiKey
+      ? { Authorization: `Bearer ${this.apiKey}` }
+      : {};
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= this.retryMax; attempt++) {
       let response: HttpResponseLike;
       try {
-        response = await postJson(url, body, {}, this.timeoutMs, this.proxy, abort);
+        response = await postJson(url, body, headers, this.timeoutMs, this.proxy, abort);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         if (attempt < this.retryMax) {
@@ -251,6 +270,12 @@ export class OllamaDecisionProvider implements DecisionProvider {
    */
   private describeHttpError(status: number, text: string): string {
     const detail = truncate(text);
+    if (status === 401 || status === 403) {
+      return (
+        `Decision endpoint unauthorized (${status}) - the server requires an API key. ` +
+        `Set \`decision.apiKey\` (e.g. llama-swap's "api_key"). ${detail}`
+      );
+    }
     if (status === 404) {
       const lower = text.toLowerCase();
       const modelLower = this.model.toLowerCase();
@@ -265,7 +290,7 @@ export class OllamaDecisionProvider implements DecisionProvider {
         `(\`ollama pull ${this.model}\`). ${detail}`
       );
     }
-    return `Ollama decision request failed (${status}): ${detail}`;
+    return `Decision request failed (${status}): ${detail}`;
   }
 
   /** Exponential backoff between retries. */

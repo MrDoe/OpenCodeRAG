@@ -271,6 +271,23 @@ describe("ShellGuard.evaluate", () => {
     assert.equal(built, 2);
   });
 
+  it("rebuilds the provider when the apiKey changes", async () => {
+    let cfg = makeRuntimeConfig({ cacheTtlMs: 0 }, { apiKey: "sk-one" });
+    let built = 0;
+    const guard = new ShellGuard({
+      getConfig: () => cfg,
+      createProvider: () => {
+        built++;
+        return makeProvider(async () => answers(0, 0));
+      },
+    });
+    await guard.evaluate("ls");
+    assert.equal(built, 1);
+    cfg = makeRuntimeConfig({ cacheTtlMs: 0 }, { apiKey: "sk-two" });
+    await guard.evaluate("ls");
+    assert.equal(built, 2);
+  });
+
   it("re-derives a cached verdict against the current threshold", async () => {
     let threshold = 0.5;
     const provider = makeProvider(async () => answers(0.61, 0.01));
@@ -338,6 +355,21 @@ describe("resolveShellGuardRuntimeConfig", () => {
     assert.equal(resolved.decision.baseUrl, "http://localhost:11437");
     assert.equal(resolved.decision.provider, "ollama");
     assert.equal(resolved.decision.enabled, true);
+  });
+
+  it("applies the apiKey override and inherits decision.apiKey", () => {
+    const withBaseKey = {
+      ...base,
+      decision: { ...makeDecisionConfig(), apiKey: "sk-base" },
+      shellGuard: { enabled: true, threshold: 0.5, timeoutMs: 1000, cacheTtlMs: 0 },
+    } as RagConfig;
+    assert.equal(resolveShellGuardRuntimeConfig(withBaseKey)?.decision.apiKey, "sk-base");
+
+    const withOverride = {
+      ...withBaseKey,
+      shellGuard: { enabled: true, threshold: 0.5, timeoutMs: 1000, cacheTtlMs: 0, apiKey: "sk-guard" },
+    } as RagConfig;
+    assert.equal(resolveShellGuardRuntimeConfig(withOverride)?.decision.apiKey, "sk-guard");
   });
 
   it("resolves the log path against the workspace directory when given", () => {

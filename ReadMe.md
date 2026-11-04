@@ -310,6 +310,22 @@ Requires Ollama ≥ 0.35. **Disabled by default.** Opt in via `decision.enabled`
 }
 ```
 
+`decision.baseUrl` accepts a root URL, an `/api`-suffixed URL, or an `/v1`-suffixed URL - both suffixes are stripped, so requests always go to `<root>/v1/systemone`. Any server exposing that route works, for example **llama-swap**:
+
+```json
+{
+  "decision": {
+    "enabled": true,
+    "provider": "ollama",
+    "baseUrl": "http://127.0.0.1:11437",
+    "model": "Clef-Flash",
+    "apiKey": "sk-llama-local"
+  }
+}
+```
+
+`decision.apiKey` is sent as `Authorization: Bearer <key>` and is required when the server protects its routes (llama-swap's `api_key`).
+
 **Using it well**
 
 - Always include a `none` / "cannot be determined" option.

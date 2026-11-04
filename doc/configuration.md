@@ -356,6 +356,7 @@ Controls the local decision-model tool (`make_decision`) — fast classification
     "provider": "ollama",
     "baseUrl": "http://127.0.0.1:11434/api",
     "model": "tev1:4b",
+    "apiKey": null,
     "timeoutMs": 120000,
     "keepAlive": "30m",
     "maxStateChars": 8000,
@@ -367,9 +368,10 @@ Controls the local decision-model tool (`make_decision`) — fast classification
 | Option | Default | Description |
 |--------|---------|-------------|
 | `enabled` | `false` | Register the `make_decision` tool (plugin + MCP) and expose `opencode-rag decide` |
-| `provider` | `"ollama"` | Decision provider — only `"ollama"` (tev1 via `/v1/systemone`) is supported for now |
-| `baseUrl` | `http://127.0.0.1:11434/api` | Ollama server URL; a trailing `/api` is stripped because decision models are served at `/v1/systemone` |
-| `model` | `"tev1:4b"` | Decision model (`tev1`/`tev1:4b`, or `tev1:0.8b` for tight memory budgets) |
+| `provider` | `"ollama"` | Decision provider - only `"ollama"` (tev1 via `/v1/systemone`) is supported for now |
+| `baseUrl` | `http://127.0.0.1:11434/api` | Decision server URL. Root, `/api`-suffixed, and `/v1`-suffixed URLs are accepted - both suffixes are stripped because decision models are served at `/v1/systemone` |
+| `model` | `"tev1:4b"` | Decision model (`tev1`/`tev1:4b`, or `tev1:0.8b` for tight memory budgets); on llama-swap use the model ID (e.g. `"Clef-Flash"`) |
+| `apiKey` | `null` | Optional bearer key for key-protected servers (e.g. llama-swap); sent as `Authorization: Bearer <key>` |
 | `timeoutMs` | `120000` | Request timeout — the first call may load the model into memory |
 | `keepAlive` | `"30m"` | Ollama `keep_alive` value (e.g. `"-1"` to keep the model resident) |
 | `maxStateChars` | `8000` | Reject `state` texts longer than this (the model's effective context is ~2k tokens) |
@@ -406,7 +408,7 @@ Optional safety guard for shell commands. Every `shell`/`bash` command is classi
 | `onError` | `"allow"` | Classifier failure (timeout, endpoint down, malformed answer): `"allow"` executes the command and logs a warning (fail-open); `"ask"` escalates to the confirmation prompt |
 | `cacheTtlMs` | `600000` | Verdict cache TTL in ms (`0` disables the cache). Repeated identical commands are answered instantly |
 | `maxCacheEntries` | `256` | Maximum cached verdicts before the oldest are evicted |
-| `provider` / `baseUrl` / `model` | — | Optional backend overrides. Omitted values fall back to the `decision` section (`provider: "ollama"`, `baseUrl: "http://127.0.0.1:11434/api"`, `model: "tev1:4b"`) |
+| `provider` / `baseUrl` / `model` / `apiKey` | - | Optional backend overrides. Omitted values fall back to the `decision` section (`provider: "ollama"`, `baseUrl: "http://127.0.0.1:11434/api"`, `model: "tev1:4b"`, `apiKey`) |
 
 **How it works:** the guard runs in OpenCode V2's permission `evaluate` hook, which fires after the configured rules are evaluated and before the action runs — for both `allow` and `ask` decisions (`deny` is final and never reaches the evaluator). A flagged command keeps its resolved effect but is upgraded to `ask`, and the confirmation prompt shows the full verdict: model name, both probabilities, and the risk category (`delete_files`, `format_disk`, `process_kill`, `network`, `config_tamper`, `privilege`, or `none`).
 

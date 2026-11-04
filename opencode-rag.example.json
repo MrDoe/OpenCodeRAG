@@ -104,6 +104,7 @@
     "provider": "ollama",
     "baseUrl": "http://127.0.0.1:11434/api",
     "model": "tev1:4b",
+    "apiKey": null,
     "timeoutMs": 120000,
     "keepAlive": "30m",
     "maxStateChars": 8000,

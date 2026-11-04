@@ -12,6 +12,7 @@ interface CapturedRequest {
   method: string;
   url: string;
   body: Record<string, unknown>;
+  headers: Record<string, string | string[] | undefined>;
 }
 
 function makeConfig(overrides: Partial<DecisionConfig> = {}): DecisionConfig {
@@ -37,7 +38,7 @@ function startMockServer(
       req.on("data", (chunk) => { data += chunk; });
       req.on("end", () => {
         const body = data ? (JSON.parse(data) as Record<string, unknown>) : {};
-        requests.push({ method: req.method ?? "", url: req.url ?? "", body });
+        requests.push({ method: req.method ?? "", url: req.url ?? "", body, headers: req.headers });
         const result = handler(body, req);
         res.writeHead(result.status, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result.body));
@@ -60,11 +61,14 @@ function startMockServer(
 }
 
 describe("resolveSystemOneUrl", () => {
-  it("accepts root and /api-suffixed base URLs", () => {
+  it("accepts root, /api-suffixed, and /v1-suffixed base URLs", () => {
     assert.equal(resolveSystemOneUrl("http://127.0.0.1:11434"), "http://127.0.0.1:11434/v1/systemone");
     assert.equal(resolveSystemOneUrl("http://127.0.0.1:11434/"), "http://127.0.0.1:11434/v1/systemone");
     assert.equal(resolveSystemOneUrl("http://127.0.0.1:11434/api"), "http://127.0.0.1:11434/v1/systemone");
     assert.equal(resolveSystemOneUrl("http://127.0.0.1:11434/api/"), "http://127.0.0.1:11434/v1/systemone");
+    assert.equal(resolveSystemOneUrl("http://127.0.0.1:11437/v1"), "http://127.0.0.1:11437/v1/systemone");
+    assert.equal(resolveSystemOneUrl("http://127.0.0.1:11437/v1/"), "http://127.0.0.1:11437/v1/systemone");
+    assert.equal(resolveSystemOneUrl("http://127.0.0.1:11437/api/v1"), "http://127.0.0.1:11437/v1/systemone");
   });
 });
 
@@ -103,6 +107,47 @@ describe("OllamaDecisionProvider", () => {
       assert.equal(result.answers[0]!.choice, "a");
       assert.deepEqual(result.answers[0]!.probabilities, { a: 0.9, none: 0.1 });
       assert.equal(result.answers[0]!.confidence, 0.8);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("sends a bearer Authorization header when apiKey is configured", async () => {
+    const mock = await startMockServer(() => ({ status: 200, body: { answers: { q: { noul: 0.5 } } } }));
+    try {
+      const provider = new OllamaDecisionProvider(makeConfig({ baseUrl: mock.baseUrl, apiKey: "sk-test-123" }));
+      await provider.decide({ state: "s", questions: [{ id: "q", type: "noul", instructions: "?" }] });
+      assert.equal(mock.requests.length, 1);
+      assert.equal(mock.requests[0]!.headers.authorization, "Bearer sk-test-123");
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("sends no Authorization header when apiKey is absent", async () => {
+    const mock = await startMockServer(() => ({ status: 200, body: { answers: { q: { noul: 0.5 } } } }));
+    try {
+      const provider = new OllamaDecisionProvider(makeConfig({ baseUrl: mock.baseUrl }));
+      await provider.decide({ state: "s", questions: [{ id: "q", type: "noul", instructions: "?" }] });
+      assert.equal(mock.requests[0]!.headers.authorization, undefined);
+    } finally {
+      await mock.close();
+    }
+  });
+
+  it("reports apiKey guidance on 401", async () => {
+    const mock = await startMockServer(() => ({ status: 401, body: { error: "unauthorized: invalid or missing API key" } }));
+    try {
+      const provider = new OllamaDecisionProvider(makeConfig({ baseUrl: mock.baseUrl }));
+      await assert.rejects(
+        () => provider.decide({ state: "s", questions: [{ id: "q", type: "noul", instructions: "?" }] }),
+        (err: unknown) => {
+          const message = (err as Error).message;
+          assert.match(message, /Decision endpoint unauthorized \(401\)/);
+          assert.match(message, /decision\.apiKey/);
+          return true;
+        }
+      );
     } finally {
       await mock.close();
     }
