@@ -13,9 +13,63 @@ export const BEGIN_MARKER = "<!-- BEGIN opencode-rag -->";
 export const END_MARKER = "<!-- END opencode-rag -->";
 
 /**
- * The always-on mandatory guidance lines — tool list, decision tree,
- * proactive triggers, and anti-patterns. Used verbatim by the runtime
- * system prompt injector.
+ * The positional rules that actually move behaviour. Measured on a live
+ * workspace (2026-11-11): a flat wall of ~40 MUST/NEVER lines produced exactly
+ * one mandated search in the first turn and abandonment afterwards (47 of 130
+ * searching sessions called it once; 43 % of editing sessions never called it),
+ * while a single ordering rule - the search goes IN the first tool batch - put
+ * 78 % of first searches into user turn 1. Order is therefore stated before the
+ * tool list, and this block is the only guidance text the compact AGENTS.md
+ * directive carries. Shared verbatim by both carriers, so neither can drift.
+ */
+export const FIRST_MOVE_LINES: readonly string[] = [
+  "First move, every task: `search_semantic` goes IN the first tool batch - an orientation call may share that batch, it never precedes it.",
+  "Re-search when the working area changes: one search per area, not one per task.",
+  "Authoritative elsewhere? When another system owns the current copy (source control, an MCP server, a database, an API), fetch it there first - `search_semantic` covers the local mirror and cross-cutting questions.",
+  "A weak result is a lead, not an answer: read the printed relevance, then verify with `read` before concluding.",
+];
+
+/** One-line pointer used by the compact AGENTS.md directive. */
+export const FULL_PROTOCOL_POINTER =
+  "The full protocol (decision tree, proactive triggers, anti-patterns) is injected into the system prompt by the plugin - `openCode.injectSystemPrompt`. Do not restate it here.";
+
+/**
+ * How much guidance a generated `AGENTS.md` block carries.
+ *
+ * - `auto`: compact when the runtime injector will deliver the full protocol
+ *   anyway, full when it will not. One carrier, one copy.
+ * - `full`: the complete protocol in `AGENTS.md` (the pre-2.14 behaviour, and the
+ *   result when the option is unset) - use it when `injectSystemPrompt` is off or
+ *   when the file must stand alone (agents without the plugin, CI, humans).
+ * - `compact`: always the short form, regardless of the injector.
+ */
+export type AgentGuidanceDetail = "auto" | "full" | "compact";
+
+/**
+ * Resolve a configured detail level into a concrete one.
+ *
+ * An unset level stays `"full"` so callers that know nothing about the injector
+ * keep the standalone file they always produced.
+ *
+ * @param detail - The configured level.
+ * @param injectedAtRuntime - Whether `openCode.injectSystemPrompt` will put the
+ *   full protocol into the system prompt of sessions that have the tools.
+ * @returns `"full"` or `"compact"`.
+ */
+export function resolveAgentsMdDetail(
+  detail: AgentGuidanceDetail | undefined,
+  injectedAtRuntime: boolean,
+): "full" | "compact" {
+  if (detail === "full" || detail === "compact") return detail;
+  if (detail === "auto") return injectedAtRuntime ? "compact" : "full";
+  return "full";
+}
+
+/**
+ * The always-on mandatory guidance lines - tool list, decision tree,
+ * proactive triggers, and anti-patterns. The runtime system prompt injector
+ * uses these verbatim and additionally puts {@link FIRST_MOVE_LINES} first, so
+ * the ordering rule is never buried under the list it governs.
  */
 export const MANDATORY_GUIDANCE_LINES: readonly string[] = [
   "MANDATORY: OpenCodeRAG tools MUST be used before any code task:",
@@ -107,6 +161,9 @@ export function buildShellBackgroundGuidanceLines(shell?: OpenCodeShellConfig): 
 
 export function buildSystemGuidanceLines(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean; shell?: OpenCodeShellConfig }): string[] {
   const lines = [...MANDATORY_GUIDANCE_LINES];
+  // Positional rules go directly under the headline: the injector used to lead
+  // with a 40-line list, and the ordering rule got skimmed (see FIRST_MOVE_LINES).
+  lines.splice(1, 0, "", ...FIRST_MOVE_LINES);
   if (opts.decisionEnabled) {
     const decisionLines = [...DECISION_GUIDANCE_LINES];
     if (opts.routeBeforeAsking) {
@@ -146,12 +203,13 @@ const DECISION_ROUTING_AGENTS_LINE =
   "- With `decision.routeBeforeAsking` enabled: route option choices through `make_decision` before asking the user; ask the user only when the model is undecided (low confidence) or the choice is preference-based.";
 
 /**
- * Build the markdown-formatted AGENTS.md directive section, wrapped in sentinel
- * markers so `mergeAgentsMdContent` can replace it in place on re-runs.
+ * The complete `AGENTS.md` directive body, without sentinel markers. This is the
+ * standalone form and repeats the runtime protocol on purpose: a file that has to
+ * work without the plugin (agents that do not load it, CI, a human reading the
+ * repo) must carry the whole thing.
  */
-export function buildAgentsMdDirective(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean; shell?: OpenCodeShellConfig }): string {
+export function buildFullAgentsMdLines(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean; shell?: OpenCodeShellConfig }): string[] {
   const lines: string[] = [
-    BEGIN_MARKER,
     "## Code Navigation",
     "",
     "ALWAYS use OpenCodeRAG tools before reading or editing:",
@@ -228,6 +286,67 @@ export function buildAgentsMdDirective(opts: { promptEnforcement: boolean; decis
   if (shellLines.length > 0) {
     lines.push("", "### Long-running commands", ...shellLines.filter((l) => l.trim().length > 0));
   }
-  lines.push(END_MARKER);
-  return lines.join("\n");
+  return lines;
+}
+
+/**
+ * The short `AGENTS.md` directive body: the positional rules plus a tool index
+ * and a pointer. Used when the runtime injector already ships the full protocol,
+ * so the same ~40 lines do not arrive twice in one request.
+ */
+export function buildCompactAgentsMdLines(opts: { promptEnforcement: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean; shell?: OpenCodeShellConfig }): string[] {
+  const lines: string[] = [
+    "## Code Navigation",
+    "",
+    "OpenCodeRAG indexes this workspace.",
+    "",
+    ...FIRST_MOVE_LINES.map((line) => `- ${line}`),
+    "",
+    "Tools: `search_semantic` finds code by meaning - use it before grep; `get_file_skeleton` before reading a file; `find_usages` before editing a symbol; `describe_image` for images, never raw bytes; `recall_quirks` / `add_quirk` / `update_quirk` / `delete_quirk` for experiential memory. Signatures live in the tool schema, not here.",
+    "",
+    "A search that returns nothing useful usually means the workspace is not indexed: run `opencode-rag index` (or `opencode-rag status` to check).",
+  ];
+
+  if (opts.decisionEnabled) {
+    lines.push(
+      "",
+      opts.routeBeforeAsking
+        ? "`make_decision(state, questions)` classifies/routes/scores short text with the local decision model; with `decision.routeBeforeAsking` set, route option choices through it before asking the user."
+        : "`make_decision(state, questions)` classifies/routes/scores short text with the local decision model; never as the only check for a high-stakes decision.",
+    );
+  }
+  if (opts.promptEnforcement) {
+    lines.push(
+      "",
+      "Quirks: call `add_quirk` after resolving a failed build/test/type-check, an undocumented constraint, or a gotcha that cost more than one attempt; `update_quirk`/`delete_quirk` instead of storing a contradicting duplicate.",
+    );
+  }
+  const shellLines = buildShellBackgroundGuidanceLines(opts.shell);
+  if (shellLines.length > 0) {
+    // Same heading as the full form; the plain in-list title is dropped.
+    lines.push("", "### Long-running commands", ...shellLines.filter((l) => l.trim().length > 0).slice(1));
+  }
+  lines.push("", FULL_PROTOCOL_POINTER);
+  return lines;
+}
+
+/**
+ * Build the markdown-formatted `AGENTS.md` directive section, wrapped in sentinel
+ * markers so `mergeAgentsMdContent` can replace it in place on re-runs.
+ *
+ * @param opts - Section switches plus `agentsMdDetail` (default `"auto"`: compact
+ *   when the runtime injector is on, full when it is off).
+ * @returns The marker-delimited section, without a trailing newline.
+ */
+export function buildAgentsMdDirective(opts: {
+  promptEnforcement: boolean;
+  decisionEnabled?: boolean;
+  routeBeforeAsking?: boolean;
+  shell?: OpenCodeShellConfig;
+  agentsMdDetail?: AgentGuidanceDetail;
+  injectedAtRuntime?: boolean;
+}): string {
+  const detail = resolveAgentsMdDetail(opts.agentsMdDetail, opts.injectedAtRuntime !== false);
+  const body = detail === "compact" ? buildCompactAgentsMdLines(opts) : buildFullAgentsMdLines(opts);
+  return [BEGIN_MARKER, ...body, END_MARKER].join("\n");
 }

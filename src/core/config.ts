@@ -788,6 +788,20 @@ export interface RagConfig {
     readRelatedFilesMax?: number;
     /** Whether to inject RAG tool guidance into system prompts when the session's tool catalog exposes the RAG tools (default true). */
     injectSystemPrompt?: boolean;
+    /**
+     * How much guidance a generated `AGENTS.md` block carries: `"auto"` (default)
+     * writes the compact form when `injectSystemPrompt` will deliver the full
+     * protocol at runtime and the full form when it will not; `"full"` always
+     * writes the complete protocol (pre-2.14 behaviour, standalone repos);
+     * `"compact"` always writes the short form.
+     */
+    agentsMdDetail?: "auto" | "full" | "compact";
+    /**
+     * Average relevance below which a `search_semantic` result block is labelled
+     * weak, telling the agent the hits are leads to verify rather than an answer
+     * (default 0.5, `0` disables the label).
+     */
+    weakHitThreshold?: number;
     /** Whether to grant the read-only RAG tools to the built-in `explore` agent (default true). */
     exploreAgentTools?: boolean;
     /** Handling of long-running shell commands (backgrounding guidance + measurement). */
@@ -1035,6 +1049,8 @@ export const DEFAULT_CONFIG: RagConfig = {
     maxContextChunks: 10,
     readOverride: true,
     injectSystemPrompt: true,
+    agentsMdDetail: "auto",
+    weakHitThreshold: 0.5,
     exploreAgentTools: true,
     shell: {
       backgroundGuidance: true,
@@ -1455,7 +1471,13 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   }
 
   if (config.openCode.autoIndex?.watcher && !["chokidar", "git"].includes(config.openCode.autoIndex.watcher)) {
-    warnings.push(`openCode.autoIndex.watcher "${config.openCode.autoIndex.watcher}" — expected "chokidar" or "git"`);
+    warnings.push(`openCode.autoIndex.watcher "${config.openCode.autoIndex.watcher}" - expected "chokidar" or "git"`);
+  }
+  if (config.openCode.agentsMdDetail && !["auto", "full", "compact"].includes(config.openCode.agentsMdDetail)) {
+    warnings.push(`openCode.agentsMdDetail "${config.openCode.agentsMdDetail}" - expected "auto", "full" or "compact"`);
+  }
+  if (config.openCode.weakHitThreshold != null && (config.openCode.weakHitThreshold < 0 || config.openCode.weakHitThreshold > 1)) {
+    warnings.push("openCode.weakHitThreshold must be between 0 and 1 (0 disables the weak-hit label)");
   }
   const shellCfg = config.openCode.shell;
   if (shellCfg) {

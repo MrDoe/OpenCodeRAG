@@ -7,9 +7,13 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
+import { createHash } from "node:crypto";
 import {
   ClickHouseStore,
+  canonicalizeWorkspacePath,
   deriveNamespace,
+  legacyNamespaceVariants,
   resolveClickHouseOptions,
   sanitizeNamespace,
 } from "../../vectorstore/clickhouse.js";
@@ -51,6 +55,29 @@ describe("ClickHouse namespace helpers", () => {
     assert.equal(a, b);
     assert.match(a, /^My_Project_[0-9a-f]{8}$/);
     assert.notEqual(a, deriveNamespace("C:/work/Other"));
+  });
+
+  it("does not split one workspace over the spelling of its drive letter", { skip: process.platform !== "win32" }, () => {
+    // A session started from `c:\repo` and one from `C:\repo` are the same
+    // workspace; hashing the raw spelling indexed it twice, one copy going stale.
+    const upper = deriveNamespace("C:\\work\\My Project");
+    assert.equal(deriveNamespace("c:\\work\\My Project"), upper);
+
+    // The pre-canonicalization spelling must stay discoverable, or an operator with
+    // a populated index would silently start from zero.
+    const legacy = (spelling: string): string => {
+      const absolute = path.resolve(spelling);
+      const base = (path.basename(absolute) || "workspace").replace(/[^A-Za-z0-9_]+/g, "_");
+      return `${base}_${createHash("sha1").update(absolute).digest("hex").slice(0, 8)}`;
+    };
+    assert.deepEqual(legacyNamespaceVariants("C:\\work\\My Project"), [legacy("c:\\work\\My Project")]);
+    assert.notEqual(legacyNamespaceVariants("C:\\work\\My Project")[0], upper);
+  });
+
+  it("canonicalizes idempotently", () => {
+    const once = canonicalizeWorkspacePath(process.platform === "win32" ? "c:\\Work\\Repo" : "/Work/Repo");
+    assert.equal(canonicalizeWorkspacePath(once), once);
+    if (process.platform === "win32") assert.match(once, /^[A-Z]:/, "the drive letter is upper-cased on Windows");
   });
 
   it("resolves table names, password env precedence and lease defaults", () => {

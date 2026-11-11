@@ -17,7 +17,7 @@ export { formatDecisionAnswers } from "./decision/format.js";
 export { createVectorStore } from "./vectorstore/factory.js";
 export { LanceDbStore } from "./vectorstore/lancedb.js";
 export { InMemoryVectorStore } from "./vectorstore/memory.js";
-export { ClickHouseStore, resolveClickHouseOptions, sanitizeNamespace, deriveNamespace } from "./vectorstore/clickhouse.js";
+export { ClickHouseStore, resolveClickHouseOptions, sanitizeNamespace, deriveNamespace, canonicalizeWorkspacePath, legacyNamespaceVariants } from "./vectorstore/clickhouse.js";
 export type { ResolvedClickHouseOptions } from "./vectorstore/clickhouse.js";
 export { retrieve } from "./retriever/retriever.js";
 export { optimizeContext, DEFAULT_CONTEXT_OPTIMIZATION } from "./retriever/context-optimizer.js";

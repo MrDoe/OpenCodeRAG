@@ -72,6 +72,7 @@ import {
   type ToolErrorCreateState,
 } from "./quirks/tool-error-create.js";
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
+import { weakHitAdvisory } from "./opencode/read-format.js";
 import {
   describeAutoInjectSelection,
   formatAutoInjectBlock,
@@ -517,9 +518,19 @@ export function createLiveEmbedder(
 /**
  * Format retrieval results into a Markdown context block for LLM injection.
  * Includes per-chunk file paths, line numbers, relevance scores, and descriptions.
+ *
+ * A block whose average relevance sits under `weakHitThreshold` is labelled
+ * inline. Without the label a mandated search that returns near-noise reads as an
+ * answer, which is how the tool earns a reputation it does not deserve (measured
+ * on one workspace: 11 % of searches came back under 0.35 and the agent stopped
+ * calling the tool, not because it failed but because it looked pointless).
+ *
+ * @param results - Retrieval results, best first.
+ * @param weakHitThreshold - Average-relevance floor for the label; `0` disables it.
  */
 function formatContext(
-  results: Awaited<ReturnType<typeof retrieve>>
+  results: Awaited<ReturnType<typeof retrieve>>,
+  weakHitThreshold = 0.5
 ): string {
   if (results.length === 0) return "";
 
@@ -527,6 +538,8 @@ function formatContext(
 
   const parts: string[] = [];
   parts.push(`\n**${CONTEXT_MARKER}** _(context: ${results.length} chunks, avg relevance: ${avgScore.toFixed(2)})_\n`);
+  const advisory = weakHitAdvisory(avgScore, weakHitThreshold);
+  if (advisory) parts.push(`${advisory}\n`);
   parts.push("---\n");
 
   for (const r of results) {
@@ -993,9 +1006,10 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   const retrievalTool = tool({
     description:
       "Search the indexed codebase by meaning, not just keywords. " +
-      "ESSENTIAL before any code task — replaces blind reading with targeted retrieval. " +
-      "Call when the user asks 'how does X work?', 'where is Y?', references files/functions you haven't read, " +
-      "or you need to understand code behavior. Returns the most relevant code snippets with file paths, line numbers, and relevance scores.",
+      "Call it IN the first tool batch of any code task - before planning, reading, or answering - and again when the working area changes. " +
+      "Prefer it over grep for 'where is X' / 'how does X work' questions; grep stays right for an exact identifier you already have. " +
+      "Exception: when another system owns the current copy (source control, an MCP server, a database, an API), fetch it there first - this index covers the local mirror. " +
+      "Returns the most relevant code snippets with file paths, line numbers, and relevance scores; a low average score means the query was wrong, not that the code is missing.",
     args: {
       query: tool.schema.string().min(1, "A retrieval query is required."),
       pathHints: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
@@ -1060,7 +1074,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           };
         }
 
-        const output = formatContext(results);
+        const output = formatContext(results, getEffectiveCfg().openCode.weakHitThreshold ?? 0.5);
 
         appendVerboseLog(options.logFilePath, CONTEXT_TOOL_NAME, "retrieval completed successfully", {
           query,

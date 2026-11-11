@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { formatReadOutput, formatFileFallback, formatHybridReadOutput } from "../../opencode/read-format.js";
+import { formatReadOutput, formatFileFallback, formatHybridReadOutput, weakHitAdvisory } from "../../opencode/read-format.js";
 import type { SearchResult } from "../../core/interfaces.js";
 
 function makeResult(
@@ -243,5 +243,24 @@ describe("guessLanguage via chunking.parsers", () => {
       languageByExtension: { ".cu": "cpp" },
     });
     assert.match(output, /^```cpp/m);
+  });
+});
+
+describe("weakHitAdvisory", () => {
+  it("labels a block whose average relevance sits under the floor", () => {
+    const advisory = weakHitAdvisory(0.31, 0.5);
+    assert.match(advisory, /^_\(weak:/);
+    assert.match(advisory, /0\.50 floor/, "states the threshold it was judged against");
+    assert.match(advisory, /pathHints/, "points at the next move instead of just complaining");
+  });
+
+  it("stays silent at or above the floor", () => {
+    assert.equal(weakHitAdvisory(0.5, 0.5), "");
+    assert.equal(weakHitAdvisory(0.9, 0.5), "");
+  });
+
+  it("is disabled by a non-positive threshold", () => {
+    assert.equal(weakHitAdvisory(0.1, 0), "");
+    assert.equal(weakHitAdvisory(0.1, -1), "");
   });
 });

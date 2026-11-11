@@ -15,7 +15,7 @@ import { findKeywordIndexGaps } from "../../indexer/keyword-rehydration.js";
 import { deriveWatcherHealth, discoverWatcherStates, type WatcherStatus } from "../../watcher.js";
 import { getPackageMetadata } from "../helpers.js";
 import { checkForUpdate } from "../../core/version-check.js";
-import { deriveNamespace, sanitizeNamespace } from "../../vectorstore/clickhouse.js";
+import { deriveNamespace, sanitizeNamespace, legacyNamespaceVariants } from "../../vectorstore/clickhouse.js";
 import type { CliOptions } from "../types.js";
 
 /**
@@ -106,6 +106,16 @@ export function registerStatusCommand(program: Command): void {
             `${c.label("Vector store:")}      ${c.value("clickhouse")} ${c.file(`${ch?.url ?? ""}/${ch?.database ?? ""}`)} ` +
             `(namespace ${c.value(namespace)}, ${annMode})`,
           );
+          if (!ch?.namespace?.trim()) {
+            const siblings = legacyNamespaceVariants(cwd);
+            if (siblings.length > 0) {
+              logCliInfo(
+                logFilePath,
+                "status",
+                `${c.label("Other spellings:")}     this path also hashes to ${siblings.join(", ")} - if your index lives there run ${c.value("opencode-rag clickhouse adopt")}, or pin vectorStore.clickhouse.namespace`,
+              );
+            }
+          }
           if (ch?.ann === "hnsw") {
             const hasIndex = (store as unknown as { hasVectorIndex?: () => Promise<boolean> }).hasVectorIndex;
             if (hasIndex) {

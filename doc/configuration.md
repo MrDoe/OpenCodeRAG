@@ -473,6 +473,8 @@ Controls the OpenCode plugin integration.
 | `autoIndex.watcher` | `"chokidar"` | File-change detection backend: `"chokidar"` (real-time FS events) or `"git"` (poll-based diff) |
 | `readNoResultsBehavior` | `"hint"` | Behavior when read returns no results: `"hint"` (suggest related files), `"empty"`, or `"error"` |
 | `injectSystemPrompt` | `true` | Inject RAG tool guidance into the system prompt when the session's tool catalog exposes the RAG tools (skipped automatically for tool-less agents such as `explore`; disable to save tokens once agents know the tools) |
+| `agentsMdDetail` | `"auto"` | How much of the protocol `AGENTS.md` carries: `"auto"` writes the compact form while `injectSystemPrompt` delivers the full one (one carrier, one copy - the same 40 lines in both cost ~1 100 tokens per turn and measured compliance did not improve), `"full"` always writes the complete protocol (standalone repos, agents without the plugin), `"compact"` always the short form |
+| `weakHitThreshold` | `0.5` | Average relevance below which a `search_semantic` result block is labelled weak, so a mandated search that returns near-noise is not read as an answer. `0` disables the label |
 | `exploreAgentTools` | `true` | Grant the read-only RAG tools to the built-in `explore` agent (disable to keep explore limited to read/glob/grep) |
 
 ### `documentationMode`
