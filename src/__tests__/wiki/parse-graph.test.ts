@@ -224,4 +224,16 @@ describe("graph", () => {
     assert.equal(graph.truncated, true);
     assert.equal(graph.pageCount, 2);
   });
+
+  it("catalogs pages linked with standard markdown links, too", () => {
+    const dir = fixtureDir({
+      "index.md": "# Index\n\n- [A](entities/a.md)\n- [gone](entities/gone.md)\n",
+      "entities/a.md": "# A\n\nplain",
+    });
+    const graph = buildWikiGraph(dir, { maxPages: 50 });
+    assert.ok(graph.pages.get("entities/a")!.cataloged);
+    assert.equal(graph.uncataloged.length, 0);
+    assert.equal(graph.indexEntriesMissingFile.length, 1);
+    assert.equal(graph.indexEntriesMissingFile[0]!.raw, "entities/gone.md");
+  });
 });

@@ -51,6 +51,8 @@ export interface ParsedWikiPage {
   headingTitle?: string;
   /** Links in document order, fenced code and inline code excluded. */
   links: WikiLink[];
+  /** Targets of standard `[text](path.md)` links (catalog evidence for index.md). */
+  mdPageLinks: string[];
   /** Number of inbound/outbound-relevant non-empty links (diagnostics). */
   wordCount: number;
 }
@@ -250,6 +252,28 @@ export function parseWikiLinks(content: string): WikiLink[] {
 }
 
 /**
+ * Extract standard markdown links pointing at local .md files — used ONLY
+ * for `index.md` catalog detection (the protocol mandates links, not
+ * wikilinks, in the index). Cross-reference edges stay wikilink-based.
+ * Fenced code is skipped; external http(s)/mailto targets ignored.
+ */
+export function parseMarkdownPageLinks(content: string): string[] {
+  const text = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const targets: string[] = [];
+  let inFence = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const scrubbed = line.replace(/`[^`\n]*`/g, "");
+    for (const m of scrubbed.matchAll(/\[[^\]]*\]\((?!https?:|mailto:|#)([^)\s]+?\.md)(?:\s+"[^"]*")?\)/g)) {
+      const t = m[1]?.trim();
+      if (t) targets.push(t);
+    }
+  }
+  return targets;
+}
+
+/**
  * Parse a wiki page from its raw content.
  *
  * @param content - The full file content.
@@ -265,6 +289,7 @@ export function parseWikiPage(content: string): ParsedWikiPage {
     frontmatter,
     headingTitle: h1?.[1]?.trim(),
     links,
+    mdPageLinks: parseMarkdownPageLinks(content),
     wordCount,
   };
 }

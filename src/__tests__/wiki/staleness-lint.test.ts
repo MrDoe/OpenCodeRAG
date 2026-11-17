@@ -117,10 +117,10 @@ function makeRepo(): Fixture | null {
   return { root, wikiDir };
 }
 
-describe("staleness (git fixture)", (t) => {
+describe("staleness (git fixture)", () => {
   const fx = makeRepo();
   if (!fx) {
-    t.skip("git unavailable in this environment");
+    // git unavailable in this environment - the suite registers no tests.
     return;
   }
 

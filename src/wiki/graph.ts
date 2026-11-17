@@ -237,13 +237,29 @@ export function buildWikiGraph(wikiDir: string, options: WikiGraphOptions = {}):
   }
 
   // Pass 2: backlinks (content pages only contribute inbound evidence),
-  // index cataloging (index.md's OUTBOUND marks pages cataloged).
+  // index cataloging (index.md's OUTBOUND marks pages cataloged). Catalog
+  // evidence accepts BOTH wikilinks and standard [text](page.md) links —
+  // the protocol only mandates "a link and one-line summary" per entry.
   for (const { from, to } of edges) {
     const toNode = nodes.get(to);
     if (!toNode) continue;
     if (from === "index") toNode.cataloged = true;
     if (from === "index" || from === "log") continue;
     if (!toNode.inbound.includes(from)) toNode.inbound.push(from);
+  }
+  const indexNode = nodes.get("index");
+  if (indexNode) {
+    for (const raw of indexNode.parsed.mdPageLinks) {
+      const target = resolveLinkTarget(raw, idIndex, basenameIndex);
+      if (target) {
+        const toNode = nodes.get(target);
+        if (toNode) toNode.cataloged = true;
+      } else {
+        const entry = { fromId: "index", raw, target: normalizePageId(raw) };
+        indexEntriesMissingFile.push(entry);
+        if (!dangling.some((d) => d.fromId === "index" && d.raw === raw)) dangling.push(entry);
+      }
+    }
   }
 
   const orphans: string[] = [];
