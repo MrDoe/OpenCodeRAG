@@ -38,6 +38,7 @@ import {
   registerDescribeImageCommand,
   registerDecideCommand,
   registerQuirkCommand,
+  registerWikiCommand,
 } from "./commands/index.js";
 
 /**
@@ -86,6 +87,7 @@ registerEvalDecideCommand(program);
 registerEvalTuneCommand(program);
 registerClickHouseCommand(program);
 registerQuirkCommand(program);
+registerWikiCommand(program);
 
 // ── Auto-run detection ──────────────────────────────────────────
 

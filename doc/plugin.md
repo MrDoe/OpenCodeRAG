@@ -267,7 +267,23 @@ Agent:    picks next subdirectory, repeats
 
 ### 6. Wiki Mode — Slash Command (`/wiki`)
 
-When `wikiMode.enabled` is `true` (default), the plugin injects a system prompt that instructs the host agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
+When `wikiMode.enabled` is `true` (default), the plugin injects a system prompt that instructs the host agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`, registers the two agent tools below, and provides the `/wiki` slash command. Wiki maintenance is collaborative: the tools compute every deterministic answer, the agent writes the prose.
+
+**Wiki agent tools** (registered when `wikiMode.tools` is `true`, the default; gated together with the prompt on `wikiMode.enabled`):
+
+| Tool | Purpose | Args |
+|------|---------|------|
+| `wiki_graph` | Link-structure queries computed from the files on every call — `overview`, `backlinks`, `outlinks`, `neighbors` (with `depth`), `orphans`, `dangling` | `mode?` (default `overview`), `page?` (required for backlinks/outlinks/neighbors; id or unique basename), `depth?` (1–3) |
+| `wiki_lint` | Deterministic health report: git-verified staleness (`sourceRefs` committed after `lastReviewed`), dead refs, uncommitted drift, orphans, dangling, frontmatter, `index.md` coverage | `staleDays?`, `maxCommits?`, `format?` (`markdown` \| `json`) |
+
+Design rules both tools follow:
+
+- **No persisted graph.** The `.md` files are the source of truth; the graph is rebuilt on demand and cached only per-process keyed by `(path, mtime, size)`. A wiki tool can never answer from a stale index.
+- **Provider-free.** They need no embedder, no vector store, no indexing — `wiki_lint` works on a cold workspace.
+- **Honest floors.** `wikiMode.maxPages` caps the scan; when hit, every report says the counts are floors instead of silently under-counting.
+- **Index and log are bookkeeping.** Links FROM `index.md`/`log.md` mark pages cataloged but never count as inbound evidence — an orphan is a page no *content* page links.
+- **One git walk.** Staleness uses a single bounded `git log --name-only --since=<oldest review date>` (default cap 500 commits, like the `.opencode/scripts/wiki-lint.cjs` prototype it replaces), plus the working-tree diff. Review dates are day-granular (a commit on the review day counts as reviewed) and `AGENTS.md`/`README.md`/`LICENSE` churn is reported separately as low-signal, never as staleness.
+- **Judgment stays human.** Contradictions between pages and "concepts needing their own page" are listed in the report footer for the agent to handle — the tool never pretends to have checked them.
 
 **Configuration:**
 
@@ -282,9 +298,9 @@ When `wikiMode.enabled` is `true` (default), the plugin injects a system prompt 
 
 2. **Agent writes the wiki** — The host agent creates and maintains all wiki pages during coding sessions, following the injected protocol. The user never writes wiki pages directly.
 
-3. **`/wiki` status** — Shows the current state of `.opencode/wiki/`: page count, subdirectories, whether `index.md` and `log.md` exist, and the latest log entry.
+3. **`/wiki` status** — Shows the current state of `.opencode/wiki/`: recursive page count, directories, whether `index.md` and `log.md` exist, the latest log entry, and the graph health line (orphans / dangling / uncataloged).
 
-4. **`/wiki lint`** — Instructs the agent to health-check the wiki for orphan pages, stale entries (source drift), contradictions, and missing cross-references. Findings are appended to `log.md`.
+4. **`/wiki lint`** — Runs the deterministic report (staleness, structure, frontmatter, index coverage) and injects it into the message, followed by the manual judgment checks. The agent fixes the findings and appends them to `log.md`.
 
 5. **`/wiki seed`** — Instructs the agent to generate the initial wiki from existing sources: README, file structure via `get_file_skeleton`, common conventions from code patterns. Creates `index.md`, `log.md`, and initial entity/concept pages.
 

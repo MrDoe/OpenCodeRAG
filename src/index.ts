@@ -25,6 +25,10 @@ export { loadConfig, loadConfigLayers, loadWorkspaceConfig, resolveConfigPaths, 
 export { createBackgroundIndexer, deriveWatcherHealth, readWatcherState, discoverWatcherStates } from "./watcher.js";
 export type { WatcherStatus, ObservedWatcher } from "./watcher.js";
 export { createWatchIgnore } from "./indexer.js";
+export { getWikiGraph, buildWikiGraph, findPage, graphNeighbors, resolveLinkTarget, NON_CONTENT_PAGE_IDS, type WikiGraph, type WikiPageNode, type WikiGraphOptions, type DanglingLink } from "./wiki/graph.js";
+export { lintWiki, formatLintReport, type WikiLintReport, type WikiLintOptions } from "./wiki/lint.js";
+export { computeStaleness, stalenessCounts, formatPageStaleness, LOW_SIGNAL_REFS, type StalenessResult, type PageStaleness, type SourceRefStatus, type StalenessOptions } from "./wiki/staleness.js";
+export { parseWikiPage, parseWikiLinks, parseFrontmatter, normalizePageId, pageBasename, type ParsedWikiPage, type ParsedFrontmatter, type WikiLink } from "./wiki/page-parse.js";
 export { ImageChunker, createImageVisionProvider, resolveOnDemandImageConfig, getMimeType, SUPPORTED_IMAGE_EXTENSIONS } from "./chunker/image.js";
 export { DescriptionCache } from "./core/desc-cache.js";
 export type { RagConfig, DescriptionConfig, ImageDescriptionConfig, ImageDescriptionOnDemandConfig, DecisionConfig } from "./core/config.js";

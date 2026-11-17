@@ -436,6 +436,49 @@ $ opencode-rag quirk test "some brand new fact"
 ✗ No matching quirk found — quirk has not been appended
 ```
 
+### `wiki`
+
+Wiki structure and health reports over `.opencode/wiki/` — the CLI twin of the `wiki_graph` / `wiki_lint` agent tools. Provider-free: no store, no embedder, works on an un-indexed workspace.
+
+```bash
+opencode-rag wiki <subcommand> [options]
+```
+
+**Subcommands:**
+
+| Subcommand | Description |
+|---|---|
+| `status` | Page count (recursive), index/log presence, health line (orphans / dangling / uncataloged), latest log entry |
+| `graph` | Link-graph query: `overview` (default), `backlinks`, `outlinks`, `neighbors`, `orphans`, `dangling` |
+| `lint` | Full deterministic report: git-verified staleness, dead sourceRefs, structure, frontmatter, `index.md` coverage |
+
+**Common options:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--dir <path>` | cwd | Workspace root (the wiki must live at `<dir>/.opencode/wiki`) |
+
+**`wiki graph` options:** `--mode <mode>` (default `overview`), `--page <id>` (id or unique basename; required for backlinks/outlinks/neighbors), `--depth <1-3>` (neighbors).
+
+**`wiki lint` options:** `--json` (machine-readable report on stdout), `--stale-days <n>` (also list aging pages), `--max-commits <n>` (cap on the single git-history walk, default 500). Exit code is always 0: this is a report, not a gate — the same contract the replaced `.opencode/scripts/wiki-lint.cjs` prototype followed.
+
+**Staleness rules:** a page is stale when a file `sourceRefs` entry was committed after its `lastReviewed` (day-granular: the review day counts as reviewed) or is dirty in the working tree; a ref that no longer exists is reported as missing, not stale; `AGENTS.md`/`README.md`/`LICENSE` churn is low-signal and never flags. A non-git workspace degrades to existence checks and says so.
+
+**Example:**
+```bash
+$ opencode-rag wiki status
+Wiki  C:\repo\.opencode\wiki
+  Pages: 71 (68 content)
+  Index: yes
+  Health: orphans 6, dangling 3, uncataloged 5, missing frontmatter 1
+  Latest log: ## [2026-11-17] ingest | …
+
+$ opencode-rag wiki lint --stale-days 30
+**Wiki lint** — 71 pages (68 content)
+Deterministic findings: **64**
+- **Stale pages** (sourceRefs changed after lastReviewed): 51 …
+```
+
 ### `setup`
 
 Set up OpenCodeRAG: install/verify the machine-level runtime, scaffold the current workspace, and run the model configuration wizard.

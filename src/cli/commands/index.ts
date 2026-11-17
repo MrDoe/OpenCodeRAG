@@ -19,3 +19,4 @@ export { registerEvalTuneCommand } from "./eval-tuner.js";
 export { registerDescribeImageCommand } from "./describe-image.js";
 export { registerDecideCommand } from "./decide.js";
 export { registerQuirkCommand } from "./quirk.js";
+export { registerWikiCommand } from "./wiki.js";

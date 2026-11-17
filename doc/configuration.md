@@ -503,12 +503,14 @@ Progress is persisted in `.opencode/rag_db/doc-mode-progress.json` so subsequent
 
 ### `wikiMode`
 
-Controls the wiki mode that instructs the AI agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. **Enabled by default.** No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
+Controls the wiki mode that instructs the AI agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. **Enabled by default.** Registers the `wiki_graph` / `wiki_lint` agent tools (see `wikiMode.tools`) and drives maintenance through the injected system prompt and the `/wiki` slash command.
 
 ```json
 {
   "wikiMode": {
     "enabled": true,
+    "tools": true,
+    "maxPages": 500,
     "systemPrompt": "You are a wiki maintainer for this codebase..."
   }
 }
@@ -516,7 +518,9 @@ Controls the wiki mode that instructs the AI agent to build and maintain a persi
 
 | Option | Default | Description |
 |---|---|---|
-| `enabled` | `true` | Enable the `/wiki` slash command and wiki maintainer system prompt |
+| `enabled` | `true` | Enable the `/wiki` slash command, the wiki maintainer system prompt, and the wiki tools |
+| `tools` | `true` | Register `wiki_graph` and `wiki_lint`. `false` keeps the prompt protocol for agents that should only use `read`/`grep` |
+| `maxPages` | `500` | Safety cap on pages scanned per report. When exceeded the scan stops and every report flags the counts as floors |
 | `systemPrompt` | *(built-in)* | System prompt defining the wiki layout, frontmatter conventions, and the Ingest/Query/Lint/Seed operations |
 
 The built-in system prompt defines the wiki layout (`.opencode/wiki/index.md`, `log.md`, `entities/`, `concepts/`, `sources/`), page frontmatter (`title`, `tags`, `sourceRefs`, `lastReviewed`), and cross-references via `[[wiki/page-name]]` links. See [Plugin documentation](plugin.md#6-wiki-mode--slash-command-wiki).

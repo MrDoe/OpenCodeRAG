@@ -388,11 +388,20 @@ Progress is saved in `.opencode/rag_db/doc-mode-progress.json`, so later session
 
 On by default. When `wikiMode.enabled` is `true`, the plugin injects a wiki-maintainer system prompt. The agent builds and maintains a persistent knowledge wiki in `.opencode/wiki/`: interlinked markdown pages that synthesize knowledge from the codebase, docs, and conversations.
 
+Two read-only agent tools make the mechanical wiki questions one-call answers instead of grep sweeps (registered when `wikiMode.tools` is `true`, the default):
+
+| Tool | Purpose |
+|---|---|
+| `wiki_graph` | Link-graph queries: backlinks, outlinks, neighborhood, orphans, dangling links, overview — rebuilt from the files on every call, so it is never stale |
+| `wiki_lint` | Deterministic health report: git-verified staleness (`sourceRefs` committed after `lastReviewed`), dead refs, uncommitted drift, structure, frontmatter and `index.md` coverage |
+
+The same engine backs a provider-free CLI (`opencode-rag wiki status/graph/lint`) and the `/wiki` slash command:
+
 | Command | Action |
 |---|---|
-| `/wiki` | Show wiki status (page count, subdirectories, index and log presence, latest log entry) |
+| `/wiki` | Show wiki status (recursive page count, directories, index and log presence, graph health, latest log entry) |
 | `/wiki seed` | Generate the initial wiki from the README, file structure, and code patterns |
-| `/wiki lint` | Health-check for orphan pages, stale source references, contradictions, and missing cross-links |
+| `/wiki lint` | Inject the computed deterministic report, then the agent handles judgment checks (contradictions, concepts lacking a page) and fixes findings |
 
 The agent maintains the pages during normal coding sessions; you do not write them yourself. The wiki lives in `.opencode/`, so it is git-trackable and every edit is a diff. See the [plugin docs](doc/plugin.md#6-wiki-mode--slash-command-wiki).
 

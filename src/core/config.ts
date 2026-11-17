@@ -374,6 +374,18 @@ export interface DocumentationModeConfig {
 export interface WikiModeConfig {
   /** Whether wiki mode is enabled. */
   enabled: boolean;
+  /**
+   * Whether the agent tools (`wiki_graph`, `wiki_lint`) are registered.
+   * `false` keeps the system-prompt protocol and the `/wiki` slash command
+   * but hides the tools (for agents that should not touch the wiki graph).
+   */
+  tools: boolean;
+  /**
+   * Safety cap on wiki pages scanned per tool call. Exceeding it truncates
+   * the scan and every report says so — a wiki past this size is a signal to
+   * split or prune, and counts become floors, never silent lies.
+   */
+  maxPages: number;
   /** System prompt for the wiki maintainer agent. */
   systemPrompt: string;
 }
@@ -1136,13 +1148,15 @@ export const DEFAULT_CONFIG: RagConfig = {
   },
   wikiMode: {
     enabled: true,
+    tools: true,
+    maxPages: 500,
     systemPrompt:
       "You are a wiki maintainer for this codebase. You incrementally build and maintain " +
       "a persistent knowledge wiki at `.opencode/wiki/` — a structured, interlinked collection " +
       "of markdown files that synthesizes knowledge from the codebase, documentation, and your conversations.\n\n" +
       "## Three layers\n\n" +
       "- **Raw sources**: code, docs, READMEs (immutable — read with `search_semantic`, `get_file_skeleton`, `find_usages`, `read`)\n" +
-      "- **Wiki**: `.opencode/wiki/*.md` (you own this layer — create, update, and maintain ALL pages)\n" +
+      "- **Wiki**: `.opencode/wiki/*.md` (you own this layer — create, update, and maintain ALL pages; answer link/health questions with `wiki_graph`/`wiki_lint`, never grep)\n" +
       "- **Schema**: this prompt (the protocol you follow)\n\n" +
       "## Wiki layout\n\n" +
       "`.opencode/wiki/`\n" +
@@ -1171,17 +1185,14 @@ export const DEFAULT_CONFIG: RagConfig = {
       "6. Append to `log.md`: `## [date] ingest | page title`\n\n" +
       "### Query (when the user asks a question)\n" +
       "1. Read `index.md` first to find relevant wiki pages\n" +
-      "2. Read those pages with the `read` tool\n" +
+      "2. Read those pages with the `read` tool; `wiki_graph` backlinks finds related pages\n" +
       "3. If the wiki is insufficient, use `search_semantic` for code-level retrieval\n" +
       "4. Synthesize an answer citing wiki pages where possible\n" +
       "5. If the answer produced valuable analysis, file it back as a new wiki page\n\n" +
       "### Lint (periodically, or when `/wiki lint` is invoked)\n" +
-      "Check for:\n" +
-      "- Orphan pages with no inbound `[[links]]`\n" +
-      "- Stale pages whose `sourceRefs` files changed since `lastReviewed`\n" +
-      "- Contradictions between pages\n" +
-      "- Important concepts mentioned but lacking their own page\n" +
-      "Append findings to `log.md`.\n\n" +
+      "Run `wiki_lint` first — it computes orphans, stale `sourceRefs` (git vs `lastReviewed`), dangling links, frontmatter and index coverage. " +
+      "Then what it cannot: contradictions, concepts lacking a page. " +
+      "Append findings to `log.md` and re-lint.\n\n" +
       "### Seed (when `/wiki seed` is invoked)\n" +
       "Generate initial wiki from existing sources:\n" +
       "1. Read README and top-level docs for project overview → create overview page\n" +

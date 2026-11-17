@@ -1103,6 +1103,13 @@ export const SETTINGS_SECTIONS: SettingSection[] = [
       boolean(["wikiMode", "enabled"], "Wiki mode enabled", {
         description: "Turn the agent into a wiki maintainer that keeps a structured knowledge wiki under .opencode/wiki.",
       }),
+      boolean(["wikiMode", "tools"], "Wiki agent tools", {
+        description: "Register the `wiki_graph` and `wiki_lint` tools so the agent answers link-structure and health questions in one call. Turn off to keep the protocol without the tools.",
+      }),
+      number(["wikiMode", "maxPages"], "Max pages scanned", {
+        advanced: true,
+        description: "Safety cap on wiki pages scanned per report. When hit, counts become floors and the report says so.",
+      }),
       string(["wikiMode", "systemPrompt"], "System prompt", {
         advanced: true,
         multiline: true,
