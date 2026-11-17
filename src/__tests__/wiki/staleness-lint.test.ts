@@ -177,6 +177,28 @@ describe("staleness (git fixture)", () => {
 });
 
 describe("lint report", () => {
+  it("treats line-range suffixes and ~ locators correctly (non-git cwd)", () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "wiki-refs-"));
+    fs.mkdirSync(path.join(cwd, "src"), { recursive: true });
+    fs.mkdirSync(path.join(cwd, ".opencode", "wiki"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "src", "exists.ts"), "export const x = 1;\n");
+    const pg = (refs: string[]) => ["---", "title: t", "tags: [t]", `sourceRefs: [${refs.join(", ")}]`, "lastReviewed: 2020-01-01", "---", ""].join("\n");
+    fs.writeFileSync(path.join(cwd, ".opencode", "wiki", "lined.md"), pg(["src/exists.ts:798-826"]));
+    fs.writeFileSync(path.join(cwd, ".opencode", "wiki", "home.md"), pg(["~/.config/opencode/opencode-rag.json"]));
+    fs.writeFileSync(path.join(cwd, ".opencode", "wiki", "gone.md"), pg(["src/gone.ts:3"]));
+    const graph = buildWikiGraph(path.join(cwd, ".opencode", "wiki"), { maxPages: 50 });
+    const res = computeStaleness(graph, cwd);
+    const byId = new Map(res.pages.map((p) => [p.id, p]));
+    // line-suffixed ref resolves to the existing file -> fresh, not missing
+    assert.equal(byId.get("lined")!.refs[0]!.state, "fresh");
+    // ~ locator is external -> unchecked regardless of git/disk
+    assert.equal(byId.get("home")!.refs[0]!.state, "unchecked");
+    assert.equal(byId.get("home")!.state, "fresh");
+    // a suffixed ref whose BASE is gone is still a real dead ref
+    assert.equal(byId.get("gone")!.refs[0]!.state, "missing");
+    fs.rmSync(cwd, { recursive: true, force: true });
+  });
+
   it("reports no wiki honestly", () => {
     const report = lintWiki(path.join(os.tmpdir(), "wiki-missing-" + Date.now()), process.cwd());
     assert.equal(report.exists, false);

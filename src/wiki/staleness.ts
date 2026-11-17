@@ -66,9 +66,22 @@ export interface StalenessResult {
   notes: string[];
 }
 
-/** Classify a sourceRef: url-ish refs can't be git-checked. */
-function classifyRef(ref: string): "file" | "url" {
-  return /^[a-z][a-z0-9+.-]*:\/\//i.test(ref) ? "url" : "file";
+/**
+ * Classify a sourceRef. URLs and `~`-prefixed paths are EXTERNAL to the repo:
+ * git cannot judge them, so they report as `unchecked` (a `~/.config/...`
+ * locator is policy-mandated on purpose — flagging it DEAD would punish the
+ * no-secrets-in-docs rule). Line-range suffixes (`file.ts:12-40`) are a
+ * legitimate convention: strip before existence/git checks, display as-is.
+ */
+function classifyRef(ref: string): "file" | "external" {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(ref)) return "external";
+  if (ref === "~" || ref.startsWith("~/") || ref.startsWith("~\\")) return "external";
+  return "file";
+}
+
+/** Strip a trailing `:LINE` / `:FROM-TO` suffix for filesystem/git lookup. */
+function stripLineSuffix(ref: string): string {
+  return ref.replace(/:\d+(?:-\d+)?$/, "");
 }
 
 /** Normalize a repo path (posix, from git) for comparison. */
@@ -160,11 +173,11 @@ export function computeStaleness(
     let lowSignalHits = 0;
 
     for (const raw of fm.sourceRefs) {
-      if (classifyRef(raw) === "url") {
+      if (classifyRef(raw) === "external") {
         refs.push({ ref: raw, state: "unchecked" });
         continue;
       }
-      const refPath = raw.replace(/\\/g, "/").replace(/^\.\//, "");
+      const refPath = stripLineSuffix(raw).replace(/\\/g, "/").replace(/^\.\//, "");
       const key = norm(refPath);
       const absRef = path.isAbsolute(refPath) ? refPath : path.resolve(cwd, refPath);
       if (!existsSync(absRef)) {
