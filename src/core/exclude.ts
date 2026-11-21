@@ -94,3 +94,19 @@ export function createIncludeMatcher(patterns: string[]): IncludedMatcher {
 
   return { included };
 }
+
+/**
+ * Test whether a file path falls within the current indexing scope.
+ * Scoped by both the workspace root (cwd) and any active includeDirs (e.g. -d option).
+ */
+export function isInScanScope(filePath: string, cwd: string, includeDirs?: string[]): boolean {
+  if (!filePath || !cwd) return false;
+  const normPath = filePath.replace(/\\/g, "/");
+  const cleanCwd = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
+  const inCwd = normPath === cleanCwd || normPath.startsWith(cleanCwd + "/");
+  if (!inCwd) return false;
+  if (!includeDirs || includeDirs.length === 0) return true;
+  let rel = normPath.slice(cleanCwd.length).replace(/^\/+/, "");
+  const matcher = createIncludeMatcher(includeDirs);
+  return matcher.included(rel);
+}

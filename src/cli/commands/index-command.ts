@@ -68,6 +68,7 @@ export function registerIndexCommand(program: Command): void {
     .command("index")
     .description("Index workspace files")
     .option("-c, --config <path>", "path to config file")
+    .option("-d, --dir <dirs...>", "restrict indexing to specified directories (workspace-relative)")
     .option("-f, --force", "force full re-index")
     .option("-y, --yes", "skip confirmation prompt for full rebuild")
     .option("-w, --watch", "watch workspace and incrementally re-index on changes")
@@ -80,6 +81,7 @@ export function registerIndexCommand(program: Command): void {
         let logFilePath = path.resolve(cwd, ".opencode", "opencode-rag.log");
         const ctx = await resolveCliContext(options, logFilePath);
         const { config, embedder, store, storePath, keywordIndex, descriptionProvider, dimension, stateSync } = ctx;
+        if (options.dir && options.dir.length > 0) { config.indexing.includeDirs = options.dir; }
         logFilePath = ctx.logFilePath;
 
         // ── Abort controller for graceful Ctrl+C during the initial pass ──

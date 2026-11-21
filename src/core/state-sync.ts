@@ -1,3 +1,4 @@
+import { isInScanScope } from "./exclude.js";
 /**
  * @fileoverview Durable workspace-state synchronisation.
  *
@@ -26,12 +27,12 @@ import type { VectorStore } from "./interfaces.js";
 
 /** State names and their local cache files. */
 const STATE_FILES = {
-  manifest: { file: "manifest.json", required: true },
+  manifest: { file: "manifest.json", required: true, merge: true },
   "keyword-index": { file: "keyword-index.json", required: false },
   quirks: { file: "quirks.jsonl", required: false, merge: true },
   "runtime-overrides": { file: "runtime-overrides.json", required: false },
   "doc-progress": { file: "doc-progress.json", required: false },
-  ".desc-cache": { file: ".desc-cache.json", required: false, cache: true },
+  ".desc-cache": { file: ".desc-cache.json", required: false, cache: true, merge: true },
 } as const;
 
 type StateName = keyof typeof STATE_FILES;
@@ -57,6 +58,7 @@ export interface StateSyncOptions {
   /** Local cache directory (`vectorStore.path`). */
   storePath: string;
   config: RagConfig;
+  cwd?: string;
   /** Optional logger override (tests). */
   warn?: (message: string) => void;
 }
@@ -156,6 +158,63 @@ export function mergeQuirkJsonl(local: string, remote: string): string {
  *
  * Inactive (a no-op) for every provider except `"clickhouse"`.
  */
+
+export function mergeManifestJson(localRaw: string, remoteRaw: string, cwd?: string, includeDirs?: string[]): string {
+  let local: any;
+  let remote: any;
+  try { local = JSON.parse(localRaw); } catch { return remoteRaw; }
+  try { remote = JSON.parse(remoteRaw); } catch { return localRaw; }
+  if (!local || typeof local !== "object") return remoteRaw;
+  if (!remote || typeof remote !== "object") return localRaw;
+
+  const remoteFiles = remote.files && typeof remote.files === "object" ? remote.files : {};
+  const localFiles = local.files && typeof local.files === "object" ? local.files : {};
+  const mergedFiles: Record<string, any> = {};
+
+  for (const [p, entry] of Object.entries(remoteFiles)) {
+    if (!cwd || !isInScanScope(p, cwd, includeDirs)) {
+      mergedFiles[p] = entry;
+    }
+  }
+
+  for (const [p, entry] of Object.entries(localFiles)) {
+    mergedFiles[p] = entry;
+  }
+
+  const merged = {
+    schemaVersion: Math.max(local.schemaVersion ?? 3, remote.schemaVersion ?? 3),
+    lastIndexedAt: Math.max(local.lastIndexedAt ?? 0, remote.lastIndexedAt ?? 0) || Date.now(),
+    files: mergedFiles,
+    lastGitCommit: local.lastGitCommit || remote.lastGitCommit,
+  };
+  return JSON.stringify(merged, null, 2);
+}
+
+export function mergeDescCacheJson(localRaw: string, remoteRaw: string): string {
+  let local: any;
+  let remote: any;
+  try { local = JSON.parse(localRaw); } catch { return remoteRaw; }
+  try { remote = JSON.parse(remoteRaw); } catch { return localRaw; }
+  if (!local || typeof local !== "object") return remoteRaw;
+  if (!remote || typeof remote !== "object") return localRaw;
+
+  const remoteEntries = remote.entries && typeof remote.entries === "object" ? remote.entries : {};
+  const localEntries = local.entries && typeof local.entries === "object" ? local.entries : {};
+  const mergedEntries = { ...remoteEntries };
+
+  for (const [k, v] of Object.entries(localEntries)) {
+    const existing = mergedEntries[k];
+    if (!existing || ((v as any)?.createdAt ?? 0) >= ((existing as any)?.createdAt ?? 0)) {
+      mergedEntries[k] = v;
+    }
+  }
+
+  return JSON.stringify({
+    version: Math.max(local.version ?? 1, remote.version ?? 1),
+    entries: mergedEntries,
+  }, null, 2);
+}
+
 export class StateSync {
   private readonly storePath: string;
   private readonly enabled: boolean;
@@ -176,6 +235,20 @@ export class StateSync {
   }
 
   /** True when this instance actually talks to a central state table. */
+  
+  private mergeState(name: StateName, local: string, remoteData: string): string {
+    if (name === "quirks") {
+      return mergeQuirkJsonl(local, remoteData);
+    }
+    if (name === "manifest") {
+      return mergeManifestJson(local, remoteData, this.cwd, this.config?.indexing?.includeDirs);
+    }
+    if (name === ".desc-cache") {
+      return mergeDescCacheJson(local, remoteData);
+    }
+    return local;
+  }
+
   get active(): boolean {
     return this.enabled && this.remote !== undefined;
   }
@@ -286,7 +359,7 @@ export class StateSync {
       if ("merge" in spec && spec.merge) {
         try {
           const remote = await this.remote!.readState(name);
-          if (remote?.data) payload = mergeQuirkJsonl(local, remote.data);
+          if (remote?.data) payload = this.mergeState(name, local, remote.data);
         } catch {
           // Upload the local copy; the next hydrate merges instead.
         }
