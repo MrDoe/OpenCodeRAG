@@ -9,6 +9,8 @@ import type { WizardFlags } from "./wizard/flow.js";
 export interface CliOptions {
   /** Optional path to an `opencode-rag.json` config file. */
   config?: string;
+  /** Restrict indexing to specified directories (workspace-relative). */
+  dir?: string[];
   /** Force a full re-index when set. */
   force?: boolean;
   /** Watch workspace for changes and re-index automatically. */

@@ -205,7 +205,7 @@ export async function resolveRagContext(
   // Durable-state sync: no-op for LanceDB (the local directory is the source
   // of truth); for ClickHouse the local directory is a disposable cache that
   // is hydrated from `state_<namespace>` before anything reads it.
-  const stateSync = new StateSync({ store, storePath, config: cfg });
+  const stateSync = new StateSync({ store, storePath, config: cfg, cwd: workDir });
   try {
     await stateSync.hydrate();
   } catch (err) {

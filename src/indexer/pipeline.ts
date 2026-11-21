@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import pLimit from "p-limit";
 import { scanWorkspaceFiles } from "../content/reader.js";
+import { isInScanScope } from "../core/exclude.js";
 import type { RagConfig } from "../core/config.js";
 import { loadManifest, saveManifest, normalizeFilePath, computeDescriptionConfigHash } from "../core/manifest.js";
 import { DescriptionCache } from "../core/desc-cache.js";
@@ -594,9 +595,13 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   let stalePaths: string[];
   if (filterPaths) {
     const repoRoot = getRepoRoot(options.cwd) ?? options.cwd;
-    stalePaths = gitDeletedPaths.map((p) => normalizeFilePath(path.resolve(repoRoot, p)));
+    stalePaths = gitDeletedPaths
+      .map((p) => normalizeFilePath(path.resolve(repoRoot, p)))
+      .filter((p) => isInScanScope(p, options.cwd, options.config.indexing.includeDirs));
   } else {
-    stalePaths = Object.keys(manifest.files).filter((p) => !currentPaths.has(p));
+    stalePaths = Object.keys(manifest.files).filter((p) =>
+      isInScanScope(p, options.cwd, options.config.indexing.includeDirs) && !currentPaths.has(p),
+    );
   }
   if (stalePaths.length > 0) {
     logger.debug(`Removing ${stalePaths.length} stale files from index...`);
@@ -1353,6 +1358,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       const orphans: Array<{ filePath: string; chunkCount: number }> = [];
       for (const stored of await options.store.listFiles()) {
         const key = normalizeFilePath(stored.filePath);
+        if (!isInScanScope(key, options.cwd, options.config.indexing.includeDirs)) continue;
         if (manifest.files[key]) continue;
         if (manifestKeysLower.has(key.toLowerCase())) continue;
         if (writtenThisPass.has(key)) continue;

@@ -1,3 +1,4 @@
+import os from "node:os";
 /**
  * @fileoverview ClickHouse-backed `VectorStore` — an opt-in, central alternative
  * to the default LanceDB store.
@@ -1116,10 +1117,28 @@ export class ClickHouseStore implements ChunkBrowseStore {
   }
 
   async acquireLease(owner: string, kind: string, ttlMs: number): Promise<boolean> {
+    if (!this.opts.leaseEnabled) return true;
     await this.ensureSchema();
     const current = await this.readLeaseRow(kind);
     const now = Date.now();
-    if (current && current.owner !== owner && current.expiresAt > now) return false;
+    if (current && current.owner !== owner && current.expiresAt > now) {
+      const parts = current.owner.split(":");
+      if (parts.length === 2 && parts[0] === os.hostname()) {
+        const pid = parseInt(parts[1], 10);
+        let alive = false;
+        if (Number.isFinite(pid)) {
+          try {
+            process.kill(pid, 0);
+            alive = true;
+          } catch {
+            alive = false;
+          }
+        }
+        if (alive) return false;
+      } else {
+        return false;
+      }
+    }
     await this.writeState(
       `${LEASE_NAME}:${kind}`,
       JSON.stringify({ owner, expiresAt: now + ttlMs }),
@@ -1134,7 +1153,24 @@ export class ClickHouseStore implements ChunkBrowseStore {
   async renewLease(owner: string, kind: string, ttlMs: number): Promise<boolean> {
     await this.ensureSchema();
     const current = await this.readLeaseRow(kind);
-    if (current && current.owner !== owner && current.expiresAt > Date.now()) return false;
+    if (current && current.owner !== owner && current.expiresAt > Date.now()) {
+      const parts = current.owner.split(":");
+      if (parts.length === 2 && parts[0] === os.hostname()) {
+        const pid = parseInt(parts[1], 10);
+        let alive = false;
+        if (Number.isFinite(pid)) {
+          try {
+            process.kill(pid, 0);
+            alive = true;
+          } catch {
+            alive = false;
+          }
+        }
+        if (alive) return false;
+      } else {
+        return false;
+      }
+    }
     await this.writeState(
       `${LEASE_NAME}:${kind}`,
       JSON.stringify({ owner, expiresAt: Date.now() + ttlMs }),
