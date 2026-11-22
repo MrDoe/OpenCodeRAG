@@ -93,6 +93,12 @@ export interface ResolvedClickHouseOptions {
   syncDescCache: boolean;
   /** Embedding model name recorded in `_meta` (diagnostics/rebuild audit). */
   embeddingModel: string;
+  /**
+   * Workspace root used to store `file_path` keys relative to it. Paths are
+   * persisted relative (not absolute) because this store is central and shared
+   * across machines/checkouts.
+   */
+  workspaceDir: string;
 }
 
 /** Sanitize a namespace so it is safe as a table suffix. */
@@ -187,6 +193,7 @@ export function resolveClickHouseOptions(
     diskFreeFloorBytes: ch.diskFreeFloorBytes ?? 5 * 1024 * 1024 * 1024,
     syncDescCache: ch.state?.syncDescCache ?? false,
     embeddingModel: config.embedding.model,
+    workspaceDir,
   };
 }
 
@@ -582,7 +589,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
       // Synthetic quirk ids stay RAW — normalizing them keys rows by the cwd
       // of whichever process wrote them (same trap as LanceDB).
       ? chunk.metadata.filePath
-      : normalizeFilePath(chunk.metadata.filePath);
+      : normalizeFilePath(chunk.metadata.filePath, this.opts.workspaceDir);
     return {
       chunk_id: chunk.id,
       file_path: filePath,
@@ -645,7 +652,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
       const epoch = this.currentEpoch();
       const normalized = filePath.startsWith(QUIRK_FILE_PREFIX)
         ? filePath
-        : normalizeFilePath(filePath);
+        : normalizeFilePath(filePath, this.opts.workspaceDir);
       const oldRows = await this.select<{ chunk_id: string; embedding: number[] }>(
         `SELECT chunk_id, embedding FROM ${this.table(this.opts.chunksTable)} FINAL ` +
         "WHERE epoch = {epoch:UInt64} AND file_path = {path:String}",
@@ -989,7 +996,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
     await this.ensureSchema();
     const normalized = filePath.startsWith(QUIRK_FILE_PREFIX)
       ? filePath
-      : normalizeFilePath(filePath);
+      : normalizeFilePath(filePath, this.opts.workspaceDir);
     const rows = await this.select<ChunkRow>(
       `SELECT ${this.summaryColumns()}, embedding FROM ${this.table(this.opts.chunksTable)} FINAL ` +
       "WHERE epoch = {epoch:UInt64} AND file_path = {path:String} ORDER BY start_line",

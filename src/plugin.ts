@@ -2655,7 +2655,7 @@ export const ragPlugin: Plugin = async (
 
   // ClickHouse: pull the durable manifest/keyword index/quirks/overrides into
   // the disposable local cache before anything reads them.
-  const stateSync = new StateSync({ store, storePath, config: effectiveCfg });
+  const stateSync = new StateSync({ store, storePath, config: effectiveCfg, cwd: input.directory });
   try {
     await stateSync.hydrate();
   } catch (err) {

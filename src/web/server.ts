@@ -107,12 +107,12 @@ export async function startWebUi(
 ): Promise<WebUiServer> {
   const store = cfg
     ? createVectorStore(cfg, storePath, vectorDimension, cwd ?? process.cwd())
-    : new LanceDbStore(storePath, vectorDimension);
+    : new LanceDbStore(storePath, vectorDimension, cwd ?? process.cwd());
   if (cfg) {
     // ClickHouse: pull the durable manifest/keyword-index/quirks into the
     // local cache before loading the keyword index below.
     try {
-      await new StateSync({ store, storePath, config: cfg }).hydrate();
+      await new StateSync({ store, storePath, config: cfg, cwd: cwd ?? process.cwd() }).hydrate();
     } catch (err) {
       console.warn(`[web] State hydration failed: ${(err as Error).message}`);
     }

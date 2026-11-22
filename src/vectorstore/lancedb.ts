@@ -369,17 +369,21 @@ const QUIRK_FILE_PREFIX = "quirk:";
 /**
  * SQL predicate matching every stored form of `filePath`.
  *
- * Workspace files are stored with absolute paths, so `normalizeFilePath`
- * (= `path.resolve`) is a no-op → exact match, as before.
+ * Workspace files are stored with workspace-relative paths
+ * (`normalizeFilePath(..., workspaceDir)`), which is a no-op for a value that
+ * is already relative → exact match.
  *
- * Quirk chunks use the synthetic path `quirk:<id>`, which `normalizeFilePath`
- * historically resolved against the cwd of the WRITING process — the same quirk
- * could exist as the raw form (stored raw since 2026-09-22) and as one or more
+ * Quirk chunks use the synthetic path `quirk:<id>`, which older versions
+ * resolved against the cwd of the WRITING process — the same quirk could exist
+ * as the raw form (stored raw since 2026-09-22) and as one or more
  * `<cwd>/`-prefixed legacy forms. Match the raw form plus any
  * directory-prefixed variant via suffix LIKE (quirk ids are uuids — no LIKE
  * metacharacters).
+ *
+ * @param filePath     - Path to match; absolute or workspace-relative.
+ * @param workspaceDir - Workspace root used to relativise absolute paths.
  */
-function buildFilePathMatch(filePath: string): string {
+function buildFilePathMatch(filePath: string, workspaceDir: string): string {
   // Quirk detection by BASENAME so callers may pass the raw synthetic path or
   // any legacy cwd-prefixed absolute form — both resolve to the same match.
   const base = path.basename(filePath);
@@ -393,7 +397,7 @@ function buildFilePathMatch(filePath: string): string {
   // spelling (`c:/Daten/...` from a watcher event vs `C:/Daten/...` from
   // path.resolve), and a case-sensitive delete leaves the other spelling behind
   // forever - that is how 262 files ended up stored twice.
-  return `lower(filePath) = lower('${normalizeFilePath(filePath).replace(/'/g, "''")}')`;
+  return `lower(filePath) = lower('${normalizeFilePath(filePath, workspaceDir).replace(/'/g, "''")}')`;
 }
 
 /** Internal row shape stored in the LanceDB table. */
@@ -493,7 +497,14 @@ export class LanceDbStore implements ChunkBrowseStore {
    * @param dbPath - Filesystem path to the LanceDB database directory.
    * @param vectorDimension - Dimension of the embedding vectors. Default: 384.
    */
-  constructor(dbPath: string, vectorDimension: number = 384) {
+  /**
+   * @param dbPath         - LanceDB directory (or `memory://`).
+   * @param vectorDimension - Expected embedding dimension.
+   * @param workspaceDir   - Workspace root used to relativise `filePath` keys.
+   *   Keys are persisted workspace-relative (see `normalizeFilePath`) so the
+   *   store stays valid when the checkout moves between machines.
+   */
+  constructor(dbPath: string, vectorDimension: number = 384, private readonly workspaceDir: string = process.cwd()) {
     this.dbPath = dbPath;
     this.vectorDimension = vectorDimension;
   }
@@ -776,7 +787,7 @@ export class LanceDbStore implements ChunkBrowseStore {
       // cross-cwd duplicates that a cwd-normalized delete could not remove.
       filePath: c.metadata.filePath.startsWith(QUIRK_FILE_PREFIX)
         ? c.metadata.filePath
-        : normalizeFilePath(c.metadata.filePath),
+        : normalizeFilePath(c.metadata.filePath, this.workspaceDir),
       startLine: c.metadata.startLine,
       endLine: c.metadata.endLine,
       language: c.metadata.language,
@@ -816,7 +827,7 @@ export class LanceDbStore implements ChunkBrowseStore {
     // below cannot remove same-id rows). Safe: quirks.jsonl is the source of
     // truth and reconcileQuirks re-restores if we crash between delete+add.
     for (const p of new Set(rows.filter((r) => r.filePath.startsWith(QUIRK_FILE_PREFIX)).map((r) => r.filePath))) {
-      await table.delete(buildFilePathMatch(p));
+      await table.delete(buildFilePathMatch(p, this.workspaceDir));
     }
 
     // INSERT FIRST: data is safely stored before any delete
@@ -873,7 +884,7 @@ export class LanceDbStore implements ChunkBrowseStore {
 
     // Quirk rows: wipe every stored form first (see addChunksInternal).
     for (const p of new Set(allRows.filter((r) => r.filePath.startsWith(QUIRK_FILE_PREFIX)).map((r) => r.filePath))) {
-      await table.delete(buildFilePathMatch(p));
+      await table.delete(buildFilePathMatch(p, this.workspaceDir));
     }
 
     // INSERT FIRST (single add for the whole batch), then per-file dedup
@@ -1006,7 +1017,7 @@ export class LanceDbStore implements ChunkBrowseStore {
       const table = await this.getTable();
       const rows = await table.query()
         .select(QUERY_COLUMNS)
-        .where(buildFilePathMatch(filePath))
+        .where(buildFilePathMatch(filePath, this.workspaceDir))
         .toArray();
 
       return rows
@@ -1766,7 +1777,7 @@ export class LanceDbStore implements ChunkBrowseStore {
     if (!tableNames.includes(TABLE_NAME)) return;
 
     const table = await this.getTable();
-    await table.delete(buildFilePathMatch(filePath));
+    await table.delete(buildFilePathMatch(filePath, this.workspaceDir));
   }
 
   /**

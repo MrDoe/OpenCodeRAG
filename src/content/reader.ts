@@ -218,7 +218,7 @@ export async function scanWorkspaceFiles(
   let completed = 0;
 
   async function processFile(filePath: string): Promise<WorkspaceFile> {
-    const normalizedPath = normalizeFilePath(filePath);
+    const normalizedPath = normalizeFilePath(filePath, cwd);
 
     if (manifest?.files[normalizedPath]) {
       try {

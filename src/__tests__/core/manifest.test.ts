@@ -23,10 +23,16 @@ describe("manifest", () => {
     assert.deepStrictEqual(createEmptyManifest(), { files: {}, schemaVersion: 3 });
   });
 
-  it("normalizes file paths to absolute forward-slash paths", () => {
+  it("normalizes file paths to workspace-relative forward-slash paths", () => {
     const normalized = normalizeFilePath("src\\test.ts");
-    assert.match(normalized, /^([A-Za-z]:)?\//);
+    // Relative to the workspace root, never an absolute machine-specific path.
+    assert.ok(!normalized.startsWith("/"), `expected relative, got ${normalized}`);
     assert.ok(!normalized.includes("\\"));
+  });
+
+  it("relativises absolute paths against an explicit workspace root", () => {
+    const cwd = path.resolve("/workspace/root");
+    assert.equal(normalizeFilePath(path.join(cwd, "src", "a.ts"), cwd), "src/a.ts");
   });
 
   it("computes stable hashes", () => {

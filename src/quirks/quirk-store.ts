@@ -484,12 +484,10 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
   const liveQuirks = quirks.filter((q) => !isTombstone(q));
   const jsonlIds = new Set(liveQuirks.map((q) => q.id));
 
-  // Exact enumeration of quirk chunks in the table. The store normalizes
-  // filePaths to absolute on write (chunkToRow → normalizeFilePath), so quirk
-  // rows read back as "<root>/quirk:<id>" — match on the basename, which is
-  // always QUIRK_FILE_PREFIX + id, and keep the stored path for lookups/deletes
-  // (deleteByFilePath normalizes its arg; passing the stored absolute path
-  // matches regardless of this process's cwd).
+  // Exact enumeration of quirk chunks in the table. Synthetic `quirk:<id>`
+  // paths bypass normalizeFilePath (see chunkToRow), so rows read back verbatim
+  // as "quirk:<id>" — match on the basename, which is always QUIRK_FILE_PREFIX
+  // + id, and keep the stored path for lookups/deletes.
   const quirkRows: Array<{ filePath: string; id: string }> = [];
   for (const p of await deps.store.getFilePaths()) {
     const base = path.basename(p);
@@ -499,13 +497,12 @@ export async function reconcileQuirks(deps: QuirkReconcileDeps): Promise<QuirkRe
   }
   const storeIds = new Set(quirkRows.map((r) => r.id));
 
-  // 0. Collapse duplicate rows for the same quirk. Legacy rows were keyed by
-  //    the writing process's cwd (normalizeFilePath = path.resolve), so a quirk
-  //    touched from two cwds has one row per cwd — and insert-then-NOT-IN dedup
-  //    cannot remove same-id rows at all. Raw-vs-legacy variants AND same-path
-  //    double-rows are both hard to see via getFilePaths alone, so count rows
-  //    per id with the variant-aware lookup. The jsonl content is authoritative:
-  //    delete every row, re-embed one raw row below.
+  // 0. Collapse duplicate rows for the same quirk. Legacy rows were written
+  //    with absolute paths (normalizeFilePath used to call path.resolve), so a
+  //    quirk touched from two checkouts has one row per root. Raw-vs-legacy
+  //    variants AND same-path double-rows are both hard to see via
+  //    getFilePaths alone, so count rows per id. The jsonl content is
+  //    authoritative: delete every row, re-embed one raw row below.
   const dupIds: string[] = [];
   for (const q of liveQuirks) {
     if (!storeIds.has(q.id)) continue; // absent → the restore path below covers it

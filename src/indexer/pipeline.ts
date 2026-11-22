@@ -596,7 +596,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   if (filterPaths) {
     const repoRoot = getRepoRoot(options.cwd) ?? options.cwd;
     stalePaths = gitDeletedPaths
-      .map((p) => normalizeFilePath(path.resolve(repoRoot, p)))
+      .map((p) => normalizeFilePath(path.resolve(repoRoot, p), options.cwd))
       .filter((p) => isInScanScope(p, options.cwd, options.config.indexing.includeDirs));
   } else {
     stalePaths = Object.keys(manifest.files).filter((p) =>
@@ -1357,7 +1357,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       );
       const orphans: Array<{ filePath: string; chunkCount: number }> = [];
       for (const stored of await options.store.listFiles()) {
-        const key = normalizeFilePath(stored.filePath);
+        const key = normalizeFilePath(stored.filePath, options.cwd);
         if (!isInScanScope(key, options.cwd, options.config.indexing.includeDirs)) continue;
         if (manifest.files[key]) continue;
         if (manifestKeysLower.has(key.toLowerCase())) continue;
@@ -1677,7 +1677,7 @@ export async function getIndexStatusSummary(
     );
     quirkChunks = 0;
     for (const file of await store.listFiles()) {
-      const key = normalizeFilePath(file.filePath);
+      const key = normalizeFilePath(file.filePath, cwd);
       if (path.basename(key).startsWith(QUIRK_FILE_PREFIX)) {
         quirkChunks += file.chunkCount;
         continue;

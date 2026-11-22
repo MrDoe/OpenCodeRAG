@@ -97,16 +97,37 @@ export function createIncludeMatcher(patterns: string[]): IncludedMatcher {
 
 /**
  * Test whether a file path falls within the current indexing scope.
- * Scoped by both the workspace root (cwd) and any active includeDirs (e.g. -d option).
+ *
+ * Scoped by both the workspace root (`cwd`) and any active `includeDirs`
+ * (e.g. the `-d` option). Accepts paths in either form the codebase produces:
+ * absolute paths (from git, and from stores written before paths were
+ * relativised) and workspace-relative paths (`normalizeFilePath`'s output).
+ *
+ * @param filePath    - Path to test; absolute or relative to `cwd`.
+ * @param cwd         - Workspace root.
+ * @param includeDirs - Optional restrict-to directories, workspace-relative.
+ * @returns `true` when the path is inside the workspace and any includeDirs.
  */
 export function isInScanScope(filePath: string, cwd: string, includeDirs?: string[]): boolean {
   if (!filePath || !cwd) return false;
   const normPath = filePath.replace(/\\/g, "/");
   const cleanCwd = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
-  const inCwd = normPath === cleanCwd || normPath.startsWith(cleanCwd + "/");
-  if (!inCwd) return false;
+
+  // Relative keys are already anchored at the workspace root; absolute ones
+  // must still be checked against it (and yield the relative remainder).
+  const isAbsolute = normPath.startsWith("/") || /^[A-Za-z]:\//.test(normPath);
+  let rel: string;
+  if (isAbsolute) {
+    const inCwd = normPath === cleanCwd || normPath.startsWith(cleanCwd + "/");
+    if (!inCwd) return false;
+    rel = normPath.slice(cleanCwd.length).replace(/^\/+/, "");
+  } else {
+    // Escaping the workspace root is never in scope.
+    if (normPath === ".." || normPath.startsWith("../")) return false;
+    rel = normPath;
+  }
+
   if (!includeDirs || includeDirs.length === 0) return true;
-  let rel = normPath.slice(cleanCwd.length).replace(/^\/+/, "");
   const matcher = createIncludeMatcher(includeDirs);
   return matcher.included(rel);
 }

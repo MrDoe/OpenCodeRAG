@@ -75,9 +75,35 @@ export function manifestPathFor(dbPath: string): string {
   return path.join(dbPath, "manifest.json");
 }
 
-/** Normalize a file path to use forward slashes for cross-platform consistency. */
-export function normalizeFilePath(filePath: string): string {
-  return path.resolve(filePath).replace(/\\/g, "/");
+/**
+ * Normalise a file path for use as a manifest/vector-store key.
+ *
+ * Paths are stored **relative to the workspace root** rather than absolute: a
+ * central store (ClickHouse) is shared between machines and checkouts, and an
+ * absolute key from one machine is unusable on another. Relative keys also
+ * survive `git pull`/worktree relocation.
+ *
+ * The function is **idempotent**: a path that is already relative is returned
+ * unchanged (only `./`/`..` segments are collapsed). This matters because the
+ * vector store re-normalises the `filePath` it receives from already-chunked
+ * files — without idempotency the store would re-resolve a relative key
+ * against `process.cwd()`, producing keys that no longer match the manifest
+ * whenever the process cwd differs from the indexed workspace root.
+ *
+ * @param filePath - Path to normalise; absolute or already relative.
+ * @param cwd      - Workspace root used to relativise absolute paths. Defaults
+ *                   to `process.cwd()`, which is the workspace root for every
+ *                   CLI command and for the plugin (both bootstrap from it).
+ * @returns A forward-slash, workspace-relative path.
+ */
+export function normalizeFilePath(filePath: string, cwd?: string): string {
+  const forwardSlashes = filePath.replace(/\\/g, "/");
+  const isAbsolute = forwardSlashes.startsWith("/") || /^[A-Za-z]:\//.test(forwardSlashes);
+  if (!isAbsolute) {
+    const collapsed = path.posix.normalize(forwardSlashes);
+    return collapsed === "." ? "" : collapsed;
+  }
+  return path.relative(cwd ?? process.cwd(), path.resolve(filePath)).replace(/\\/g, "/");
 }
 
 /** Compute the SHA-256 hex hash of a string. */

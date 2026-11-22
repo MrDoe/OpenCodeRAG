@@ -142,7 +142,7 @@ describe("indexer", () => {
     workspaceDir = await makeTempDir("indexer-workspace");
     storeDir = await makeTempDir("indexer-store");
     // Use in-memory store for speed; storePath still needs a real dir for manifest
-    store = new LanceDbStore("memory://", 4);
+    store = new LanceDbStore("memory://", 4, workspaceDir);
   });
 
   it("indexes new files and records them in the manifest", async () => {
@@ -225,7 +225,7 @@ describe("indexer", () => {
     await writeFile(path.join(workspaceDir, relPaths[0]!), "function fn00() { return 999; }\n");
 
     const before = await loadManifest(storeDir);
-    const targetKey = normalizeFilePath(path.join(workspaceDir, relPaths[0]!));
+    const targetKey = normalizeFilePath(path.join(workspaceDir, relPaths[0]!), workspaceDir);
     const beforeHash = before.manifest.files[targetKey]!.hash;
 
     // Delaying addChunksBulk keeps window 1's store phase in flight while
@@ -305,8 +305,8 @@ describe("indexer", () => {
 
     const manifest = await loadManifest(storeDir);
     assert.equal(manifest.status, "ok");
-    assert.ok(!manifest.manifest.files[normalizeFilePath(smallFilePath)]);
-    assert.ok(manifest.manifest.files[normalizeFilePath(largeFilePath)]);
+    assert.ok(!manifest.manifest.files[normalizeFilePath(smallFilePath, workspaceDir)]);
+    assert.ok(manifest.manifest.files[normalizeFilePath(largeFilePath, workspaceDir)]);
   });
 
   it("removes too small files from the index", async () => {
@@ -407,7 +407,7 @@ describe("indexer", () => {
     assert.equal(stats.modifiedFiles, 1);
     assert.equal(stats.finalCount, 1, "orphan swept, indexed chunk kept");
     const storedPaths = await store.getFilePaths();
-    assert.ok(!storedPaths.includes(normalizeFilePath(ghost)), "ghost row removed");
+    assert.ok(!storedPaths.includes(normalizeFilePath(ghost, workspaceDir)), "ghost row removed");
   });
 
   it("drops stale rows of an uncommitted file that produces no vectors", async () => {
@@ -451,7 +451,7 @@ describe("indexer", () => {
     assert.ok(stats.embeddingFailures > 0, "the un-embedded chunk must be counted for retry");
     assert.equal(await store.count(), 1, "stale rows of the uncommitted file are removed");
     const manifest = await loadManifest(storeDir);
-    assert.ok(!manifest.manifest.files[normalizeFilePath(broken)], "file stays uncommitted");
+    assert.ok(!manifest.manifest.files[normalizeFilePath(broken, workspaceDir)], "file stays uncommitted");
   });
 
   it("reports unaccounted (orphan) chunks in the status summary", async () => {
@@ -925,7 +925,7 @@ describe("indexer", () => {
       assert.equal(stats.descriptionFailedFiles, 1);
 
       const manifest = await loadManifest(storeDir);
-      const entry = manifest.manifest.files[normalizeFilePath(path.join(workspaceDir, "src", "fail.ts"))];
+      const entry = manifest.manifest.files[normalizeFilePath(path.join(workspaceDir, "src", "fail.ts"), workspaceDir)];
       assert.ok(entry);
       assert.equal(entry.descriptionFailed, true);
     });
@@ -963,7 +963,7 @@ describe("indexer", () => {
 
       // Check that descHash is stored in the manifest
       const manifestAfterFirst = await loadManifest(storeDir);
-      const filePath = normalizeFilePath(path.join(workspaceDir, "src", "skip.ts"));
+      const filePath = normalizeFilePath(path.join(workspaceDir, "src", "skip.ts"), workspaceDir);
       const entry = manifestAfterFirst.manifest.files[filePath];
       assert.ok(entry, "File should be in manifest");
       assert.ok(entry.descHash, "descHash should be stored in manifest");
@@ -1011,7 +1011,7 @@ describe("indexer", () => {
       });
 
       const manifestAfterFail = await loadManifest(storeDir);
-      assert.equal(manifestAfterFail.manifest.files[normalizeFilePath(filePath)]?.descriptionFailed, true);
+      assert.equal(manifestAfterFail.manifest.files[normalizeFilePath(filePath, workspaceDir)]?.descriptionFailed, true);
 
       // Second run: description succeeds — file should be reindexed
       const successProvider: DescriptionProvider = {
@@ -1043,7 +1043,7 @@ describe("indexer", () => {
       assert.equal(stats.descriptionFailedFiles, 0);
 
       const manifestAfterSuccess = await loadManifest(storeDir);
-      const entry = manifestAfterSuccess.manifest.files[normalizeFilePath(filePath)];
+      const entry = manifestAfterSuccess.manifest.files[normalizeFilePath(filePath, workspaceDir)];
       assert.ok(entry);
       assert.notEqual(entry.descriptionFailed, true);
     });

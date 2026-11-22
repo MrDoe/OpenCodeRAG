@@ -727,7 +727,7 @@ async function handleReindex(
         projectionCache = null;
         try {
           const { StateSync } = await import("../core/state-sync.js");
-          await new StateSync({ store, storePath, config: cfg }).flush(["manifest", "keyword-index", "quirks", "runtime-overrides", "doc-progress", ".desc-cache"]);
+          await new StateSync({ store, storePath, config: cfg, cwd: cwd ?? process.cwd() }).flush(["manifest", "keyword-index", "quirks", "runtime-overrides", "doc-progress", ".desc-cache"]);
         } catch {
           // durable-state upload is best effort; the pass itself succeeded
         }
