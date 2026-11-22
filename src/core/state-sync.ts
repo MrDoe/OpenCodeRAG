@@ -221,9 +221,13 @@ export class StateSync {
   private readonly syncDescCache: boolean;
   private readonly warn: (message: string) => void;
   private readonly remote: RemoteStateStore | undefined;
+  private readonly cwd?: string;
+  private readonly config?: RagConfig;
 
   constructor(options: StateSyncOptions) {
     this.storePath = options.storePath;
+    this.cwd = options.cwd;
+    this.config = options.config;
     this.warn = options.warn ?? ((message) => console.warn(message));
     this.enabled = (options.config.vectorStore.provider ?? "lancedb") === "clickhouse";
     this.syncDescCache = options.config.vectorStore.clickhouse?.state?.syncDescCache ?? false;

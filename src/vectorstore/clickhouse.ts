@@ -1123,8 +1123,10 @@ export class ClickHouseStore implements ChunkBrowseStore {
     const now = Date.now();
     if (current && current.owner !== owner && current.expiresAt > now) {
       const parts = current.owner.split(":");
-      if (parts.length === 2 && parts[0] === os.hostname()) {
-        const pid = parseInt(parts[1], 10);
+      const host = parts[0];
+      const pidStr = parts[1];
+      if (parts.length === 2 && host === os.hostname() && pidStr !== undefined) {
+        const pid = parseInt(pidStr, 10);
         let alive = false;
         if (Number.isFinite(pid)) {
           try {
@@ -1155,8 +1157,10 @@ export class ClickHouseStore implements ChunkBrowseStore {
     const current = await this.readLeaseRow(kind);
     if (current && current.owner !== owner && current.expiresAt > Date.now()) {
       const parts = current.owner.split(":");
-      if (parts.length === 2 && parts[0] === os.hostname()) {
-        const pid = parseInt(parts[1], 10);
+      const host = parts[0];
+      const pidStr = parts[1];
+      if (parts.length === 2 && host === os.hostname() && pidStr !== undefined) {
+        const pid = parseInt(pidStr, 10);
         let alive = false;
         if (Number.isFinite(pid)) {
           try {
