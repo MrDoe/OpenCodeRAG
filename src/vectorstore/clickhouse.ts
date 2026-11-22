@@ -260,6 +260,12 @@ export class ClickHouseStore implements ChunkBrowseStore {
       request_timeout: this.opts.requestTimeoutMs,
       max_open_connections: this.opts.maxOpenConnections,
       compression: this.opts.compression ? { request: true, response: true } : undefined,
+      clickhouse_settings: {
+        send_progress_in_http_headers: 1,
+        http_headers_progress_interval_ms: "1000",
+        input_format_parallel_parsing: 0,
+        min_chunk_bytes_for_parallel_parsing: "536870912",
+      },
     });
     return this.client;
   }
@@ -457,6 +463,10 @@ export class ClickHouseStore implements ChunkBrowseStore {
       table: this.insertTable(this.opts.stateTable),
       values: [{ name: META_NAME, data, sha256: "", bytes: Buffer.byteLength(data) }],
       format: "JSONEachRow",
+      clickhouse_settings: {
+        input_format_parallel_parsing: 0,
+        min_chunk_bytes_for_parallel_parsing: "536870912",
+      },
     });
     this.activeEpoch = meta.activeEpoch;
   }
@@ -479,6 +489,10 @@ export class ClickHouseStore implements ChunkBrowseStore {
       table: this.insertTable(this.opts.stateTable),
       values: [{ name, data, sha256, bytes: Buffer.byteLength(data) }],
       format: "JSONEachRow",
+      clickhouse_settings: {
+        input_format_parallel_parsing: 0,
+        min_chunk_bytes_for_parallel_parsing: "536870912",
+      },
     });
   }
 
