@@ -10,6 +10,7 @@
 import type { Command } from "commander";
 import path from "node:path";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import fs from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { loadWorkspaceConfig, globalConfigPath, findConfigFile, projectConfigPath, type RagConfig } from "../../core/config.js";
 import {
@@ -19,6 +20,19 @@ import {
   resolveClickHouseOptions,
   sanitizeNamespace,
 } from "../../vectorstore/clickhouse.js";
+import { DescriptionCache } from "../../core/desc-cache.js";
+import {
+  computeFileHash,
+  computeDescriptionConfigHash,
+  loadManifest,
+  saveManifest,
+  normalizeFilePath,
+  SCHEMA_VERSION,
+  type FileManifest,
+  type ManifestEntry,
+} from "../../core/manifest.js";
+import { mergeQuirkJsonl, StateSync } from "../../core/state-sync.js";
+import { createVectorStore } from "../../vectorstore/factory.js";
 import { readJsonObject, writeJsonFile } from "../helpers.js";
 import { c } from "../format.js";
 
@@ -392,12 +406,12 @@ async function withAdmin<T>(
   database: string,
   username: string,
   password: string,
-  fn: (run: <R extends Record<string, string>>(sql: string) => Promise<R[]>) => Promise<T>,
+  fn: (run: <R extends Record<string, any>>(sql: string) => Promise<R[]>) => Promise<T>,
 ): Promise<T> {
   const { createClient } = await import("@clickhouse/client");
-  const client = createClient({ url, username, password, database, request_timeout: 60_000 });
+  const client = createClient({ url, username, password, database, request_timeout: 120_000 });
   try {
-    const run = async <R extends Record<string, string>>(sql: string): Promise<R[]> =>
+    const run = async <R extends Record<string, any>>(sql: string): Promise<R[]> =>
       await (await client.query({ query: sql, format: "JSONEachRow" })).json<R>();
     return await fn(run);
   } finally {
@@ -577,6 +591,293 @@ export async function runClickHouseCompact(options: ClickHouseMaintenanceOptions
   });
 }
 
+/** Options for `opencode-rag clickhouse restore`. */
+export interface ClickHouseRestoreOptions {
+  manifest?: boolean;
+  cache?: boolean;
+  keywordIndex?: boolean;
+  quirks?: boolean;
+  all?: boolean;
+  reconstructManifest?: boolean;
+  epoch?: number | string;
+  upload?: boolean;
+  outDir?: string;
+  cwd?: string;
+}
+
+/** Result of a ClickHouse restore/reconstruct operation. */
+export interface ClickHouseRestoreResult {
+  manifestFiles?: number;
+  cacheEntries?: number;
+  keywordIndexBytes?: number;
+  quirksCount?: number;
+}
+
+/**
+ * Core implementation of ClickHouse cache and manifest restoration.
+ * Exported so unit tests can test every code path against simulated query results
+ * without requiring a live ClickHouse instance or touching the user's workspace.
+ */
+export async function executeClickHouseRestore(
+  run: <R extends Record<string, any>>(sql: string) => Promise<R[]>,
+  options: ClickHouseRestoreOptions,
+  cfg: RagConfig,
+  targetDir: string,
+  ns: string,
+  cwd: string,
+  storeOverride?: ClickHouseStore,
+): Promise<ClickHouseRestoreResult> {
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const restoreAll = options.all || (!options.manifest && !options.cache && !options.keywordIndex && !options.quirks);
+  const doManifest = restoreAll || Boolean(options.manifest);
+  const doCache = restoreAll || Boolean(options.cache);
+  const doKeywordIndex = restoreAll || Boolean(options.keywordIndex);
+  const doQuirks = restoreAll || Boolean(options.quirks);
+
+  const result: ClickHouseRestoreResult = {};
+  const db = cfg.vectorStore.clickhouse?.database ?? "OpenCodeRAG";
+
+  // 1. Resolve target epoch
+  let targetEpoch: number | undefined;
+  if (options.epoch !== undefined) {
+    targetEpoch = Number(options.epoch);
+  } else {
+    const metaRows = await run<{ data: string }>(
+      `SELECT data FROM ${db}.state_${ns} FINAL WHERE name = '_meta' LIMIT 1`,
+    );
+    if (metaRows[0]?.data) {
+      try {
+        const meta = JSON.parse(metaRows[0].data) as { activeEpoch?: number };
+        if (meta.activeEpoch && Number.isFinite(meta.activeEpoch)) targetEpoch = meta.activeEpoch;
+      } catch {}
+    }
+    if (!targetEpoch) {
+      const epochRows = await run<{ max_epoch: string }>(
+        `SELECT max(epoch) AS max_epoch FROM ${db}.chunks_${ns}`,
+      );
+      targetEpoch = Number(epochRows[0]?.max_epoch ?? 1) || 1;
+    }
+  }
+
+  console.log(`\n  ${c.heading("ClickHouse restore")} — namespace "${ns}" (epoch ${targetEpoch})\n`);
+  console.log(`  Target directory: ${c.file(targetDir)}`);
+
+  // ── 2. Description Cache (.desc-cache.json) ─────────────────────────
+  if (doCache) {
+    console.log(`\n  Restoring description cache (.desc-cache.json)...`);
+    const cache = new DescriptionCache(targetDir);
+    await cache.load();
+    const descHash = computeDescriptionConfigHash(cfg) ?? "";
+    let offset = 0;
+    const limit = 25_000;
+    let added = 0;
+
+    while (true) {
+      const rows = await run<{
+        file_path: string;
+        start_line: number | string;
+        end_line: number | string;
+        content: string;
+        description: string;
+      }>(
+        `SELECT file_path, start_line, end_line, content, description ` +
+        `FROM ${db}.chunks_${ns} FINAL ` +
+        `WHERE epoch = ${targetEpoch} AND is_deleted = 0 AND description != '' ` +
+        `ORDER BY file_path, start_line LIMIT ${limit} OFFSET ${offset}`,
+      );
+      if (rows.length === 0) break;
+
+      const entriesToAdd: Array<[string, string]> = [];
+      for (const row of rows) {
+        const context = `${row.file_path}:${row.start_line}-${row.end_line}`;
+        const key = DescriptionCache.codeKey(row.content, descHash, context);
+        if (!cache.get(key)) {
+          entriesToAdd.push([key, row.description]);
+        }
+      }
+      if (entriesToAdd.length > 0) {
+        cache.setMany(entriesToAdd);
+        added += entriesToAdd.length;
+      }
+      offset += rows.length;
+      if (rows.length < limit) break;
+    }
+    await cache.save();
+    const totalInCache = (cache as any).cache?.entries ? Object.keys((cache as any).cache.entries).length : added;
+    result.cacheEntries = totalInCache;
+    console.log(`  ${c.success("Cache restored:")} +${added} descriptions from chunks (total ${totalInCache} entries)`);
+  }
+
+  // ── 3. Manifest (manifest.json) ─────────────────────────────────────
+  if (doManifest) {
+    console.log(`\n  Restoring manifest (manifest.json)...`);
+    let manifestData: FileManifest | undefined;
+
+    if (!options.reconstructManifest) {
+      const stateRows = await run<{ data: string }>(
+        `SELECT data FROM ${db}.state_${ns} FINAL WHERE name = 'manifest' LIMIT 1`,
+      );
+      if (stateRows[0]?.data) {
+        try {
+          const raw = JSON.parse(stateRows[0].data) as FileManifest;
+          if (raw && typeof raw.files === "object") {
+            const files: Record<string, ManifestEntry> = {};
+            for (const [k, v] of Object.entries(raw.files)) {
+              files[normalizeFilePath(k, cwd)] = v;
+            }
+            manifestData = {
+              schemaVersion: raw.schemaVersion ?? SCHEMA_VERSION,
+              lastIndexedAt: raw.lastIndexedAt ?? Date.now(),
+              lastGitCommit: raw.lastGitCommit,
+              files,
+            };
+            console.log(`  Found manifest in state table (${Object.keys(files).length} files)`);
+          }
+        } catch {}
+      }
+    }
+
+    if (!manifestData) {
+      console.log(`  Reconstructing manifest directly from ${db}.chunks_${ns}...`);
+      const fileRows = await run<{
+        file_path: string;
+        chunk_count: number | string;
+        last_indexed: string;
+      }>(
+        `SELECT file_path, count() AS chunk_count, toString(max(ver)) AS last_indexed ` +
+        `FROM ${db}.chunks_${ns} FINAL ` +
+        `WHERE epoch = ${targetEpoch} AND is_deleted = 0 AND NOT startsWith(file_path, 'quirk:') ` +
+        `GROUP BY file_path ORDER BY file_path`,
+      );
+      const files: Record<string, ManifestEntry> = {};
+      const descHash = computeDescriptionConfigHash(cfg);
+      for (const row of fileRows) {
+        const norm = normalizeFilePath(row.file_path, cwd);
+        const abs = path.resolve(cwd, norm);
+        let mtime: number | undefined;
+        let size: number | undefined;
+        let hash = "";
+        try {
+          const st = await fs.stat(abs);
+          mtime = st.mtimeMs;
+          size = st.size;
+          const content = await fs.readFile(abs, "utf-8");
+          hash = computeFileHash(content);
+        } catch {
+          hash = "";
+        }
+        files[norm] = {
+          hash,
+          chunkCount: Number(row.chunk_count),
+          indexedAt: Date.parse(row.last_indexed) || Date.now(),
+          mtime,
+          size,
+          descHash,
+        };
+      }
+      manifestData = {
+        schemaVersion: SCHEMA_VERSION,
+        lastIndexedAt: Date.now(),
+        files,
+      };
+      console.log(`  Reconstructed ${fileRows.length} files from chunks`);
+    }
+
+    const existingManifest = await loadManifest(targetDir, cwd);
+    if (existingManifest.status === "ok") {
+      for (const [k, v] of Object.entries(existingManifest.manifest.files)) {
+        if (!manifestData.files[k]) {
+          manifestData.files[k] = v;
+        }
+      }
+    }
+    await saveManifest(targetDir, manifestData);
+    result.manifestFiles = Object.keys(manifestData.files).length;
+    console.log(`  ${c.success("Manifest saved:")} ${result.manifestFiles} files in manifest.json`);
+  }
+
+  // ── 4. Keyword Index (keyword-index.json) ────────────────────────────
+  if (doKeywordIndex) {
+    console.log(`\n  Restoring keyword index (keyword-index.json)...`);
+    const kwRow = await run<{ n: number | string }>(
+      `SELECT count() AS n FROM ${db}.state_${ns} FINAL WHERE name = 'keyword-index'`,
+    );
+    if (Number(kwRow[0]?.n ?? 0) > 0) {
+      const store = storeOverride ?? (createVectorStore(cfg, targetDir, 1024, cwd) as ClickHouseStore);
+      if (typeof store.readStateToFile === "function") {
+        const targetFile = path.join(targetDir, "keyword-index.json");
+        const streamRes = await store.readStateToFile("keyword-index", targetFile);
+        result.keywordIndexBytes = streamRes?.bytes ?? 0;
+        console.log(`  ${c.success("Keyword index restored:")} ${result.keywordIndexBytes} bytes to keyword-index.json`);
+      }
+      if (!storeOverride) await store.close();
+    } else {
+      console.log(`  ${c.warn("No keyword-index found in state table.")}`);
+    }
+  }
+
+  // ── 5. Quirks (quirks.jsonl) ─────────────────────────────────────────
+  if (doQuirks) {
+    console.log(`\n  Restoring quirks (quirks.jsonl)...`);
+    const quirkRow = await run<{ data: string }>(
+      `SELECT data FROM ${db}.state_${ns} FINAL WHERE name = 'quirks' LIMIT 1`,
+    );
+    if (quirkRow[0]?.data) {
+      const quirkPath = path.join(targetDir, "quirks.jsonl");
+      let content = quirkRow[0].data;
+      try {
+        const local = await fs.readFile(quirkPath, "utf-8");
+        content = mergeQuirkJsonl(local, content);
+      } catch {}
+      await fs.writeFile(quirkPath, content, "utf-8");
+      const count = content.trim().split("\n").filter(Boolean).length;
+      result.quirksCount = count;
+      console.log(`  ${c.success("Quirks restored:")} ${count} quirks in quirks.jsonl`);
+    } else {
+      console.log(`  ${c.warn("No quirks found in state table.")}`);
+    }
+  }
+
+  // ── 6. Sync back to ClickHouse if requested ─────────────────────────
+  if (options.upload) {
+    console.log(`\n  Uploading restored state back to ClickHouse...`);
+    const store = storeOverride ?? createVectorStore(cfg, targetDir, 1024, cwd);
+    const sync = new StateSync({ store, storePath: targetDir, config: cfg, cwd });
+    const targets = [];
+    if (doManifest) targets.push("manifest");
+    if (doCache) targets.push(".desc-cache");
+    if (doKeywordIndex) targets.push("keyword-index");
+    if (doQuirks) targets.push("quirks");
+    await sync.flush(targets as any);
+    if (!storeOverride) await store.close();
+    console.log(`  ${c.success("Upload complete:")} state tables synchronized.\n`);
+  }
+
+  return result;
+}
+
+/**
+ * `clickhouse restore` — restore or reconstruct local cache artifacts
+ * (.desc-cache.json, manifest.json, keyword-index.json, quirks.jsonl) from ClickHouse.
+ *
+ * Useful for disaster recovery, setting up a fresh machine, or repairing
+ * local files without re-running expensive LLM description or embedding phases.
+ */
+export async function runClickHouseRestore(options: ClickHouseRestoreOptions = {}): Promise<ClickHouseRestoreResult> {
+  const cwd = options.cwd ?? process.cwd();
+  const t = clickHouseTarget(cwd);
+  const cfg = loadWorkspaceConfig(cwd);
+  const ns = assertSafeNamespace(t.namespace);
+  const targetDir = options.outDir
+    ? path.resolve(cwd, options.outDir)
+    : path.resolve(cwd, cfg.vectorStore.path ?? "./.opencode/rag_db");
+
+  return withAdmin(t.url, t.database, t.username, t.password, async (run) => {
+    return executeClickHouseRestore(run, options, cfg, targetDir, ns, cwd);
+  });
+}
+
 /** Register the `clickhouse` command group. */
 export function registerClickHouseCommand(program: Command): void {
   const group = program
@@ -633,6 +934,28 @@ export function registerClickHouseCommand(program: Command): void {
         await runClickHouseCompact(options);
       } catch (err) {
         console.error(`\n${c.error("Compact failed:")} ${(err as Error).message}\n`);
+        process.exitCode = 1;
+      }
+    });
+
+  group
+    .command("restore")
+    .alias("recover")
+    .description("Restore or reconstruct cache, manifest, keyword-index, and quirks from ClickHouse")
+    .option("-m, --manifest", "restore or reconstruct manifest.json")
+    .option("-c, --cache", "restore .desc-cache.json from chunks table")
+    .option("-k, --keyword-index", "restore keyword-index.json from state table")
+    .option("-q, --quirks", "restore quirks.jsonl from state table")
+    .option("-a, --all", "restore all artifacts (default)")
+    .option("--reconstruct-manifest", "force reconstructing manifest from chunks instead of state table")
+    .option("--epoch <n>", "target epoch in chunks table (default: active epoch)")
+    .option("--upload", "upload restored/reconstructed state back to ClickHouse")
+    .option("--out-dir <dir>", "output directory (default: configured vectorStore.path)")
+    .action(async (options: ClickHouseRestoreOptions) => {
+      try {
+        await runClickHouseRestore(options);
+      } catch (err) {
+        console.error(`\n${c.error("ClickHouse restore failed:")} ${(err as Error).message}\n`);
         process.exitCode = 1;
       }
     });

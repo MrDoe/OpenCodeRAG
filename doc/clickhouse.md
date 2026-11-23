@@ -177,6 +177,31 @@ re-embedding it (dry run by default, `--apply` to rename, `--from` to pick the s
 several exist). If a repository is opened under genuinely different paths, pin
 `vectorStore.clickhouse.namespace` - a pinned namespace never splits.
 
+### Disaster Recovery & Cache Reconstruction
+
+If local cache artifacts (`.desc-cache.json`, `manifest.json`, `keyword-index.json`, `quirks.jsonl`)
+are lost, damaged, or when setting up a fresh machine against an existing ClickHouse backend,
+`opencode-rag clickhouse restore` (alias: `recover`) restores or reconstructs them without
+re-running expensive LLM description or embedding passes:
+
+```bash
+# Restore everything (manifest, description cache, keyword index, quirks)
+opencode-rag clickhouse restore
+
+# Restore only the description cache (extracts codeKey entries from chunk rows)
+opencode-rag clickhouse restore --cache
+
+# Restore manifest from state table, or reconstruct directly from chunk rows
+opencode-rag clickhouse restore --manifest
+opencode-rag clickhouse restore --manifest --reconstruct-manifest
+
+# Restore to a custom output directory without touching the active cache
+opencode-rag clickhouse restore --out-dir /tmp/recovered-cache
+
+# Restore and synchronize back to ClickHouse state tables
+opencode-rag clickhouse restore --upload
+```
+
 ## Limitations
 
 - **ANN needs ClickHouse >= 25.8** and is dimension-bound; on older servers or after a model
