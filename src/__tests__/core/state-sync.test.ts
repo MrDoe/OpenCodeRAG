@@ -71,6 +71,51 @@ describe("StateSync hydrate/flush", () => {
     }
   });
 
+  it("merges the manifest as JSON instead of wiping it (hydrate dispatches by state name)", async () => {
+    // Regression: hydrate() routed every `merge: true` state through
+    // mergeQuirkJsonl, which parses JSONL. Applied to the manifest (a JSON
+    // object) it returned an empty string and truncated the file to 0 bytes,
+    // making the next index pass treat all files as new and re-describe them.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-rag-state-sync-"));
+    const remoteManifest = JSON.stringify({
+      schemaVersion: 3,
+      lastIndexedAt: 1,
+      // Absolute path outside the workspace root, so the scope filter keeps it.
+      files: { "/other-tree/remote-only.ts": { hash: "r", chunkCount: 1, indexedAt: 1, descHash: "aaa" } },
+    });
+    const remote = new Map<string, string>([["manifest", remoteManifest]]);
+    const store = {
+      readState: async (name: string) =>
+        remote.has(name) ? { data: remote.get(name)!, ver: "1" } : undefined,
+      writeState: async (name: string, data: string) => { remote.set(name, data); },
+    } as unknown as VectorStore;
+
+    try {
+      // Local manifest differs from the remote, so hydrate takes the merge path.
+      fs.writeFileSync(
+        path.join(dir, "manifest.json"),
+        JSON.stringify({
+          schemaVersion: 3,
+          lastIndexedAt: 2,
+          files: { "local.ts": { hash: "l", chunkCount: 2, indexedAt: 2, descHash: "bbb" } },
+        }),
+        "utf-8",
+      );
+
+      const sync = new StateSync({
+        store, storePath: dir, config: clickhouseConfig(), cwd: os.tmpdir(),
+      });
+      await sync.hydrate();
+
+      const merged = JSON.parse(fs.readFileSync(path.join(dir, "manifest.json"), "utf-8"));
+      assert.ok(merged.files["local.ts"], "local entry survives the merge");
+      assert.ok(merged.files["/other-tree/remote-only.ts"], "remote entry outside the scope survives");
+      assert.equal(merged.lastIndexedAt, 2);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("propagates a local deletion tombstone instead of resurrecting the remote record", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-rag-state-sync-"));
     const remote = new Map<string, string>();

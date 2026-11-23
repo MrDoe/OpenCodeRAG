@@ -319,7 +319,10 @@ export class StateSync {
       }
 
       if ("merge" in spec && spec.merge) {
-        const merged = mergeQuirkJsonl(local!, remote.data);
+        // Dispatch by state name: `manifest` is a JSON object and must go
+        // through mergeManifestJson, not through the JSONL quirk merge (which
+        // yields an empty string for non-JSONL input and wipes the manifest).
+        const merged = this.mergeState(name, local!, remote.data);
         await writeFileAtomic(this.localPath(name), merged);
         // Do NOT record the merged hash here: `flush` must upload it first.
         // Recording it would make flush believe the merged payload was already
