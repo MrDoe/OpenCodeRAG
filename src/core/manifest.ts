@@ -141,7 +141,7 @@ export function computeDescriptionConfigHash(config: RagConfig): string | undefi
 }
 
 /** Load a manifest from disk, handling missing or corrupt files gracefully. */
-export async function loadManifest(dbPath: string): Promise<LoadedManifest> {
+export async function loadManifest(dbPath: string, cwd?: string): Promise<LoadedManifest> {
   const filePath = manifestPathFor(dbPath);
 
   try {
@@ -152,11 +152,16 @@ export async function loadManifest(dbPath: string): Promise<LoadedManifest> {
     }
 
     const version = parsed.schemaVersion ?? 0;
+    const files: Record<string, ManifestEntry> = {};
+    for (const [key, entry] of Object.entries(parsed.files as Record<string, ManifestEntry>)) {
+      files[normalizeFilePath(key, cwd)] = entry;
+    }
+
     return {
       manifest: {
         lastIndexedAt: typeof parsed.lastIndexedAt === "number" ? parsed.lastIndexedAt : undefined,
         schemaVersion: version,
-        files: parsed.files as Record<string, ManifestEntry>,
+        files,
       },
       path: filePath,
       status: version >= MIN_SUPPORTED_SCHEMA_VERSION ? "ok" : "corrupt",

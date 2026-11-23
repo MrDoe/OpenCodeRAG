@@ -159,6 +159,7 @@ export function createWatchIgnore(
 
     const relative = path.relative(cwd, resolved);
     if (!relative || relative.startsWith("..")) return false;
-    return !includeMatcher.included(relative) || dirMatcher.excluded(relative) || fileMatcher.excluded(relative);
+    const inScope = includeMatcher.included(relative) || includeMatcher.shouldTraverse(relative);
+    return !inScope || dirMatcher.excluded(relative) || fileMatcher.excluded(relative);
   };
 }

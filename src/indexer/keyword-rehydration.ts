@@ -15,7 +15,7 @@
  * store's own rows.
  */
 import path from "node:path";
-import type { KeywordIndex, VectorStore } from "../core/interfaces.js";
+import type { Chunk, KeywordIndex, VectorStore } from "../core/interfaces.js";
 import { normalizeFilePath } from "../core/manifest.js";
 import { QUIRK_FILE_PREFIX } from "../quirks/quirk-store.js";
 
@@ -33,7 +33,21 @@ export interface KeywordRehydrationOptions {
   };
   /** Maximum number of files to rehydrate in one call (0/undefined = unlimited). */
   maxFiles?: number;
+  /**
+   * Files fetched per store round trip. Only used when the store implements
+   * {@link VectorStore.getChunksByFilePaths}; defaults to
+   * {@link DEFAULT_REHYDRATION_BATCH_SIZE}. A larger batch amortises latency
+   * but holds more chunk text in memory at once.
+   */
+  batchSize?: number;
 }
+
+/**
+ * Default files per bulk fetch. Remote stores answer a batched `IN` scan in
+ * roughly the same time as a single-file scan, so 200 files turn thousands of
+ * sequential round trips into a few dozen.
+ */
+const DEFAULT_REHYDRATION_BATCH_SIZE = 200;
 
 /** Outcome of a rehydration attempt. */
 export interface KeywordRehydrationResult {
@@ -99,24 +113,80 @@ export async function rehydrateKeywordIndex(
     );
   }
 
-  for (const filePath of targets) {
+  /**
+   * Add one file's chunks to the index. `addChunks()` is not idempotent for
+   * the BM25 length statistics and term frequencies, so a chunk that is
+   * already indexed must never be added a second time.
+   */
+  const addFileChunks = (chunks: Chunk[]): void => {
+    if (chunks.length === 0) return;
+    const fresh = chunks.filter((c) => !keywordIndex.hasChunk(c.id));
+    result.skippedChunks += chunks.length - fresh.length;
+    if (fresh.length === 0) return;
+    keywordIndex.addChunks(fresh);
+    result.rehydratedFiles++;
+    result.rehydratedChunks += fresh.length;
+  };
+
+  /** One-file fallback for stores without a bulk read. */
+  const rehydrateFile = async (filePath: string): Promise<void> => {
     try {
-      const chunks = await store.getChunksByFilePath(filePath);
-      if (chunks.length === 0) continue;
-      // Guard against double counting: `addChunks()` is not idempotent for the
-      // BM25 length statistics and term frequencies, so a chunk that is
-      // already indexed must never be added a second time.
-      const fresh = chunks.filter((c) => !keywordIndex.hasChunk(c.id));
-      result.skippedChunks += chunks.length - fresh.length;
-      if (fresh.length === 0) continue;
-      keywordIndex.addChunks(fresh);
-      result.rehydratedFiles++;
-      result.rehydratedChunks += fresh.length;
+      addFileChunks(await store.getChunksByFilePath(filePath));
     } catch (err) {
       result.failedFiles.push(filePath);
       logger?.warn?.(
         `Keyword rehydration failed for ${filePath}: ${(err as Error).message}`,
       );
+    }
+  };
+
+  const fetchMany = store.getChunksByFilePaths?.bind(store);
+
+  if (!fetchMany) {
+    for (const filePath of targets) {
+      await rehydrateFile(filePath);
+    }
+  } else {
+    const batchSize =
+      options.batchSize && options.batchSize > 0
+        ? options.batchSize
+        : DEFAULT_REHYDRATION_BATCH_SIZE;
+    for (let offset = 0; offset < targets.length; offset += batchSize) {
+      const batch = targets.slice(offset, offset + batchSize);
+      let rows: Chunk[];
+      try {
+        // Rehydration only feeds text and metadata into the keyword index —
+        // skip the vector payload, which dominates the response size.
+        rows = await fetchMany(batch, { withEmbeddings: false });
+      } catch (err) {
+        // A failed batch must not sink the remaining ones: retry file by file
+        // so one unreadable file cannot cost the whole batch.
+        logger?.debug?.(
+          `Keyword rehydration batch failed (${batch.length} file(s)): ${(err as Error).message} — retrying per file`,
+        );
+        for (const filePath of batch) {
+          await rehydrateFile(filePath);
+        }
+        continue;
+      }
+
+      const byPath = new Map<string, Chunk[]>();
+      for (const chunk of rows) {
+        const key = normalizeFilePath(chunk.metadata.filePath);
+        const bucket = byPath.get(key);
+        if (bucket) bucket.push(chunk);
+        else byPath.set(key, [chunk]);
+      }
+      for (const filePath of batch) {
+        try {
+          addFileChunks(byPath.get(normalizeFilePath(filePath)) ?? []);
+        } catch (err) {
+          result.failedFiles.push(filePath);
+          logger?.warn?.(
+            `Keyword rehydration failed for ${filePath}: ${(err as Error).message}`,
+          );
+        }
+      }
     }
   }
 

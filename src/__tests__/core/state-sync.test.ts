@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { StateSync, mergeQuirkJsonl } from "../../core/state-sync.js";
 import { DEFAULT_CONFIG, type RagConfig } from "../../core/config.js";
@@ -66,6 +67,34 @@ describe("StateSync hydrate/flush", () => {
       const local = fs.readFileSync(path.join(dir, "quirks.jsonl"), "utf-8");
       assert.match(local, /quirk:b/);
       assert.match(local, /"content":"new"/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("marks an unmergeable local conflict dirty so the next flush uploads it", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-rag-state-sync-"));
+    const local = '{"local":true}';
+    const remote = '{"remote":true}';
+    const writes: string[] = [];
+    const store = {
+      readState: async () => ({ data: remote, ver: "2" }),
+      writeState: async (_name: string, data: string) => { writes.push(data); },
+    } as unknown as VectorStore;
+
+    try {
+      fs.writeFileSync(path.join(dir, "keyword-index.json"), local, "utf-8");
+      fs.writeFileSync(
+        path.join(dir, ".state-sync.json"),
+        JSON.stringify({ "keyword-index": { sha256: createHash("sha256").update("previous-base").digest("hex") } }),
+        "utf-8",
+      );
+
+      const sync = new StateSync({ store, storePath: dir, config: clickhouseConfig() });
+      await sync.hydrate();
+      await sync.flush(["keyword-index"]);
+
+      assert.deepEqual(writes, [local]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

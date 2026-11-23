@@ -43,6 +43,9 @@ import { normalizeFileExtensions } from "../core/filters.js";
 /** Synthetic filePath prefix for quirk chunks — mirrors lancedb.ts and quirk-store.ts. */
 const QUIRK_FILE_PREFIX = "quirk:";
 
+/** State payloads above this size are inserted as a stream. */
+const STATE_STREAM_THRESHOLD_CHARS = 16 * 1024 * 1024;
+
 const META_NAME = "_meta";
 const LEASE_NAME = "_lease";
 
@@ -478,7 +481,62 @@ export class ClickHouseStore implements ChunkBrowseStore {
     this.activeEpoch = meta.activeEpoch;
   }
 
-  /** Generic state-bundle read used by `StateSync`. */
+  /** Stream a state payload to disk without materializing it as one JS string. */
+  async readStateToFile(
+    name: string,
+    filePath: string,
+  ): Promise<{ ver: string; sha256?: string; bytes?: number } | undefined> {
+    await this.ensureSchema();
+    const metaRows = await this.select<{ ver: string; sha256: string; bytes: string }>(
+      `SELECT toString(ver) AS ver, sha256, toString(bytes) AS bytes ` +
+      `FROM ${this.table(this.opts.stateTable)} FINAL WHERE name = {name:String} LIMIT 1`,
+      { name },
+    );
+    const meta = metaRows[0];
+    if (!meta) return undefined;
+
+    const client = await this.getClient();
+    const result = await client.exec({
+      query:
+        `SELECT data FROM ${this.table(this.opts.stateTable)} FINAL ` +
+        "WHERE name = {name:String} LIMIT 1 FORMAT RawBLOB",
+      query_params: { name },
+    });
+    const { createWriteStream } = await import("node:fs");
+    const { mkdir, rename, rm, stat } = await import("node:fs/promises");
+    await mkdir(path.dirname(filePath), { recursive: true });
+    const tmpPath = `${filePath}.tmp-remote`;
+    const output = createWriteStream(tmpPath);
+    let remaining = Number(meta.bytes);
+    try {
+      for await (const incoming of result.stream) {
+        const chunk = incoming as Buffer;
+        // RawBLOB emits the String bytes without a RowBinary length prefix.
+        const payload = chunk.subarray(0, Math.min(chunk.length, remaining));
+        if (payload.length > 0 && !output.write(payload)) {
+          await new Promise<void>((resolve) => output.once("drain", resolve));
+        }
+        remaining -= payload.length;
+        if (remaining === 0) break;
+      }
+      if (remaining !== 0) {
+        throw new Error(`Incomplete ClickHouse state stream for ${name}`);
+      }
+      await new Promise<void>((resolve, reject) => {
+        output.end((err?: Error | null) => (err ? reject(err) : resolve()));
+      });
+      const actual = (await stat(tmpPath)).size;
+      if (actual !== Number(meta.bytes)) {
+        throw new Error(`State size mismatch for ${name}: expected ${meta.bytes}, got ${actual}`);
+      }
+      await rename(tmpPath, filePath);
+      return { ver: meta.ver, sha256: meta.sha256, bytes: Number(meta.bytes) };
+    } catch (err) {
+      output.destroy();
+      await rm(tmpPath, { force: true }).catch(() => {});
+      throw err;
+    }
+  }
   async readState(name: string): Promise<{ data: string; ver: string } | undefined> {
     await this.ensureSchema();
     const rows = await this.select<{ data: string; ver: string }>(
@@ -488,22 +546,92 @@ export class ClickHouseStore implements ChunkBrowseStore {
     return rows[0];
   }
 
-  /** Generic state-bundle write used by `StateSync`. */
+  /**
+   * Upload a durable state object.
+   *
+   * Small states keep the convenient object form. Large state bundles (notably
+   * the keyword index) are already persisted as files by `StateSync`; passing
+   * one as part of `values` forces the client to build another JSON string and
+   * can exceed V8's maximum string length. The streaming form keeps the wire
+   * representation bounded while preserving the same JSONEachRow contract.
+   *
+   * @param name - State bundle name.
+   * @param data - Serialized state payload.
+   * @param sha256 - Payload digest, when available.
+   */
   async writeState(name: string, data: string, sha256 = ""): Promise<void> {
     await this.ensureSchema();
     const client = await this.getClient();
+    const settings: ClickHouseSettings = {
+      input_format_parallel_parsing: 0,
+      min_chunk_bytes_for_parallel_parsing: "536870912",
+    };
+
+    if (data.length < STATE_STREAM_THRESHOLD_CHARS) {
+      await client.insert({
+        table: this.insertTable(this.opts.stateTable),
+        values: [{ name, data, sha256, bytes: Buffer.byteLength(data) }],
+        format: "JSONEachRow",
+        clickhouse_settings: settings,
+      });
+      return;
+    }
+
+    const { Readable } = await import("node:stream");
+    const prefix = `${JSON.stringify({ name, sha256, bytes: Buffer.byteLength(data) }).slice(0, -1)},"data":`;
+    const suffix = "}\n";
     await client.insert({
       table: this.insertTable(this.opts.stateTable),
-      values: [{ name, data, sha256, bytes: Buffer.byteLength(data) }],
+      values: Readable.from([prefix, JSON.stringify(data), suffix]),
       format: "JSONEachRow",
+      clickhouse_settings: settings,
+    });
+  }
+
+  async writeStateFile(name: string, filePath: string, sha256 = ""): Promise<void> {
+    await this.ensureSchema();
+    const client = await this.getClient();
+    const { createReadStream } = await import("node:fs");
+    const { stat } = await import("node:fs/promises");
+    const { Transform } = await import("node:stream");
+    const { StringDecoder } = await import("node:string_decoder");
+    const bytes = (await stat(filePath)).size;
+    const metadata = JSON.stringify({ name, sha256, bytes }).slice(0, -1);
+    const prefix = `${metadata},"data":`;
+    const input = createReadStream(filePath);
+    const decoder = new StringDecoder("utf8");
+    let started = false;
+
+    // Stream each JSON string chunk through JSON escaping. StringDecoder
+    // preserves multibyte characters split across filesystem read buffers.
+    const escape = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        if (!started) {
+          this.push(`${prefix}"`);
+          started = true;
+        }
+        const text = decoder.write(chunk);
+        if (text) this.push(JSON.stringify(text).slice(1, -1));
+        callback();
+      },
+      flush(callback) {
+        if (!started) this.push(`${prefix}"`);
+        const tail = decoder.end();
+        if (tail) this.push(JSON.stringify(tail).slice(1, -1));
+        this.push('"}\n');
+        callback();
+      },
+    });
+
+    await client.exec({
+      query: `INSERT INTO ${this.insertTable(this.opts.stateTable)} FORMAT JSONEachRow`,
+      values: input.pipe(escape),
       clickhouse_settings: {
         input_format_parallel_parsing: 0,
         min_chunk_bytes_for_parallel_parsing: "536870912",
       },
     });
   }
-
-  /** Names currently present in the state bundle (newest row per name). */
   async listStateNames(): Promise<string[]> {
     await this.ensureSchema();
     const rows = await this.select<{ name: string }>(
@@ -994,19 +1122,53 @@ export class ClickHouseStore implements ChunkBrowseStore {
 
   async getChunksByFilePath(filePath: string): Promise<Chunk[]> {
     await this.ensureSchema();
-    const normalized = filePath.startsWith(QUIRK_FILE_PREFIX)
-      ? filePath
-      : normalizeFilePath(filePath, this.opts.workspaceDir);
     const rows = await this.select<ChunkRow>(
       `SELECT ${this.summaryColumns()}, embedding FROM ${this.table(this.opts.chunksTable)} FINAL ` +
       "WHERE epoch = {epoch:UInt64} AND file_path = {path:String} ORDER BY start_line",
-      { epoch: this.currentEpoch(), path: normalized },
+      { epoch: this.currentEpoch(), path: this.normalizeStoredPath(filePath) },
     );
-    return rows.map((row) => ({
+    return rows.map((row) => this.rowToChunk(row, true));
+  }
+
+  /**
+   * Fetch the chunks of many files with a single `IN` scan instead of one
+   * query per file. Used by keyword-index rehydration, which can otherwise
+   * issue tens of thousands of round trips against the remote store.
+   */
+  async getChunksByFilePaths(
+    filePaths: string[],
+    options?: { withEmbeddings?: boolean },
+  ): Promise<Chunk[]> {
+    const paths = filePaths.map((filePath) => this.normalizeStoredPath(filePath));
+    if (paths.length === 0) return [];
+    await this.ensureSchema();
+    const withEmbeddings = options?.withEmbeddings !== false;
+    const columns = withEmbeddings
+      ? `${this.summaryColumns()}, embedding`
+      : this.summaryColumns();
+    const rows = await this.select<ChunkRow>(
+      `SELECT ${columns} FROM ${this.table(this.opts.chunksTable)} FINAL ` +
+      "WHERE epoch = {epoch:UInt64} AND file_path IN ({paths:Array(String)}) " +
+      "ORDER BY file_path, start_line",
+      { epoch: this.currentEpoch(), paths },
+    );
+    return rows.map((row) => this.rowToChunk(row, withEmbeddings));
+  }
+
+  /** Quirk rows keep their raw path; everything else is stored workspace-relative. */
+  private normalizeStoredPath(filePath: string): string {
+    return filePath.startsWith(QUIRK_FILE_PREFIX)
+      ? filePath
+      : normalizeFilePath(filePath, this.opts.workspaceDir);
+  }
+
+  /** Map a stored row back to the `Chunk` shape used by the indexers. */
+  private rowToChunk(row: ChunkRow, withEmbedding: boolean): Chunk {
+    return {
       id: row.chunk_id,
       content: row.content,
       description: row.description ?? "",
-      embedding: Array.from(row.embedding ?? []),
+      embedding: withEmbedding ? Array.from(row.embedding ?? []) : undefined,
       metadata: {
         filePath: row.file_path,
         startLine: row.start_line,
@@ -1019,7 +1181,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
         quirkType: row.quirk_type || undefined,
         tags: this.parseTags(row.tags),
       },
-    }));
+    };
   }
 
   private summaryColumns(): string {

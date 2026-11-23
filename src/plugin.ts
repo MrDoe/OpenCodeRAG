@@ -1995,7 +1995,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           const arg = text.slice(4).trim();
 
           try {
-            const manifest = await loadManifest(options.storePath);
+            const manifest = await loadManifest(options.storePath, options.worktree);
             const allFiles = Object.keys(manifest.manifest.files);
             if (allFiles.length === 0) {
               const parts = output?.parts ?? (output?.message as Record<string, unknown>)?.parts;

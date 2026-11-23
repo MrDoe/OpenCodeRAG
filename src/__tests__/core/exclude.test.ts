@@ -144,6 +144,14 @@ describe("createIncludeMatcher", () => {
     assert.equal(m.included("a/b/c/file.ts"), true);
     assert.equal(m.included("a/x"), false);
     assert.equal(m.included("x/a/b"), false);
+
+    // shouldTraverse must descend into ancestors to reach target
+    assert.equal(m.shouldTraverse(""), true);
+    assert.equal(m.shouldTraverse("a"), true);
+    assert.equal(m.shouldTraverse("a/b"), true);
+    assert.equal(m.shouldTraverse("a/b/c"), true);
+    assert.equal(m.shouldTraverse("x"), false);
+    assert.equal(m.shouldTraverse("a/x"), false);
   });
 
   it("glob patterns are root-anchored", () => {

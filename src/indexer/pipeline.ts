@@ -261,7 +261,7 @@ export function getDescriptionThinkingWarning(
 }
 
 async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): Promise<IndexRunStats> {
-  const loadResult = await loadManifest(options.storePath);
+  const loadResult = await loadManifest(options.storePath, options.cwd);
   const manifest = loadResult.manifest;
   let manifestStatus = loadResult.status;
   let rebuildPerformed = false;
@@ -1039,7 +1039,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
         }
 
         if (cacheHits.length > 0) {
-          logger.debug(`  Using ${cacheHits.length} cached descriptions`);
+          logger.info(`  Using ${cacheHits.length}/${allChunks.length} cached descriptions (${cacheMisses.length} to describe)`);
           for (const { chunk, desc } of cacheHits) {
             chunk.description = desc;
           }
@@ -1609,7 +1609,7 @@ export async function getIndexStatusSummary(
   store: VectorStore,
   skipScan?: boolean,
 ): Promise<IndexStatusSummary> {
-  const loadResult = await loadManifest(storePath);
+  const loadResult = await loadManifest(storePath, cwd);
   const manifest = loadResult.manifest;
   const storeCount = await store.count();
 

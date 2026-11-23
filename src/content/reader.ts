@@ -65,7 +65,7 @@ export async function walkFiles(
 
     if (entry.isDirectory()) {
       const rel = path.relative(rootDir, fullPath);
-      if ((includeDirs && !includeDirs.included(rel)) || excludeDirs.excluded(rel)) continue;
+      if ((includeDirs && !includeDirs.shouldTraverse(rel)) || excludeDirs.excluded(rel)) continue;
       if (dirCount) {
         dirCount.value++;
         if (dirCount.value % 100 === 0) {
@@ -86,9 +86,11 @@ export async function walkFiles(
         logger?.warn(`Exceeded ${maxResults} matching files — truncating walk`);
         return results;
       }
+      const rel = path.relative(rootDir, fullPath);
+      if (includeDirs && !includeDirs.included(rel)) continue;
       const ext = path.extname(entry.name).toLowerCase();
       const basename = entry.name.toLowerCase();
-      if ((extensions.has(ext) || extensions.has(basename)) && !excludeFiles?.excluded(path.relative(rootDir, fullPath))) {
+      if ((extensions.has(ext) || extensions.has(basename)) && !excludeFiles?.excluded(rel)) {
         results.push(fullPath);
       }
     }

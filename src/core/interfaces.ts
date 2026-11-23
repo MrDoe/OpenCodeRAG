@@ -348,6 +348,22 @@ export interface VectorStore {
   listFiles(): Promise<FileSummary[]>;
   /** Retrieve all chunks for a specific file path, sorted by start line. */
   getChunksByFilePath(filePath: string): Promise<Chunk[]>;
+  /**
+   * Retrieve the chunks of several files in a single round trip, sorted by
+   * file path and start line.
+   *
+   * Optional — callers that walk a large list of files (keyword rehydration)
+   * batch through it when present and fall back to one
+   * {@link getChunksByFilePath} call per file otherwise. Remote stores get
+   * their per-query latency amortised across the batch.
+   * @param filePaths - Files to fetch.
+   * @param options - `withEmbeddings: false` omits the vector payload for
+   *   callers that only need text and metadata.
+   */
+  getChunksByFilePaths?(
+    filePaths: string[],
+    options?: { withEmbeddings?: boolean },
+  ): Promise<Chunk[]>;
   /** Re-open the store, optionally pointing at a new database path. */
   reopen?(newPath?: string): Promise<void>;
   /**

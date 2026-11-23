@@ -8,6 +8,7 @@ export interface ExcludeMatcher {
 
 export interface IncludedMatcher {
   included(relPath: string): boolean;
+  shouldTraverse(relDir: string): boolean;
 }
 
 export function createExcludeMatcher(patterns: string[]): ExcludeMatcher {
@@ -69,13 +70,15 @@ export function createExcludeMatcher(patterns: string[]): ExcludeMatcher {
  */
 export function createIncludeMatcher(patterns: string[]): IncludedMatcher {
   const matchers: Minimatch[] = [];
+  const patternsClean: string[] = [];
   for (const pattern of patterns) {
     const pat = pattern.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
     if (!pat) continue;
+    patternsClean.push(pat);
     matchers.push(new Minimatch(pat, { nocase: true, dot: true }));
   }
   if (matchers.length === 0) {
-    return { included: () => true };
+    return { included: () => true, shouldTraverse: () => true };
   }
 
   function included(relPath: string): boolean {
@@ -92,7 +95,32 @@ export function createIncludeMatcher(patterns: string[]): IncludedMatcher {
     return false;
   }
 
-  return { included };
+  function shouldTraverse(relDir: string): boolean {
+    const normalized = relDir.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+    if (!normalized) return true;
+
+    // If the directory itself (or an ancestor) matches an include pattern, descend.
+    if (included(normalized)) return true;
+
+    // If the directory is an ancestor of ANY pattern, we must descend to reach it
+    // (e.g. `infra` is an ancestor of `infra/icarus-observability`).
+    const dirPrefix = `${normalized.toLowerCase()}/`;
+    for (const pat of patternsClean) {
+      const patLower = pat.toLowerCase();
+      if (patLower.startsWith(dirPrefix)) return true;
+      const firstGlobIdx = patLower.search(GLOB_MAGIC);
+      if (firstGlobIdx !== -1) {
+        const staticPrefix = patLower.slice(0, firstGlobIdx).replace(/\/+$/, "");
+        if (staticPrefix.startsWith(dirPrefix) || staticPrefix === normalized.toLowerCase()) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  return { included, shouldTraverse };
 }
 
 /**

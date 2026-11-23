@@ -9,8 +9,8 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 const CACHE_VERSION = 1;
-const MAX_ENTRIES = 50_000;
-const MAX_AGE_DAYS = 30;
+const MAX_ENTRIES = 500_000;
+const MAX_AGE_DAYS = 90;
 
 interface CacheEntry {
   description: string;

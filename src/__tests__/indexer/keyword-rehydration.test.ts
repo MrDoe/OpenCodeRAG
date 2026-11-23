@@ -131,6 +131,64 @@ describe("rehydrateKeywordIndex", () => {
     assert.equal(index.count(), 2);
   });
 
+  it("batches store reads when the store supports getChunksByFilePaths", async () => {
+    const files = ["/repo/src/a.ts", "/repo/src/b.ts", "/repo/src/c.ts"];
+    const byPath = new Map<string, Chunk[]>([
+      ["/repo/src/a.ts", [chunk("a1", "aaa", "/repo/src/a.ts")]],
+      ["/repo/src/b.ts", [chunk("b1", "bbb", "/repo/src/b.ts")]],
+      ["/repo/src/c.ts", [chunk("c1", "ccc", "/repo/src/c.ts")]],
+    ]);
+    const calls: Array<{ paths: string[]; options?: { withEmbeddings?: boolean } }> = [];
+    const store = {
+      getFilePaths: async () => files,
+      getChunksByFilePath: async (filePath: string) => {
+        throw new Error(`per-file read must not be used for ${filePath}`);
+      },
+      getChunksByFilePaths: async (paths: string[], options?: { withEmbeddings?: boolean }) => {
+        calls.push({ paths, options });
+        return paths.flatMap((p) => byPath.get(p) ?? []);
+      },
+    } as unknown as InMemoryVectorStore;
+    const index = new KeywordIndex();
+
+    const result = await rehydrateKeywordIndex({ store, keywordIndex: index, batchSize: 2 });
+
+    assert.equal(calls.length, 2, "three files are fetched in batches of two");
+    assert.deepEqual(calls[0]!.paths, ["/repo/src/a.ts", "/repo/src/b.ts"]);
+    assert.deepEqual(
+      calls[0]!.options,
+      { withEmbeddings: false },
+      "the keyword index only needs text and metadata",
+    );
+    assert.equal(result.rehydratedFiles, 3);
+    assert.equal(result.rehydratedChunks, 3);
+    assert.equal(index.count(), 3);
+  });
+
+  it("retries a failed bulk batch file by file", async () => {
+    const files = ["/repo/src/a.ts", "/repo/src/b.ts"];
+    let bulkCalls = 0;
+    const store = {
+      getFilePaths: async () => files,
+      getChunksByFilePath: async (filePath: string) =>
+        filePath.endsWith("b.ts")
+          ? [chunk("b1", "function ensureCosineIndex() {}", "/repo/src/b.ts")]
+          : [chunk("a1", "function resolveRagContext() {}", "/repo/src/a.ts")],
+      getChunksByFilePaths: async () => {
+        bulkCalls++;
+        throw new Error("IN clause rejected");
+      },
+    } as unknown as InMemoryVectorStore;
+    const index = new KeywordIndex();
+
+    const result = await rehydrateKeywordIndex({ store, keywordIndex: index });
+
+    assert.equal(bulkCalls, 1, "the bulk read was attempted once");
+    assert.equal(result.rehydratedFiles, 2, "the per-file fallback still restores both files");
+    assert.equal(result.failedFiles.length, 0);
+    assert.equal(index.search("ensureCosineIndex", 10).length, 1);
+  });
+
   it("survives a store that cannot list its files", async () => {
     const broken = {
       getFilePaths: async () => {

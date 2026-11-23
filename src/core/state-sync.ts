@@ -39,10 +39,15 @@ type StateName = keyof typeof STATE_FILES;
 
 const VERSIONS_FILE = ".state-sync.json";
 
+/** Large files must never be loaded as one JavaScript string. */
+const STATE_FILE_STREAM_THRESHOLD_BYTES = 32 * 1024 * 1024;
+
 /** Remote (ClickHouse) half of the state store. */
 interface RemoteStateStore {
   readState(name: string): Promise<{ data: string; ver: string } | undefined>;
+  readStateToFile?(name: string, filePath: string): Promise<{ ver: string; sha256?: string; bytes?: number } | undefined>;
   writeState(name: string, data: string, sha256?: string): Promise<void>;
+  writeStateFile?(name: string, filePath: string, sha256?: string): Promise<void>;
 }
 
 interface SyncRecord {
@@ -66,6 +71,19 @@ export interface StateSyncOptions {
 /** SHA-256 hex of a string or buffer. */
 function sha256(data: string | Buffer): string {
   return createHash("sha256").update(data).digest("hex");
+}
+
+/** File hash calculated incrementally, avoiding V8's max string length. */
+async function sha256File(filePath: string): Promise<string> {
+  const { createReadStream } = await import("node:fs");
+  const hash = createHash("sha256");
+  await new Promise<void>((resolve, reject) => {
+    createReadStream(filePath)
+      .on("data", (chunk) => hash.update(chunk))
+      .once("error", reject)
+      .once("end", resolve);
+  });
+  return hash.digest("hex");
 }
 
 /** Atomic file write (temp + rename), tolerating Windows rename semantics. */
@@ -294,6 +312,36 @@ export class StateSync {
     const mergedNames: StateName[] = [];
 
     for (const [name, spec] of this.entries()) {
+      const localPath = this.localPath(name);
+      const localStat = await fs.stat(localPath).catch(() => undefined);
+      if (this.remote?.readStateToFile && localStat?.size && localStat.size > STATE_FILE_STREAM_THRESHOLD_BYTES) {
+        try {
+          const remoteMeta = await this.remote.readStateToFile(name, `${localPath}.remote`);
+          if (!remoteMeta) continue;
+          const localHash = await sha256File(localPath);
+          const remoteHash = remoteMeta.sha256 ?? await sha256File(`${localPath}.remote`);
+          if (localHash === remoteHash) {
+            await fs.unlink(`${localPath}.remote`).catch(() => {});
+            versions[name] = { sha256: remoteHash };
+            continue;
+          }
+          const record = versions[name];
+          if (record?.sha256 === localHash) {
+            await fs.rename(`${localPath}.remote`, localPath);
+            versions[name] = { sha256: remoteHash };
+            continue;
+          }
+          await fs.unlink(`${localPath}.remote`).catch(() => {});
+          versions[name] = undefined;
+          this.warn(`[state-sync] "${name}" changed locally and remotely — keeping the local copy (upload queued).`);
+          continue;
+        } catch (err) {
+          await fs.unlink(`${localPath}.remote`).catch(() => {});
+          this.warn(`[state-sync] Could not stream "${name}" from ClickHouse: ${(err as Error).message}`);
+          continue;
+        }
+      }
+
       let remote: { data: string; ver: string } | undefined;
       try {
         remote = await this.remote!.readState(name);
@@ -333,10 +381,12 @@ export class StateSync {
       }
 
       // Both sides changed and this file cannot be merged: keep the local
-      // copy (it reflects this machine's latest work). The next index pass
-      // will upload it; a read command must not write to the central store.
+      // copy (it reflects this machine's latest work). Invalidate the version
+      // record so flush() cannot mistake the last successful upload for the
+      // current local bytes.
+      versions[name] = undefined;
       this.warn(
-        `[state-sync] "${name}" changed locally and remotely — keeping the local copy (uploaded on the next index pass).`,
+        `[state-sync] "${name}" changed locally and remotely — keeping the local copy (upload queued).`,
       );
     }
 
@@ -359,7 +409,26 @@ export class StateSync {
 
     for (const name of targets) {
       const spec = STATE_FILES[name];
-      const local = await readFileOrUndefined(this.localPath(name));
+      const localPath = this.localPath(name);
+      const stat = await fs.stat(localPath).catch(() => undefined);
+      if (!stat?.isFile()) continue;
+
+      // Very large state (especially keyword-index.json) cannot be represented
+      // as one JS string. Keep it on disk, hash it incrementally, and let the
+      // remote store stream it directly into ClickHouse.
+      if (stat.size > STATE_FILE_STREAM_THRESHOLD_BYTES && this.remote!.writeStateFile) {
+        const hash = await sha256File(localPath);
+        if (versions[name]?.sha256 === hash) continue;
+        try {
+          await this.remote!.writeStateFile(name, localPath, hash);
+          versions[name] = { sha256: hash };
+        } catch (err) {
+          this.warn(`[state-sync] Could not upload "${name}": ${(err as Error).message}`);
+        }
+        continue;
+      }
+
+      const local = await readFileOrUndefined(localPath);
       if (local === undefined) continue;
 
       let payload = local;

@@ -53,7 +53,7 @@ describe("manifest", () => {
     const manifest = {
       lastIndexedAt: 123,
       files: {
-        "/tmp/example.ts": {
+        "src/example.ts": {
           hash: "hash-1",
           chunkCount: 2,
           indexedAt: 123,
@@ -66,6 +66,27 @@ describe("manifest", () => {
 
     assert.equal(result.status, "ok");
     assert.deepStrictEqual(result.manifest, manifest);
+  });
+
+  it("normalizes legacy absolute file paths to workspace-relative on load", async () => {
+    const dir = await makeTempDir("manifest-legacy");
+    const cwd = path.resolve("/workspace/root");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      manifestPathFor(dir),
+      JSON.stringify({
+        schemaVersion: 3,
+        files: {
+          [path.join(cwd, "src", "legacy.ts")]: { hash: "h1", chunkCount: 1 },
+        },
+      }),
+      "utf-8",
+    );
+    const result = await loadManifest(dir, cwd);
+    assert.equal(result.status, "ok");
+    assert.deepStrictEqual(result.manifest.files, {
+      "src/legacy.ts": { hash: "h1", chunkCount: 1 },
+    });
   });
 
   it("returns corrupt status for invalid JSON", async () => {
