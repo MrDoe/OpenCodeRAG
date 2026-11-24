@@ -578,14 +578,36 @@ export class ClickHouseStore implements ChunkBrowseStore {
     }
 
     const { Readable } = await import("node:stream");
-    const prefix = `${JSON.stringify({ name, sha256, bytes: Buffer.byteLength(data) }).slice(0, -1)},"data":`;
-    const suffix = "}\n";
-    await client.insert({
-      table: this.insertTable(this.opts.stateTable),
-      values: Readable.from([prefix, JSON.stringify(data), suffix]),
-      format: "JSONEachRow",
+    const bytes = Buffer.byteLength(data);
+    const prefix = Buffer.from(
+      `${JSON.stringify({ name, sha256, bytes }).slice(0, -1)},"data":`,
+    );
+    const suffix = Buffer.from("}\n");
+
+    function* generateChunks() {
+      yield prefix;
+      const CHUNK_SIZE = 4 * 1024 * 1024;
+      yield Buffer.from('"');
+      for (let i = 0; i < data.length; ) {
+        let end = Math.min(i + CHUNK_SIZE, data.length);
+        if (end < data.length) {
+          const code = data.charCodeAt(end - 1);
+          if (code >= 0xd800 && code <= 0xdbff) end--;
+        }
+        const chunk = data.slice(i, end);
+        i = end;
+        yield Buffer.from(JSON.stringify(chunk).slice(1, -1));
+      }
+      yield Buffer.from('"');
+      yield suffix;
+    }
+
+    const result = await client.exec({
+      query: `INSERT INTO ${this.insertTable(this.opts.stateTable)} FORMAT JSONEachRow`,
+      values: Readable.from(generateChunks()),
       clickhouse_settings: settings,
     });
+    for await (const _ of result.stream) {}
   }
 
   async writeStateFile(name: string, filePath: string, sha256 = ""): Promise<void> {
