@@ -10,6 +10,8 @@
 import path from "node:path";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { findConfigFile, loadWorkspaceConfig, projectConfigPath } from "./config.js";
+import type { OpenCodeShellConfig } from "./config.js";
+import type { AgentGuidanceDetail } from "../opencode/system-guidance.js";
 import { appendDebugLog } from "./fileLogger.js";
 import {
   generateDecisionSkillFile,
@@ -85,17 +87,23 @@ export function autoScaffoldWorkspace(directory: string): AutoScaffoldResult {
       let promptEnforcement = true;
       let decisionEnabled = false;
       let routeBeforeAsking = false;
+      let agentsMdDetail: AgentGuidanceDetail = "auto";
+      let injectedAtRuntime = true;
+      let shellCfg: OpenCodeShellConfig | undefined;
       try {
         const cfg = loadWorkspaceConfig(directory, false);
         promptEnforcement = cfg.memory?.promptEnforcement ?? true;
         decisionEnabled = cfg.decision?.enabled ?? false;
         routeBeforeAsking = cfg.decision?.routeBeforeAsking ?? false;
+        agentsMdDetail = cfg.openCode?.agentsMdDetail ?? "auto";
+        injectedAtRuntime = cfg.openCode?.injectSystemPrompt !== false;
+        shellCfg = cfg.openCode?.shell;
       } catch {
         // Defaults.
       }
       createIfMissing(
         agentsPath,
-        mergeAgentsMdContent(undefined, { promptEnforcement, decisionEnabled, routeBeforeAsking }),
+        mergeAgentsMdContent(undefined, { promptEnforcement, decisionEnabled, routeBeforeAsking, agentsMdDetail, injectedAtRuntime, shell: shellCfg }),
         created,
         directory,
       );

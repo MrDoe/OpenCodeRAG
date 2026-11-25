@@ -1,6 +1,68 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildSystemGuidanceLines, buildShellBackgroundGuidanceLines } from "../../opencode/system-guidance.js";
+import {
+  buildSystemGuidanceLines,
+  buildShellBackgroundGuidanceLines,
+  buildAgentsMdDirective,
+  buildFullAgentsMdLines,
+  buildCompactAgentsMdLines,
+  resolveAgentsMdDetail,
+  FIRST_MOVE_LINES,
+  BEGIN_MARKER,
+  END_MARKER,
+} from "../../opencode/system-guidance.js";
+
+describe("first-move ordering rules", () => {
+  it("states the ordering rule before the tool list it governs", () => {
+    const lines = buildSystemGuidanceLines({ promptEnforcement: false });
+    const firstMoveIdx = lines.findIndex((l) => l === FIRST_MOVE_LINES[0]);
+    const toolBulletIdx = lines.findIndex((l) => l.startsWith("- `search_semantic"));
+    assert.ok(firstMoveIdx > 0, "first-move block should be present");
+    assert.ok(firstMoveIdx < toolBulletIdx, "ordering rule must precede the tool list");
+  });
+
+  it("names the authoritative-elsewhere exception", () => {
+    const text = buildSystemGuidanceLines({ promptEnforcement: false }).join("\n");
+    assert.match(text, /Authoritative elsewhere/, "the rule needs its exception spelled out or it gets routed around");
+  });
+});
+
+describe("AGENTS.md detail levels", () => {
+  it("resolves auto against the runtime injector, and unset to the standalone form", () => {
+    assert.equal(resolveAgentsMdDetail(undefined, true), "full");
+    assert.equal(resolveAgentsMdDetail("auto", true), "compact");
+    assert.equal(resolveAgentsMdDetail("auto", false), "full");
+    assert.equal(resolveAgentsMdDetail("full", true), "full");
+    assert.equal(resolveAgentsMdDetail("compact", false), "compact");
+  });
+
+  it("compact drops the sections the injector already delivers", () => {
+    const compact = buildAgentsMdDirective({ promptEnforcement: true, agentsMdDetail: "compact" });
+    const full = buildAgentsMdDirective({ promptEnforcement: true, agentsMdDetail: "full" });
+    for (const section of ["### Decision tree", "### Proactive triggers", "### Anti-patterns"]) {
+      assert.ok(full.includes(section), `full should carry ${section}`);
+      assert.ok(!compact.includes(section), `compact should not repeat ${section}`);
+    }
+    assert.ok(compact.includes(BEGIN_MARKER) && compact.includes(END_MARKER), "markers must survive for in-place replacement");
+    assert.ok(compact.includes("search_semantic"), "compact still names the tools");
+    assert.ok(compact.length < full.length * 0.6, `compact (${compact.length}) should carry well under two thirds of full (${full.length})`);
+  });
+
+  it("keeps the conditional sections in both shapes", () => {
+    const compact = buildCompactAgentsMdLines({ promptEnforcement: true, decisionEnabled: true });
+    const full = buildFullAgentsMdLines({ promptEnforcement: true, decisionEnabled: true });
+    assert.match(compact.join("\n"), /make_decision/);
+    assert.match(compact.join("\n"), /add_quirk/);
+    assert.match(full.join("\n"), /make_decision/);
+  });
+
+  it("auto means compact when the injector is on and full when it is off", () => {
+    const on = buildAgentsMdDirective({ promptEnforcement: false, agentsMdDetail: "auto", injectedAtRuntime: true });
+    const off = buildAgentsMdDirective({ promptEnforcement: false, agentsMdDetail: "auto", injectedAtRuntime: false });
+    assert.ok(!on.includes("### Decision tree"));
+    assert.ok(off.includes("### Decision tree"));
+  });
+});
 
 describe("buildSystemGuidanceLines", () => {
   it("inserts the make_decision line directly after describe_image when enabled", () => {

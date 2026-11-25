@@ -863,6 +863,16 @@ export const SETTINGS_SECTIONS: SettingSection[] = [
       boolean(["openCode", "injectSystemPrompt"], "Inject RAG guidance", {
         description: "Add a short block describing the RAG tools and their intended workflow to the system prompt.",
       }),
+      enumField(["openCode", "agentsMdDetail"], "AGENTS.md guidance size", ["auto", "full", "compact"], {
+        impact: "restart",
+        description: "How much of the tool protocol `AGENTS.md` carries. \"auto\" writes the short form when the system prompt already delivers the full protocol, so the same rules do not arrive twice per turn.",
+      }),
+      number(["openCode", "weakHitThreshold"], "Weak-hit label floor", {
+        minimum: 0,
+        maximum: 1,
+        step: 0.05,
+        description: "Average relevance below which a search result is labelled weak, telling the agent the hits are leads to verify. 0 disables the label.",
+      }),
       boolean(["openCode", "exploreAgentTools"], "Give explore agent RAG tools", {
         description: "Grant the built-in explore agent access to the RAG tools so it can search semantically.",
       }),
@@ -1092,6 +1102,13 @@ export const SETTINGS_SECTIONS: SettingSection[] = [
     fields: [
       boolean(["wikiMode", "enabled"], "Wiki mode enabled", {
         description: "Turn the agent into a wiki maintainer that keeps a structured knowledge wiki under .opencode/wiki.",
+      }),
+      boolean(["wikiMode", "tools"], "Wiki agent tools", {
+        description: "Register the `wiki_graph` and `wiki_lint` tools so the agent answers link-structure and health questions in one call. Turn off to keep the protocol without the tools.",
+      }),
+      number(["wikiMode", "maxPages"], "Max pages scanned", {
+        advanced: true,
+        description: "Safety cap on wiki pages scanned per report. When hit, counts become floors and the report says so.",
       }),
       string(["wikiMode", "systemPrompt"], "System prompt", {
         advanced: true,

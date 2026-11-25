@@ -20,6 +20,7 @@ import {
   projectConfigPath,
   type ProxyConfig,
 } from "../../core/config.js";
+import { readGitignoreExclusions, mergeExclusionLists } from "../../core/gitignore-exclusions.js";
 import { createPrompter } from "../prompt.js";
 import {
   hasExplicitSetupFlags,
@@ -430,6 +431,39 @@ async function runSetup(rawOptions: SetupOptions): Promise<void> {
       configPath,
       workspacePlugin: pluginMode === "workspace",
     });
+
+    // --- .gitignore -> indexing exclusions ---
+    // Paths git ignores (build output, binaries, caches) must never be
+    // embedded; instead of asking users to maintain two lists, merge the
+    // gitignore patterns into the workspace config. Additive and idempotent:
+    // existing entries (and their order) are preserved, only missing
+    // patterns are appended. Requires a re-index to take effect.
+    try {
+      if (existsSync(path.join(cwd, ".gitignore")) && existsSync(configPath)) {
+        const derived = readGitignoreExclusions(cwd);
+        const rawCfg = readJsonObjectSafe(configPath);
+        const indexingSection = rawCfg.indexing;
+        const current = indexingSection && typeof indexingSection === "object" && !Array.isArray(indexingSection)
+          ? indexingSection as Record<string, unknown>
+          : {};
+        const existingDirs = Array.isArray(current.excludeDirs) ? current.excludeDirs : [];
+        const existingFiles = Array.isArray(current.excludeFiles) ? current.excludeFiles : [];
+        const mergedDirs = mergeExclusionLists(existingDirs, derived.dirs);
+        const mergedFiles = mergeExclusionLists(existingFiles, derived.files);
+        const added = mergedDirs.length - existingDirs.length + mergedFiles.length - existingFiles.length;
+        if (added > 0) {
+          if (writeConfigPatch(configPath, { indexing: { excludeDirs: mergedDirs, excludeFiles: mergedFiles } })) {
+            console.log(`\n  ${c.updated("Merged:")}  ${c.value(String(added))} .gitignore exclusion(s) into ${c.file(configLabel)}`);
+            console.log(`  ${c.dim("Run `opencode-rag index` to apply the new exclusions to the index.")}`);
+          } else {
+            console.log(`  ${c.warn("Could not merge .gitignore exclusions.")} Check permissions for ${c.file(configPath)}.`);
+          }
+        }
+      }
+    } catch (err) {
+      // A failed migration must not fail setup - it is a convenience merge.
+      console.log(`  ${c.warn("Skipped .gitignore exclusion merge:")} ${(err as Error).message}`);
+    }
 
     if (!options.skipHealthCheck) {
       const health = await runWorkspaceHealthCheck(cwd, prompter, { autoPull: answers?.recommended === true });

@@ -473,6 +473,8 @@ Controls the OpenCode plugin integration.
 | `autoIndex.watcher` | `"chokidar"` | File-change detection backend: `"chokidar"` (real-time FS events) or `"git"` (poll-based diff) |
 | `readNoResultsBehavior` | `"hint"` | Behavior when read returns no results: `"hint"` (suggest related files), `"empty"`, or `"error"` |
 | `injectSystemPrompt` | `true` | Inject RAG tool guidance into the system prompt when the session's tool catalog exposes the RAG tools (skipped automatically for tool-less agents such as `explore`; disable to save tokens once agents know the tools) |
+| `agentsMdDetail` | `"auto"` | How much of the protocol `AGENTS.md` carries: `"auto"` writes the compact form while `injectSystemPrompt` delivers the full one (one carrier, one copy - the same 40 lines in both cost ~1 100 tokens per turn and measured compliance did not improve), `"full"` always writes the complete protocol (standalone repos, agents without the plugin), `"compact"` always the short form |
+| `weakHitThreshold` | `0.5` | Average relevance below which a `search_semantic` result block is labelled weak, so a mandated search that returns near-noise is not read as an answer. `0` disables the label |
 | `exploreAgentTools` | `true` | Grant the read-only RAG tools to the built-in `explore` agent (disable to keep explore limited to read/glob/grep) |
 
 ### `documentationMode`
@@ -501,12 +503,14 @@ Progress is persisted in `.opencode/rag_db/doc-mode-progress.json` so subsequent
 
 ### `wikiMode`
 
-Controls the wiki mode that instructs the AI agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. **Enabled by default.** No agent tools are registered — wiki maintenance is driven entirely through the injected system prompt and the `/wiki` slash command.
+Controls the wiki mode that instructs the AI agent to build and maintain a persistent knowledge wiki at `.opencode/wiki/`. **Enabled by default.** Registers the `wiki_graph` / `wiki_lint` agent tools (see `wikiMode.tools`) and drives maintenance through the injected system prompt and the `/wiki` slash command.
 
 ```json
 {
   "wikiMode": {
     "enabled": true,
+    "tools": true,
+    "maxPages": 500,
     "systemPrompt": "You are a wiki maintainer for this codebase..."
   }
 }
@@ -514,7 +518,9 @@ Controls the wiki mode that instructs the AI agent to build and maintain a persi
 
 | Option | Default | Description |
 |---|---|---|
-| `enabled` | `true` | Enable the `/wiki` slash command and wiki maintainer system prompt |
+| `enabled` | `true` | Enable the `/wiki` slash command, the wiki maintainer system prompt, and the wiki tools |
+| `tools` | `true` | Register `wiki_graph` and `wiki_lint`. `false` keeps the prompt protocol for agents that should only use `read`/`grep` |
+| `maxPages` | `500` | Safety cap on pages scanned per report. When exceeded the scan stops and every report flags the counts as floors |
 | `systemPrompt` | *(built-in)* | System prompt defining the wiki layout, frontmatter conventions, and the Ingest/Query/Lint/Seed operations |
 
 The built-in system prompt defines the wiki layout (`.opencode/wiki/index.md`, `log.md`, `entities/`, `concepts/`, `sources/`), page frontmatter (`title`, `tags`, `sourceRefs`, `lastReviewed`), and cross-references via `[[wiki/page-name]]` links. See [Plugin documentation](plugin.md#6-wiki-mode--slash-command-wiki).

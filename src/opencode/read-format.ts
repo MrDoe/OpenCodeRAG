@@ -22,6 +22,22 @@ export interface FormatReadOutputOptions {
 }
 
 /**
+ * The advisory printed under a retrieval header whose average relevance is weak.
+ *
+ * A mandated search that returns near-noise reads as an answer when nothing says
+ * otherwise - which is how a working tool acquires a reputation for being useless.
+ * Labelling the block costs one line and hands the agent the next move instead.
+ *
+ * @param avgRelevance - Mean fused score of the returned chunks.
+ * @param threshold - Floor below which the label appears; `<= 0` disables it.
+ * @returns A markdown line without trailing newline, or `""` when not applicable.
+ */
+export function weakHitAdvisory(avgRelevance: number, threshold: number): string {
+  if (!(threshold > 0) || !(avgRelevance < threshold)) return "";
+  return `_(weak: nothing here cleared the ${threshold.toFixed(2)} floor. Treat these as leads, not as an answer - narrow the query or add \`pathHints\`/\`fileExtensions\`, and verify with \`read\` before concluding anything.)_`;
+}
+
+/**
  * Format RAG retrieval results for the search_semantic tool output.
  *
  * Includes request metadata (file path, query, chunk count) and formats

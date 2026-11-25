@@ -147,6 +147,36 @@ FROM system.parts WHERE database = 'OpenCodeRAG' AND active
 GROUP BY table ORDER BY sum(bytes_on_disk) DESC;
 ```
 
+### Tombstones
+
+Replacing a chunk writes a new row and marks the old one `is_deleted = 1`; reads filter the
+tombstones away but they keep sitting in the table and in the ANN candidate pool. An actively
+edited workspace accumulates them fast - one measured table held 153 424 rows of which 9 167
+were live (94 % dead, 3.1 GB), which costs recall *and* latency on every search, not just disk.
+`opencode-rag clickhouse compact` reports the ratio and, with `--apply`, runs the mutation and
+the final optimize:
+
+```
+opencode-rag clickhouse compact            # dry run: rows / live / dead
+opencode-rag clickhouse compact --apply    # ALTER ... DELETE WHERE is_deleted = 1; OPTIMIZE ... FINAL
+```
+
+### One workspace, two namespaces
+
+`deriveNamespace()` hashes the workspace path, so the table suffix follows how the path was
+*spelled*. On Windows that used to mean the same repository opened once as `C:\repo` and once as
+`c:\repo` (TUI vs. terminal vs. service hand over the drive letter differently) got two indexes -
+and the session reading the second one saw a corpus that had stopped updating days earlier,
+including files the repository no longer contains. The drive letter is now canonicalized before
+hashing, so both spellings land in the same tables; paths that were already indexed under an
+uppercase drive keep their name.
+
+`opencode-rag status` prints the alternative spellings of the current path, and
+`opencode-rag clickhouse adopt` moves an existing index onto the current namespace instead of
+re-embedding it (dry run by default, `--apply` to rename, `--from` to pick the source when
+several exist). If a repository is opened under genuinely different paths, pin
+`vectorStore.clickhouse.namespace` - a pinned namespace never splits.
+
 ## Limitations
 
 - **ANN needs ClickHouse >= 25.8** and is dimension-bound; on older servers or after a model

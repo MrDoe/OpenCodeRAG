@@ -344,15 +344,18 @@ describe("opencode-rag setup AGENTS.md", () => {
     const agentsPath = join(tmpDir, "AGENTS.md");
     assert.ok(existsSync(agentsPath), "AGENTS.md should exist at workspace root");
     const content = readFileSync(agentsPath, "utf-8");
-    assert.ok(content.includes("ALWAYS use OpenCodeRAG tools before reading or editing"), "should contain the directive");
+    // Default is `openCode.agentsMdDetail: "auto"`, and the runtime injector is on by
+    // default - so the file gets the compact form and the protocol is NOT shipped twice.
+    assert.ok(content.includes("## Code Navigation"), "should contain the directive");
+    assert.ok(content.includes("IN the first tool batch"), "should lead with the ordering rule");
     assert.ok(content.includes("`search_semantic`"), "should mention search_semantic");
     assert.ok(content.includes("`get_file_skeleton`"), "should mention get_file_skeleton");
     assert.ok(content.includes("`find_usages`"), "should mention find_usages");
     assert.ok(content.includes("`describe_image`"), "should mention describe_image");
-    assert.ok(content.includes("Decision tree"), "should contain decision tree");
-    assert.ok(content.includes("Proactive triggers"), "should contain proactive triggers");
-    assert.ok(content.includes("Anti-patterns"), "should contain anti-patterns");
-    assert.ok(content.includes("quirk capture rules"), "should contain quirk capture rules (default promptEnforcement=true)");
+    assert.ok(content.includes("add_quirk"), "should mention quirk capture (default promptEnforcement=true)");
+    assert.ok(!content.includes("### Decision tree"), "compact form must not repeat the injected decision tree");
+    assert.ok(!content.includes("### Proactive triggers"), "compact form must not repeat the injected triggers");
+    assert.ok(!content.includes("### Anti-patterns"), "compact form must not repeat the injected anti-patterns");
     assert.ok(content.includes("<!-- BEGIN opencode-rag -->"), "should contain begin sentinel");
     assert.ok(content.includes("<!-- END opencode-rag -->"), "should contain end sentinel");
     assert.ok(!content.includes("### Decision model (`make_decision`)"), "decision section should be hidden while decision.enabled is false");
@@ -379,7 +382,7 @@ describe("opencode-rag setup AGENTS.md", () => {
     const content = readFileSync(join(sub, "AGENTS.md"), "utf-8");
     assert.ok(content.includes("Custom notes about the workspace."), "should preserve custom content");
     assert.ok(content.includes("<!-- BEGIN opencode-rag -->"), "should append the directive section");
-    assert.ok(content.includes("ALWAYS use OpenCodeRAG tools"), "should include the directive body");
+    assert.ok(content.includes("## Code Navigation"), "should include the directive body");
   });
 
   it("replaces the section in place on re-run without duplicating", async () => {
@@ -397,7 +400,7 @@ describe("opencode-rag setup AGENTS.md", () => {
     const endCount = (content.match(/<!-- END opencode-rag -->/g) ?? []).length;
     assert.equal(beginCount, 1, "should have exactly one begin sentinel");
     assert.equal(endCount, 1, "should have exactly one end sentinel");
-    assert.ok(content.includes("ALWAYS use OpenCodeRAG tools"), "directive body should be present");
+    assert.ok(content.includes("## Code Navigation"), "directive body should be present");
   });
 });
 
@@ -418,6 +421,15 @@ describe("mergeAgentsMdContent helper", () => {
     assert.ok(out.includes("Proactive triggers"), "should include proactive triggers");
     assert.ok(out.includes("Anti-patterns"), "should include anti-patterns");
     assert.ok(out.includes("quirk capture rules"), "should include quirk rules by default");
+  });
+
+  it("writes the compact form when asked to defer to the runtime injector", () => {
+    const compact = mergeAgentsMdContent(undefined, { agentsMdDetail: "auto", injectedAtRuntime: true });
+    const full = mergeAgentsMdContent(undefined, { agentsMdDetail: "auto", injectedAtRuntime: false });
+    assert.ok(compact.includes("IN the first tool batch"), "positional rules survive in the compact form");
+    assert.ok(!compact.includes("### Decision tree"), "compact must not duplicate the injected protocol");
+    assert.ok(full.includes("### Decision tree"), "with the injector off the file carries the protocol itself");
+    assert.ok(compact.length < full.length * 0.6, "the point of the split is size, not cosmetics");
   });
 
   it("appends section preserving custom content", () => {

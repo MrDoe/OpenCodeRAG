@@ -32,6 +32,9 @@ import {
   createDeleteQuirkTool,
   createMakeDecisionTool,
 } from "./opencode/tools.js";
+import { createWikiGraphTool, createWikiLintTool } from "./opencode/wiki-tools.js";
+import { lintWiki, formatLintReport } from "./wiki/lint.js";
+import { getWikiGraph } from "./wiki/graph.js";
 import { resolveApiKey } from "./core/resolve-api-key.js";
 import { consumePendingRagInjection, peekPendingRagInjection } from "./core/rag-injection-flag.js";
 import { loadDocProgress, markSubdirectoryDocumented } from "./core/doc-progress.js";
@@ -72,6 +75,7 @@ import {
   type ToolErrorCreateState,
 } from "./quirks/tool-error-create.js";
 import { buildSystemGuidanceLines } from "./opencode/system-guidance.js";
+import { weakHitAdvisory } from "./opencode/read-format.js";
 import {
   describeAutoInjectSelection,
   formatAutoInjectBlock,
@@ -517,9 +521,19 @@ export function createLiveEmbedder(
 /**
  * Format retrieval results into a Markdown context block for LLM injection.
  * Includes per-chunk file paths, line numbers, relevance scores, and descriptions.
+ *
+ * A block whose average relevance sits under `weakHitThreshold` is labelled
+ * inline. Without the label a mandated search that returns near-noise reads as an
+ * answer, which is how the tool earns a reputation it does not deserve (measured
+ * on one workspace: 11 % of searches came back under 0.35 and the agent stopped
+ * calling the tool, not because it failed but because it looked pointless).
+ *
+ * @param results - Retrieval results, best first.
+ * @param weakHitThreshold - Average-relevance floor for the label; `0` disables it.
  */
 function formatContext(
-  results: Awaited<ReturnType<typeof retrieve>>
+  results: Awaited<ReturnType<typeof retrieve>>,
+  weakHitThreshold = 0.5
 ): string {
   if (results.length === 0) return "";
 
@@ -527,6 +541,8 @@ function formatContext(
 
   const parts: string[] = [];
   parts.push(`\n**${CONTEXT_MARKER}** _(context: ${results.length} chunks, avg relevance: ${avgScore.toFixed(2)})_\n`);
+  const advisory = weakHitAdvisory(avgScore, weakHitThreshold);
+  if (advisory) parts.push(`${advisory}\n`);
   parts.push("---\n");
 
   for (const r of results) {
@@ -993,9 +1009,10 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   const retrievalTool = tool({
     description:
       "Search the indexed codebase by meaning, not just keywords. " +
-      "ESSENTIAL before any code task — replaces blind reading with targeted retrieval. " +
-      "Call when the user asks 'how does X work?', 'where is Y?', references files/functions you haven't read, " +
-      "or you need to understand code behavior. Returns the most relevant code snippets with file paths, line numbers, and relevance scores.",
+      "Call it IN the first tool batch of any code task - before planning, reading, or answering - and again when the working area changes. " +
+      "Prefer it over grep for 'where is X' / 'how does X work' questions; grep stays right for an exact identifier you already have. " +
+      "Exception: when another system owns the current copy (source control, an MCP server, a database, an API), fetch it there first - this index covers the local mirror. " +
+      "Returns the most relevant code snippets with file paths, line numbers, and relevance scores; a low average score means the query was wrong, not that the code is missing.",
     args: {
       query: tool.schema.string().min(1, "A retrieval query is required."),
       pathHints: tool.schema.array(tool.schema.string().min(1)).max(10).optional(),
@@ -1060,7 +1077,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           };
         }
 
-        const output = formatContext(results);
+        const output = formatContext(results, getEffectiveCfg().openCode.weakHitThreshold ?? 0.5);
 
         appendVerboseLog(options.logFilePath, CONTEXT_TOOL_NAME, "retrieval completed successfully", {
           query,
@@ -1248,6 +1265,38 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       appendDebugLog(options.logFilePath, {
         scope: "plugin",
         message: "Failed to register make_decision tool",
+        error: err,
+      });
+    }
+  }
+
+  // Wiki tools — structure and health queries over .opencode/wiki/.
+  // Read-only and provider-free: they need no store, no embedder, and work
+  // before any indexing. Gated on wikiMode itself, exactly like the prompt
+  // and the /wiki slash command; `wikiMode.tools: false` keeps the prompt
+  // protocol while hiding the tools.
+  if (effectiveCfg.wikiMode?.enabled && effectiveCfg.wikiMode.tools !== false) {
+    try {
+      tools["wiki_graph"] = createWikiGraphTool({
+        worktree: options.worktree,
+        getMaxPages: () => getEffectiveCfg().wikiMode?.maxPages,
+      });
+    } catch (err) {
+      appendDebugLog(options.logFilePath, {
+        scope: "plugin",
+        message: "Failed to register wiki_graph tool",
+        error: err,
+      });
+    }
+    try {
+      tools["wiki_lint"] = createWikiLintTool({
+        worktree: options.worktree,
+        getMaxPages: () => getEffectiveCfg().wikiMode?.maxPages,
+      });
+    } catch (err) {
+      appendDebugLog(options.logFilePath, {
+        scope: "plugin",
+        message: "Failed to register wiki_lint tool",
         error: err,
       });
     }
@@ -2043,14 +2092,27 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             lines.push(
               "## Wiki Lint",
               "",
-              "Run a health check on the wiki. Check for:",
-              "- Orphan pages with no inbound [[links]]",
-              "- Stale pages whose sourceRefs files changed since lastReviewed",
+              "Run a health check on the wiki. Call `wiki_lint` first — it computes stale sourceRefs (git-checked),",
+              "orphan pages, dangling links, frontmatter and index coverage in one pass. Then handle the judgment",
+              "checks the tool cannot compute:",
               "- Contradictions between pages",
               "- Important concepts mentioned but lacking their own page",
               "",
               "Append findings to .opencode/wiki/log.md and fix any issues found.",
             );
+            // Attach the deterministic report when it can be computed here.
+            try {
+              const report = lintWiki(wikiDir, options.worktree, { maxPages: slashCommandConfig().wikiMode?.maxPages });
+              if (report.exists) {
+                lines.push("", "---", "", formatLintReport(report));
+              }
+            } catch (err) {
+              appendDebugLog(options.logFilePath, {
+                scope: "chat.message",
+                message: "wiki_lint computed report unavailable (agent still runs the checks manually)",
+                error: err,
+              });
+            }
           } else if (arg === "seed") {
             lines.push(
               "## Wiki Seed",
@@ -2065,29 +2127,49 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             );
           } else {
             if (existsSync(wikiDir)) {
-              const entries = readdirSync(wikiDir);
-              const pages = entries.filter((e) => e.endsWith(".md") && e !== "log.md").length;
-              const hasIndex = entries.includes("index.md");
-              const hasLog = entries.includes("log.md");
-              const dirs = entries.filter((e) => !e.includes(".")).length;
               let lastLogEntry = "";
               const logPath = path.join(wikiDir, "log.md");
-              if (hasLog && existsSync(logPath)) {
+              if (existsSync(logPath)) {
                 const logContent = readFileSync(logPath, "utf-8");
                 const logLines = logContent.trim().split("\n").filter((l) => l.startsWith("## ["));
                 if (logLines.length > 0) {
                   lastLogEntry = logLines[logLines.length - 1] ?? "";
                 }
               }
+              // Real structure numbers from the graph (recursive, link-aware);
+              // fall back to a flat file count when the graph cannot build.
+              let pages = 0;
+              let dirs = 0;
+              let healthLine = "";
+              try {
+                const graph = getWikiGraph(wikiDir, { maxPages: slashCommandConfig().wikiMode?.maxPages });
+                pages = graph.pageCount;
+                const dirSet = new Set<string>();
+                for (const node of graph.pages.values()) {
+                  const idx = node.id.lastIndexOf("/");
+                  dirSet.add(idx >= 0 ? node.id.slice(0, idx) : "(root)");
+                }
+                dirs = dirSet.size;
+                const contentCount = [...graph.pages.values()].filter((n) => n.isContent).length;
+                healthLine = `Health: orphans ${graph.orphans.length} | dangling ${graph.dangling.length} | uncataloged ${graph.uncataloged.length} (of ${contentCount} content pages)${graph.truncated ? " | **page cap hit**" : ""}`;
+              } catch (err) {
+                appendDebugLog(options.logFilePath, { scope: "chat.message", message: "wiki status graph build failed", error: err });
+                const entries = readdirSync(wikiDir);
+                pages = entries.filter((e) => e.endsWith(".md") && e !== "log.md").length;
+                dirs = entries.filter((e) => !e.includes(".")).length;
+              }
+              const hasIndex = existsSync(path.join(wikiDir, "index.md"));
+              const hasLog = existsSync(logPath);
 
               lines.push(
                 "## Wiki Status",
                 "",
                 `Wiki: \`.opencode/wiki/\``,
-                `Pages: ~${pages} (.md files)`,
+                `Pages: ${pages} (.md files, recursive)`,
                 `Subdirectories: \`${dirs}\``,
                 `Index: ${hasIndex ? "yes" : "no"} | Log: ${hasLog ? "yes" : "no"}`,
               );
+              if (healthLine) lines.push(healthLine);
               if (lastLogEntry) {
                 lines.push(`Latest log: \`${lastLogEntry}\``);
               }
@@ -2095,8 +2177,10 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
                 "",
                 "Commands:",
                 "- `/wiki` — show this status",
-                "- `/wiki lint` — health-check the wiki",
+                "- `/wiki lint` — computed health report + manual judgment checks",
                 "- `/wiki seed` — generate initial wiki pages from the codebase",
+                "",
+                "Tools: `wiki_graph` (backlinks/orphans/dangling/neighbors), `wiki_lint` (staleness vs git).",
               );
             } else {
               lines.push(

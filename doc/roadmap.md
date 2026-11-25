@@ -156,6 +156,7 @@ results at `kw = 0.4` vs 17.5 at `kw = 0`). Normalize the gate, or apply
 
 | Feature | Description |
 |---|---|
+| Wiki agent tools | `wiki_graph` + `wiki_lint` (+ `opencode-rag wiki status/graph/lint`, `/wiki lint` computed report) — **implemented 2026-11-17, pending release**; supersedes the `.opencode/scripts/wiki-lint.cjs` prototype |
 | Query rewriting | Multi-variant expansion for ambiguous queries |
 | Persistent query cache | Disk-based cache so repeated queries across restarts are instant |
 | Token & cost telemetry | Surface per-turn injected tokens and cost in the Web UI (the session logger already records `ragContextTokens`) |

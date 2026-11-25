@@ -26,6 +26,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { loadConfig, loadWorkspaceConfig, configuredSections, findConfigFile, projectConfigPath } from "../core/config.js";
+import type { OpenCodeShellConfig } from "../core/config.js";
+import type { AgentGuidanceDetail } from "../opencode/system-guidance.js";
 import { resolveApiKey } from "../core/resolve-api-key.js";
 import { checkProviderHealth, pullOllamaModels, type HealthCheckResult } from "../embedder/health.js";
 import { c } from "./format.js";
@@ -322,19 +324,25 @@ export async function scaffoldWorkspace(options: WorkspaceScaffoldOptions = {}):
   let promptEnforcement = true;
   let decisionEnabled = false;
   let routeBeforeAsking = false;
+  let agentsMdDetail: AgentGuidanceDetail = "auto";
+  let injectedAtRuntime = true;
+  let shellCfg: OpenCodeShellConfig | undefined;
   try {
     if (existsSync(configPath)) {
       const existingCfg = loadConfig(configPath, false);
       promptEnforcement = existingCfg.memory?.promptEnforcement ?? true;
       decisionEnabled = existingCfg.decision?.enabled ?? false;
       routeBeforeAsking = existingCfg.decision?.routeBeforeAsking ?? false;
+      agentsMdDetail = existingCfg.openCode?.agentsMdDetail ?? "auto";
+      injectedAtRuntime = existingCfg.openCode?.injectSystemPrompt !== false;
+      shellCfg = existingCfg.openCode?.shell;
     }
   } catch {
-    // Malformed or missing config — use defaults.
+    // Malformed or missing config - use defaults.
   }
   const nextAgentsMd = mergeAgentsMdContent(
     agentsMdExists ? readFileSync(agentsMdPath, "utf-8") : undefined,
-    { promptEnforcement, decisionEnabled, routeBeforeAsking },
+    { promptEnforcement, decisionEnabled, routeBeforeAsking, agentsMdDetail, injectedAtRuntime, shell: shellCfg },
   );
   if (!agentsMdExists || options.force) {
     writeFileSync(agentsMdPath, nextAgentsMd, "utf-8");

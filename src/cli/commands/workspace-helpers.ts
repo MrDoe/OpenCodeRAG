@@ -17,7 +17,8 @@ import {
 import { DEFAULT_CONFIG } from "../../core/config.js";
 import { installHint, resolveGlobalInstall } from "../../core/package-manager.js";
 import { c } from "../format.js";
-import { BEGIN_MARKER, END_MARKER, buildAgentsMdDirective } from "../../opencode/system-guidance.js";
+import { BEGIN_MARKER, END_MARKER, buildAgentsMdDirective, type AgentGuidanceDetail } from "../../opencode/system-guidance.js";
+import type { OpenCodeShellConfig } from "../../core/config.js";
 import {
   getStringRecord,
   readJsonObject,
@@ -447,19 +448,31 @@ export function mergeGitignoreContent(existingContent?: string): string {
  * @param opts - Optional settings. `promptEnforcement` controls whether the
  *   quirk-capture enforcement rules are included (default `true`);
  *   `decisionEnabled` controls whether the `make_decision` guidance section is
- *   included (default `false` — the tool is not registered when disabled);
+ *   included (default `false` - the tool is not registered when disabled);
  *   `routeBeforeAsking` adds the optional pre-ask decision-routing rule
- *   (default `false`).
+ *   (default `false`); `agentsMdDetail` picks the section size (default `"full"` -
+ *   pass `"auto"` together with `injectedAtRuntime` to let the runtime injector
+ *   decide and avoid shipping the same protocol twice).
  * @returns The merged `AGENTS.md` content with a trailing newline.
  */
 export function mergeAgentsMdContent(
   existingContent?: string,
-  opts?: { promptEnforcement?: boolean; decisionEnabled?: boolean; routeBeforeAsking?: boolean },
+  opts?: {
+    promptEnforcement?: boolean;
+    decisionEnabled?: boolean;
+    routeBeforeAsking?: boolean;
+    agentsMdDetail?: AgentGuidanceDetail;
+    injectedAtRuntime?: boolean;
+    shell?: OpenCodeShellConfig;
+  },
 ): string {
   const section = buildAgentsMdDirective({
     promptEnforcement: opts?.promptEnforcement ?? true,
     decisionEnabled: opts?.decisionEnabled ?? false,
     routeBeforeAsking: opts?.routeBeforeAsking ?? false,
+    agentsMdDetail: opts?.agentsMdDetail,
+    injectedAtRuntime: opts?.injectedAtRuntime,
+    shell: opts?.shell,
   });
 
   if (!existingContent) {

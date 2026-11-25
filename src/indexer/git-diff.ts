@@ -108,6 +108,73 @@ export function getUntrackedFiles(cwd: string): string[] {
   }
 }
 
+/**
+ * Commit-touch timestamps derived from ONE bounded `git log` walk.
+ * Used by wiki staleness: instead of one `git log -1` per sourceRef (N
+ * spawns), a single history walk since the oldest review date answers
+ * "which files changed, and when" for every page at once.
+ */
+export interface FileTouchTimestamps {
+  /** File path (posix, relative to the repo root) → newest commit unix seconds. */
+  timestamps: Map<string, number>;
+  /** Commits actually walked (for truncation reporting). */
+  commitCount: number;
+  /** True when `maxCommits` was hit — the map may miss older touches. */
+  truncated: boolean;
+}
+
+/**
+ * Map each file touched since `sinceIso` to the timestamp of its newest
+ * commit, in a single `git log --name-only` walk.
+ *
+ * @param cwd - A path inside the repository.
+ * @param sinceIso - ISO date lower bound (validated `YYYY-MM-DD…` only, so a
+ *   crafted value can never inject git options via argv).
+ * @param maxCommits - Upper bound on walked commits.
+ * @returns The touch map, or `null` when git fails or the input is invalid.
+ */
+export function getFileTouchTimestamps(
+  cwd: string,
+  sinceIso: string,
+  maxCommits: number,
+): FileTouchTimestamps | null {
+  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(sinceIso)) return null;
+  if (!Number.isInteger(maxCommits) || maxCommits < 1 || maxCommits > 20000) return null;
+  try {
+    const raw = execFileSync(
+      "git",
+      [
+        "-c", "core.quotePath=false",
+        "log",
+        `--since=${sinceIso}`,
+        `--max-count=${maxCommits}`,
+        "--name-only",
+        "--pretty=format:%x1f%ct",
+      ],
+      { cwd, encoding: "utf-8", timeout: 15000, maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
+    );
+
+    const timestamps = new Map<string, number>();
+    let commitCount = 0;
+    let currentTs = 0;
+    for (const line of raw.split(/\r?\n/)) {
+      if (line.startsWith("\x1f")) {
+        currentTs = Number(line.slice(1).trim());
+        commitCount++;
+        continue;
+      }
+      const file = line.trim();
+      if (file.length === 0 || currentTs === 0) continue;
+      const existing = timestamps.get(file);
+      // --since walks newest-first: first touch wins; max() is belt-and-braces.
+      if (existing === undefined || currentTs > existing) timestamps.set(file, currentTs);
+    }
+    return { timestamps, commitCount, truncated: commitCount >= maxCommits };
+  } catch {
+    return null;
+  }
+}
+
 /** Result of comparing the working tree against HEAD. */
 export interface WorkingTreeChanges {
   /** Modified/renamed tracked files (unstaged + staged but not committed). */

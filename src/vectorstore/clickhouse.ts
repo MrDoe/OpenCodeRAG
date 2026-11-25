@@ -104,12 +104,54 @@ export function sanitizeNamespace(raw: string): string {
   return cleaned.length > 0 ? cleaned : "default";
 }
 
-/** Derive a stable namespace from a workspace path (name + path hash). */
-export function deriveNamespace(workspaceDir: string): string {
+/**
+ * Canonical form of a workspace path for namespace derivation.
+ *
+ * On Windows `path.resolve()` keeps the drive letter exactly as the caller
+ * spelled it, so `C:\repo` and `c:\repo` derived two different namespaces and one
+ * repository got indexed twice - one copy quietly going stale (measured
+ * 2026-11-11: `chunks_SLVSCODE_b2041fa6` current, `chunks_SLVSCODE_722a9877` five
+ * days behind and still serving a config file the repository had deleted). Windows
+ * paths are case-insensitive, so the drive letter is canonicalized here. The rest
+ * of the path is deliberately NOT lowercased: that would re-hash every existing
+ * deployment and silently orphan a populated index. A directory segment spelled
+ * differently still lands in its own namespace - `opencode-rag status` and
+ * `clickhouse adopt` surface those siblings instead of guessing.
+ */
+export function canonicalizeWorkspacePath(workspaceDir: string): string {
   const absolute = path.resolve(workspaceDir);
+  if (process.platform !== "win32") return absolute;
+  return absolute.replace(/^([a-z])(:)/, (_m, drive: string, sep: string) => drive.toUpperCase() + sep);
+}
+
+/** Derive a stable namespace from a workspace path (name + canonical path hash). */
+export function deriveNamespace(workspaceDir: string): string {
+  const absolute = canonicalizeWorkspacePath(workspaceDir);
   const base = path.basename(absolute) || "workspace";
   const hash = createHash("sha1").update(absolute).digest("hex").slice(0, 8);
   return sanitizeNamespace(`${base}_${hash}`);
+}
+
+/**
+ * Namespaces this workspace COULD have been indexed under before the drive letter
+ * was canonicalized. Lets a tool tell the operator "your index is alive, under
+ * this other name - adopt it" instead of starting from zero.
+ *
+ * @param workspaceDir - The workspace path as the caller has it.
+ * @returns Namespace strings, canonical form excluded, deduplicated.
+ */
+export function legacyNamespaceVariants(workspaceDir: string): string[] {
+  const canonical = deriveNamespace(workspaceDir);
+  const raw = path.resolve(workspaceDir);
+  const spellings = new Set([raw, raw.charAt(0).toLowerCase() + raw.slice(1), raw.charAt(0).toUpperCase() + raw.slice(1)]);
+  const out: string[] = [];
+  for (const spelling of spellings) {
+    const base = path.basename(spelling) || "workspace";
+    const hash = createHash("sha1").update(spelling).digest("hex").slice(0, 8);
+    const ns = sanitizeNamespace(`${base}_${hash}`);
+    if (ns !== canonical && !out.includes(ns)) out.push(ns);
+  }
+  return out;
 }
 
 /** Resolve a full ClickHouse config block (with defaults) for a workspace. */

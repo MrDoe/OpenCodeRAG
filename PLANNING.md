@@ -31,6 +31,7 @@ Last reviewed: 2026-10-20 · current release: **v2.9.0**
 - [ ] **E.** Raise `memory.autoInjectMinScore`; keep quirk auto-inject opt-in
 - [ ] **F.** Indexing-only — lower `description.maxContentChars`, `indexing.embedDescriptions: false` for code embedders
 - [ ] Make the fused hybrid score scale-free so `minScore` is not kw-dependent
+- [ ] **Wiki agent tools** `wiki_graph` / `wiki_lint` + `opencode-rag wiki` — implemented 2026-11-17, moves to Completed when the release ships it
 - [ ] Query rewriting / multi-variant expansion
 - [ ] Persistent query cache (disk-based, survives restarts)
 - [ ] Token & cost telemetry in the Web UI (per-turn injected tokens + cost)

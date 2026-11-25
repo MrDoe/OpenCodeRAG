@@ -374,6 +374,18 @@ export interface DocumentationModeConfig {
 export interface WikiModeConfig {
   /** Whether wiki mode is enabled. */
   enabled: boolean;
+  /**
+   * Whether the agent tools (`wiki_graph`, `wiki_lint`) are registered.
+   * `false` keeps the system-prompt protocol and the `/wiki` slash command
+   * but hides the tools (for agents that should not touch the wiki graph).
+   */
+  tools: boolean;
+  /**
+   * Safety cap on wiki pages scanned per tool call. Exceeding it truncates
+   * the scan and every report says so — a wiki past this size is a signal to
+   * split or prune, and counts become floors, never silent lies.
+   */
+  maxPages: number;
   /** System prompt for the wiki maintainer agent. */
   systemPrompt: string;
 }
@@ -788,6 +800,20 @@ export interface RagConfig {
     readRelatedFilesMax?: number;
     /** Whether to inject RAG tool guidance into system prompts when the session's tool catalog exposes the RAG tools (default true). */
     injectSystemPrompt?: boolean;
+    /**
+     * How much guidance a generated `AGENTS.md` block carries: `"auto"` (default)
+     * writes the compact form when `injectSystemPrompt` will deliver the full
+     * protocol at runtime and the full form when it will not; `"full"` always
+     * writes the complete protocol (pre-2.14 behaviour, standalone repos);
+     * `"compact"` always writes the short form.
+     */
+    agentsMdDetail?: "auto" | "full" | "compact";
+    /**
+     * Average relevance below which a `search_semantic` result block is labelled
+     * weak, telling the agent the hits are leads to verify rather than an answer
+     * (default 0.5, `0` disables the label).
+     */
+    weakHitThreshold?: number;
     /** Whether to grant the read-only RAG tools to the built-in `explore` agent (default true). */
     exploreAgentTools?: boolean;
     /** Handling of long-running shell commands (backgrounding guidance + measurement). */
@@ -1035,6 +1061,8 @@ export const DEFAULT_CONFIG: RagConfig = {
     maxContextChunks: 10,
     readOverride: true,
     injectSystemPrompt: true,
+    agentsMdDetail: "auto",
+    weakHitThreshold: 0.5,
     exploreAgentTools: true,
     shell: {
       backgroundGuidance: true,
@@ -1120,13 +1148,15 @@ export const DEFAULT_CONFIG: RagConfig = {
   },
   wikiMode: {
     enabled: true,
+    tools: true,
+    maxPages: 500,
     systemPrompt:
       "You are a wiki maintainer for this codebase. You incrementally build and maintain " +
       "a persistent knowledge wiki at `.opencode/wiki/` — a structured, interlinked collection " +
       "of markdown files that synthesizes knowledge from the codebase, documentation, and your conversations.\n\n" +
       "## Three layers\n\n" +
       "- **Raw sources**: code, docs, READMEs (immutable — read with `search_semantic`, `get_file_skeleton`, `find_usages`, `read`)\n" +
-      "- **Wiki**: `.opencode/wiki/*.md` (you own this layer — create, update, and maintain ALL pages)\n" +
+      "- **Wiki**: `.opencode/wiki/*.md` (you own this layer — create, update, and maintain ALL pages; answer link/health questions with `wiki_graph`/`wiki_lint`, never grep)\n" +
       "- **Schema**: this prompt (the protocol you follow)\n\n" +
       "## Wiki layout\n\n" +
       "`.opencode/wiki/`\n" +
@@ -1155,17 +1185,14 @@ export const DEFAULT_CONFIG: RagConfig = {
       "6. Append to `log.md`: `## [date] ingest | page title`\n\n" +
       "### Query (when the user asks a question)\n" +
       "1. Read `index.md` first to find relevant wiki pages\n" +
-      "2. Read those pages with the `read` tool\n" +
+      "2. Read those pages with the `read` tool; `wiki_graph` backlinks finds related pages\n" +
       "3. If the wiki is insufficient, use `search_semantic` for code-level retrieval\n" +
       "4. Synthesize an answer citing wiki pages where possible\n" +
       "5. If the answer produced valuable analysis, file it back as a new wiki page\n\n" +
       "### Lint (periodically, or when `/wiki lint` is invoked)\n" +
-      "Check for:\n" +
-      "- Orphan pages with no inbound `[[links]]`\n" +
-      "- Stale pages whose `sourceRefs` files changed since `lastReviewed`\n" +
-      "- Contradictions between pages\n" +
-      "- Important concepts mentioned but lacking their own page\n" +
-      "Append findings to `log.md`.\n\n" +
+      "Run `wiki_lint` first — it computes orphans, stale `sourceRefs` (git vs `lastReviewed`), dangling links, frontmatter and index coverage. " +
+      "Then what it cannot: contradictions, concepts lacking a page. " +
+      "Append findings to `log.md` and re-lint.\n\n" +
       "### Seed (when `/wiki seed` is invoked)\n" +
       "Generate initial wiki from existing sources:\n" +
       "1. Read README and top-level docs for project overview → create overview page\n" +
@@ -1455,7 +1482,13 @@ export function validateConfig(config: RagConfig): ConfigValidationResult {
   }
 
   if (config.openCode.autoIndex?.watcher && !["chokidar", "git"].includes(config.openCode.autoIndex.watcher)) {
-    warnings.push(`openCode.autoIndex.watcher "${config.openCode.autoIndex.watcher}" — expected "chokidar" or "git"`);
+    warnings.push(`openCode.autoIndex.watcher "${config.openCode.autoIndex.watcher}" - expected "chokidar" or "git"`);
+  }
+  if (config.openCode.agentsMdDetail && !["auto", "full", "compact"].includes(config.openCode.agentsMdDetail)) {
+    warnings.push(`openCode.agentsMdDetail "${config.openCode.agentsMdDetail}" - expected "auto", "full" or "compact"`);
+  }
+  if (config.openCode.weakHitThreshold != null && (config.openCode.weakHitThreshold < 0 || config.openCode.weakHitThreshold > 1)) {
+    warnings.push("openCode.weakHitThreshold must be between 0 and 1 (0 disables the weak-hit label)");
   }
   const shellCfg = config.openCode.shell;
   if (shellCfg) {

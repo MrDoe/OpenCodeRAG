@@ -224,7 +224,7 @@ runtime-overrides.json ───┼──> applyRuntimeOverrides() (5s TTL)
 | Package manager | npm |
 | Chunking | `web-tree-sitter` (WASM, v0.26.9) |
 | Grammars | `@vscode/tree-sitter-wasm` + self-bundled `wasm/` (pre-built WASM) |
-| Vector DB | `@lancedb/lancedb` (v0.29.0) |
+| Vector DB | `@lancedb/lancedb` (v0.33.0) |
 | Arrow types | `apache-arrow` (peer dep) |
 | CLI framework | `commander` (v13.1.0) |
 | Test runner | Node.js built-in (`node:test`) |
