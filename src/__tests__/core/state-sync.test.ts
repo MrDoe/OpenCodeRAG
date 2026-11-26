@@ -55,6 +55,40 @@ describe("StateSync hydrate/flush", () => {
     }
   });
 
+  it("still merges a large mergeable state instead of overwriting the remote copy", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-rag-state-sync-"));
+    const record = (id: string, content: string) =>
+      `${JSON.stringify({ id, content, lastObserved: "2026-02-01T00:00:00Z" })}\n`;
+    let uploaded = "";
+    const streamed: string[] = [];
+    const store = {
+      readState: async (name: string) =>
+        name === "quirks" ? { data: record("quirk:other-machine", "theirs"), ver: "1" } : undefined,
+      writeState: async (_name: string, data: string) => { uploaded = data; },
+      writeStateFile: async (name: string) => { streamed.push(name); },
+      readStateToFile: async (name: string, filePath: string) => {
+        if (name !== "keyword-index") return undefined;
+        fs.writeFileSync(filePath, "remote-index");
+        return { ver: "1", sha256: "" };
+      },
+    } as unknown as VectorStore;
+
+    try {
+      // Above the 32 MB limit that applies to states which cannot be merged.
+      fs.writeFileSync(path.join(dir, "quirks.jsonl"), record("quirk:mine", "x".repeat(33 * 1024 * 1024)));
+      const sync = new StateSync({ store, storePath: dir, config: clickhouseConfig() });
+      await sync.flush(["quirks"]);
+      assert.ok(uploaded.includes("quirk:other-machine"), "remote records must survive the upload");
+      assert.deepEqual(streamed, []);
+
+      // A fresh machine receives an unmergeable state as a stream.
+      await sync.hydrate();
+      assert.equal(fs.readFileSync(path.join(dir, "keyword-index.json"), "utf-8"), "remote-index");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("uploads a merged quirk log and keeps the merged records on the next hydrate", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-rag-state-sync-"));
     const remote = new Map<string, string>();

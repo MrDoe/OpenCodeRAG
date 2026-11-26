@@ -624,6 +624,16 @@ export const SETTINGS_SECTIONS: SettingSection[] = [
         impact: "reindex",
         description: "SVGs above this size are skipped to avoid huge diagram payloads; 0 = no limit.",
       }),
+      number(["indexing", "descriptionCache", "maxEntries"], "Description cache entries", {
+        advanced: true,
+        minimum: 1,
+        description: "Cached chunk descriptions kept before the oldest are evicted. 50000 is the default; raise it for larger workspaces.",
+      }),
+      number(["indexing", "descriptionCache", "maxAgeDays"], "Description cache age (days)", {
+        advanced: true,
+        minimum: 1,
+        description: "Once over the entry limit, descriptions older than this are evicted first. 30 is the default.",
+      }),
       number(["indexing", "optimizeIntervalWindows"], "Optimize every N windows", {
         advanced: true,
         minimum: 0,

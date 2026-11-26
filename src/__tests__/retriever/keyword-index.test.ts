@@ -32,6 +32,28 @@ describe("KeywordIndex file keys", () => {
   });
 });
 
+describe("KeywordIndex large-file loading", () => {
+  it("reloads piecewise, whatever the content and block boundaries", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "keyword-index-large-"));
+    const storePath = path.join(dir, "rag_db");
+    const index = new KeywordIndex(storePath);
+    const tricky = 'function marker() { return \'},"tokens":[ ,"postings":[ \\ " ü 🎉\'; }';
+    index.addChunks([makeChunk("c1", tricky), makeChunk("c2", "class Widget {}", "other.ts")]);
+    await index.save();
+
+    for (const blockBytes of [1, 7, 4096]) {
+      const loaded = await KeywordIndex.load(storePath, undefined, { largeFileBytes: 0, blockBytes });
+      assert.equal(loaded.count(), 2, `block ${blockBytes}`);
+      assert.equal(loaded.search("marker", 5)[0]!.chunk.content, tricky);
+      assert.equal(loaded.search("widget", 5)[0]!.chunk.id, "c2");
+    }
+
+    writeFileSync(path.join(storePath, "keyword-index.json"), '{"version":4,"ids":["c1"');
+    const truncated = await KeywordIndex.load(storePath, undefined, { largeFileBytes: 0 });
+    assert.equal(truncated.count(), 0);
+  });
+});
+
 describe("tokenize", () => {
   it("splits on non-alphanumeric characters", () => {
     const tokens = tokenize("hello world foo-bar");

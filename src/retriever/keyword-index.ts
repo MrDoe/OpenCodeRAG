@@ -18,6 +18,7 @@
  */
 import type { Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
 import { normalizeFilePath, resolveStoredPath } from "../core/manifest.js";
+import { scanJsonObjectFile } from "../core/json-scan.js";
 import { normalizeFileExtensions, matchesFileExtension, toKeyPatterns } from "../core/filters.js";
 
 const INDEX_VERSION = 4;
@@ -28,6 +29,9 @@ const INDEX_VERSION = 4;
  * a single `JSON.stringify()` of a large index exceeds.
  */
 const SAVE_FLUSH_CHARS = 4 * 1024 * 1024;
+
+/** Index files from this size on are parsed piecewise instead of as one string. */
+const LARGE_INDEX_BYTES = 256 * 1024 * 1024;
 
 interface SerializedChunkEntry {
   id: string;
@@ -672,8 +676,13 @@ export class KeywordIndex {
    *
    * @param storePath    - Directory holding `keyword-index.json`.
    * @param workspaceDir - Workspace root that per-file keys are relative to.
+   * @param limits       - When to switch to piecewise parsing (tests).
    */
-  static async load(storePath: string, workspaceDir?: string): Promise<KeywordIndex> {
+  static async load(
+    storePath: string,
+    workspaceDir?: string,
+    limits: { largeFileBytes?: number; blockBytes?: number } = {},
+  ): Promise<KeywordIndex> {
     const targetPath = indexPathFor(storePath);
     const { readFile, access, stat } = await import("node:fs/promises");
 
@@ -685,7 +694,7 @@ export class KeywordIndex {
 
     const fileStat = await stat(targetPath);
     let parsed: SerializedKeywordIndexV4 | SerializedKeywordIndexV3;
-    if (fileStat.size < 256 * 1024 * 1024) {
+    if (fileStat.size < (limits.largeFileBytes ?? LARGE_INDEX_BYTES)) {
       const raw = await readFile(targetPath, "utf-8");
       try {
         parsed = JSON.parse(raw) as SerializedKeywordIndexV4 | SerializedKeywordIndexV3;
@@ -694,8 +703,12 @@ export class KeywordIndex {
       }
     } else {
       try {
-        parsed = await KeywordIndex.loadLargeV4(targetPath, fileStat.size);
-      } catch {
+        parsed = await KeywordIndex.loadLargeV4(targetPath, limits.blockBytes);
+      } catch (err) {
+        console.warn(
+          `[keyword-index] Could not load ${targetPath} (${(err as Error).message}) — starting empty. ` +
+          "The next index pass rebuilds it from the vector store.",
+        );
         return new KeywordIndex(storePath, workspaceDir);
       }
     }
@@ -790,95 +803,50 @@ export class KeywordIndex {
   }
 
   /**
-   * Parse a large v4 keyword index without loading the whole file into one string.
-   * Node's V8 engine caps strings at ~512 MB (ERR_STRING_TOO_LONG); reading the
-   * top-level sections (ids, chunkMap, tokens, postings) individually keeps every
-   * intermediate string well within the limit.
+   * Parse a large v4 keyword index without ever building a string of the whole
+   * file or of one of its sections: V8 caps strings at ~512 MB
+   * (ERR_STRING_TOO_LONG), which `chunkMap` alone exceeds on big workspaces.
+   * Every id, chunk, token and posting list is parsed on its own.
    */
   private static async loadLargeV4(
     filePath: string,
-    fileSize: number,
+    blockBytes?: number,
   ): Promise<SerializedKeywordIndexV4> {
-    const { open } = await import("node:fs/promises");
-    const handle = await open(filePath, "r");
+    const result: SerializedKeywordIndexV4 = {
+      version: INDEX_VERSION,
+      ids: [],
+      chunkMap: {},
+      tokens: [],
+      postings: [],
+    };
+    let version: unknown;
 
-    try {
-      const scanBuf = Buffer.alloc(10 * 1024 * 1024);
-      let offset = 0;
-      let chunkMapPos = -1;
-      let tokensPos = -1;
-      let postingsPos = -1;
+    await scanJsonObjectFile(
+      filePath,
+      {
+        scalar(member) {
+          const parsed = JSON.parse(`{${member}}`) as { version?: unknown };
+          if (parsed.version !== undefined) version = parsed.version;
+        },
+        element(key, source) {
+          if (key === "chunkMap") {
+            Object.assign(result.chunkMap, JSON.parse(`{${source}}`));
+          } else if (key === "ids") {
+            result.ids.push(JSON.parse(source) as string);
+          } else if (key === "tokens") {
+            result.tokens.push(JSON.parse(source) as string);
+          } else if (key === "postings") {
+            result.postings.push(JSON.parse(source) as [number, number[]]);
+          }
+        },
+      },
+      blockBytes,
+    );
 
-      const needleChunkMap = Buffer.from(',"chunkMap":{');
-      const needleTokens = Buffer.from('},"tokens":[');
-      const needlePostings = Buffer.from(',"postings":[');
-
-      while (offset < fileSize) {
-        const toRead = Math.min(scanBuf.length, fileSize - offset);
-        const { bytesRead } = await handle.read(scanBuf, 0, toRead, offset);
-        if (bytesRead <= 0) break;
-        const slice = scanBuf.subarray(0, bytesRead);
-
-        if (chunkMapPos === -1) {
-          const idx = slice.indexOf(needleChunkMap);
-          if (idx !== -1) chunkMapPos = offset + idx;
-        }
-        if (tokensPos === -1) {
-          const idx = slice.indexOf(needleTokens);
-          if (idx !== -1) tokensPos = offset + idx;
-        }
-        if (postingsPos === -1) {
-          const idx = slice.indexOf(needlePostings);
-          if (idx !== -1) postingsPos = offset + idx;
-        }
-        if (chunkMapPos !== -1 && tokensPos !== -1 && postingsPos !== -1) break;
-
-        offset += Math.max(1, bytesRead - 64);
-      }
-
-      if (chunkMapPos === -1 || tokensPos === -1 || postingsPos === -1) {
-        throw new Error("Could not find section boundaries in large keyword index");
-      }
-
-      // 1. Version + IDs
-      const idsBuf = Buffer.alloc(chunkMapPos + 1);
-      await handle.read(idsBuf, 0, chunkMapPos, 0);
-      idsBuf[idsBuf.length - 1] = 0x7d; // '}'
-      const meta = JSON.parse(idsBuf.toString("utf8")) as { version: 4; ids: string[] };
-
-      // 2. ChunkMap
-      const chunkMapPrefix = ',"chunkMap":{'.length;
-      const chunkMapContentLen = tokensPos - (chunkMapPos + chunkMapPrefix);
-      const chunkMapBuf = Buffer.alloc(chunkMapContentLen + 2);
-      chunkMapBuf[0] = 0x7b; // '{'
-      await handle.read(chunkMapBuf, 1, chunkMapContentLen, chunkMapPos + chunkMapPrefix);
-      chunkMapBuf[chunkMapBuf.length - 1] = 0x7d; // '}'
-      const chunkMap = JSON.parse(chunkMapBuf.toString("utf8")) as Record<string, SerializedChunkEntry>;
-
-      // 3. Tokens
-      const tokensPrefix = '},"tokens":'.length;
-      const tokensLen = postingsPos - (tokensPos + tokensPrefix);
-      const tokensBuf = Buffer.alloc(tokensLen);
-      await handle.read(tokensBuf, 0, tokensLen, tokensPos + tokensPrefix);
-      const tokens = JSON.parse(tokensBuf.toString("utf8")) as string[];
-
-      // 4. Postings
-      const postingsPrefix = ',"postings":'.length;
-      const postingsLen = fileSize - 1 - (postingsPos + postingsPrefix);
-      const postingsBuf = Buffer.alloc(postingsLen);
-      await handle.read(postingsBuf, 0, postingsLen, postingsPos + postingsPrefix);
-      const postings = JSON.parse(postingsBuf.toString("utf8")) as Array<[number, number[]]>;
-
-      return {
-        version: 4,
-        ids: meta.ids,
-        chunkMap,
-        tokens,
-        postings,
-      };
-    } finally {
-      await handle.close();
+    if (version !== INDEX_VERSION) {
+      throw new Error(`Unsupported keyword index version: ${String(version)}`);
     }
+    return result;
   }
 
   /** Read the legacy Map-era format and build the CSR representation.

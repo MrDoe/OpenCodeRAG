@@ -9,8 +9,16 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 const CACHE_VERSION = 1;
-const MAX_ENTRIES = 500_000;
-const MAX_AGE_DAYS = 90;
+const DEFAULT_MAX_ENTRIES = 50_000;
+const DEFAULT_MAX_AGE_DAYS = 30;
+
+/** Eviction limits (`indexing.descriptionCache`). */
+export interface DescriptionCacheLimits {
+  /** Entries kept before eviction starts. Default: 50 000. */
+  maxEntries?: number;
+  /** Age after which entries are evicted first once over the limit. Default: 30. */
+  maxAgeDays?: number;
+}
 
 interface CacheEntry {
   description: string;
@@ -29,8 +37,13 @@ export class DescriptionCache {
   private savePromise: Promise<void> = Promise.resolve();
   private loadPromise: Promise<void> | null = null;
 
-  constructor(cacheDir: string) {
+  private readonly maxEntries: number;
+  private readonly maxAgeDays: number;
+
+  constructor(cacheDir: string, limits: DescriptionCacheLimits = {}) {
     this.cacheDir = cacheDir;
+    this.maxEntries = limits.maxEntries && limits.maxEntries > 0 ? limits.maxEntries : DEFAULT_MAX_ENTRIES;
+    this.maxAgeDays = limits.maxAgeDays && limits.maxAgeDays > 0 ? limits.maxAgeDays : DEFAULT_MAX_AGE_DAYS;
   }
 
   /** Load the cache from disk. */
@@ -75,6 +88,11 @@ export class DescriptionCache {
     }
     this.dirty = true;
     this.maybeEvict();
+  }
+
+  /** Number of cached descriptions. */
+  size(): number {
+    return Object.keys(this.cache.entries).length;
   }
 
   /** Check if a key exists in the cache. */
@@ -126,9 +144,9 @@ export class DescriptionCache {
   /** Remove old entries to stay under the limit. */
   private maybeEvict(): void {
     const keys = Object.keys(this.cache.entries);
-    if (keys.length <= MAX_ENTRIES) return;
+    if (keys.length <= this.maxEntries) return;
 
-    const cutoff = Date.now() - MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - this.maxAgeDays * 24 * 60 * 60 * 1000;
     const entries = this.cache.entries;
     for (const key of keys) {
       if (entries[key]!.createdAt < cutoff) {
@@ -137,10 +155,10 @@ export class DescriptionCache {
     }
 
     // If still over limit, delete oldest
-    if (Object.keys(entries).length > MAX_ENTRIES) {
+    if (Object.keys(entries).length > this.maxEntries) {
       const sorted = Object.entries(entries)
         .sort(([, a], [, b]) => a.createdAt - b.createdAt);
-      const toDelete = Object.keys(entries).length - MAX_ENTRIES;
+      const toDelete = Object.keys(entries).length - this.maxEntries;
       for (let i = 0; i < toDelete; i++) {
         delete entries[sorted[i]![0]];
       }

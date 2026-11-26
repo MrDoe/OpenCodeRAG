@@ -69,8 +69,8 @@ describe("executeClickHouseRestore (isolated)", () => {
       await cache.load();
       const descHash = computeDescriptionConfigHash(cfg) ?? "";
 
-      const keyA = DescriptionCache.codeKey(mockRows[0]!.content, descHash, "src/a.ts:1-10");
-      const keyB = DescriptionCache.codeKey(mockRows[1]!.content, descHash, "src/b.ts:20-35");
+      const keyA = DescriptionCache.codeKey(mockRows[0]!.content, descHash, `${path.join(testDir, "src", "a.ts")}:1-10`);
+      const keyB = DescriptionCache.codeKey(mockRows[1]!.content, descHash, `${path.join(testDir, "src", "b.ts")}:20-35`);
 
       assert.equal(cache.get(keyA), "Returns greeting string.");
       assert.equal(cache.get(keyB), "Adds two numbers together.");

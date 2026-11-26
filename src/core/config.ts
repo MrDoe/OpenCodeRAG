@@ -736,6 +736,17 @@ export interface RagConfig {
      * @default 8
      */
     optimizeIntervalWindows?: number;
+    /**
+     * Limits of the persistent description cache (`.desc-cache.json`). Raise
+     * them for workspaces with more chunks than `maxEntries`, or descriptions
+     * are evicted and generated again.
+     */
+    descriptionCache?: {
+      /** Entries kept before eviction starts. @default 50_000 */
+      maxEntries?: number;
+      /** Age after which entries are evicted first once over the limit. @default 30 */
+      maxAgeDays?: number;
+    };
   };
   /** Vector storage backend configuration. */
   vectorStore: {
@@ -1009,6 +1020,7 @@ export const DEFAULT_CONFIG: RagConfig = {
     embedDescriptions: true,
     maxSvgSizeBytes: 1_048_576,
     optimizeIntervalWindows: 8,
+    descriptionCache: { maxEntries: 50_000, maxAgeDays: 30 },
   },
   vectorStore: {
     path: "./.opencode/rag_db",

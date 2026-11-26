@@ -314,7 +314,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   // Persistent description cache — survives aborted runs so that descriptions
   // generated before an abort are reused on the next run.
   const descCachePath = options.storePath;
-  const descCache = new DescriptionCache(descCachePath);
+  const descCache = new DescriptionCache(descCachePath, options.config.indexing.descriptionCache);
   await descCache.load();
 
   // Resume-on-interrupt: detect manifest entries that are inconsistent with

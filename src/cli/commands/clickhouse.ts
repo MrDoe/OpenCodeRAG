@@ -27,11 +27,13 @@ import {
   loadManifest,
   saveManifest,
   normalizeFilePath,
+  resolveStoredPath,
   SCHEMA_VERSION,
   type FileManifest,
   type ManifestEntry,
 } from "../../core/manifest.js";
 import { mergeQuirkJsonl, StateSync } from "../../core/state-sync.js";
+import { isInScanScope } from "../../core/exclude.js";
 import { createVectorStore } from "../../vectorstore/factory.js";
 import { readJsonObject, writeJsonFile } from "../helpers.js";
 import { c } from "../format.js";
@@ -638,20 +640,28 @@ export async function executeClickHouseRestore(
   const result: ClickHouseRestoreResult = {};
   const db = cfg.vectorStore.clickhouse?.database ?? "OpenCodeRAG";
 
-  // 1. Resolve target epoch
+  // 1. Resolve target epoch and the dimension the store was built with
   let targetEpoch: number | undefined;
+  let metaDimension: number | undefined;
+  const metaRows = await run<{ data: string }>(
+    `SELECT data FROM ${db}.state_${ns} FINAL WHERE name = '_meta' LIMIT 1`,
+  );
+  let activeEpoch: number | undefined;
+  if (metaRows[0]?.data) {
+    try {
+      const meta = JSON.parse(metaRows[0].data) as { activeEpoch?: number; dimension?: number };
+      if (meta.activeEpoch && Number.isFinite(meta.activeEpoch)) activeEpoch = meta.activeEpoch;
+      if (meta.dimension && Number.isFinite(meta.dimension)) metaDimension = meta.dimension;
+    } catch {}
+  }
+  const dimension = metaDimension ?? cfg.embedding.vectorDimension ?? 384;
   if (options.epoch !== undefined) {
     targetEpoch = Number(options.epoch);
-  } else {
-    const metaRows = await run<{ data: string }>(
-      `SELECT data FROM ${db}.state_${ns} FINAL WHERE name = '_meta' LIMIT 1`,
-    );
-    if (metaRows[0]?.data) {
-      try {
-        const meta = JSON.parse(metaRows[0].data) as { activeEpoch?: number };
-        if (meta.activeEpoch && Number.isFinite(meta.activeEpoch)) targetEpoch = meta.activeEpoch;
-      } catch {}
+    if (!Number.isInteger(targetEpoch) || targetEpoch < 1) {
+      throw new Error(`--epoch must be a positive integer, got "${options.epoch}"`);
     }
+  } else {
+    targetEpoch = activeEpoch;
     if (!targetEpoch) {
       const epochRows = await run<{ max_epoch: string }>(
         `SELECT max(epoch) AS max_epoch FROM ${db}.chunks_${ns}`,
@@ -666,7 +676,7 @@ export async function executeClickHouseRestore(
   // ── 2. Description Cache (.desc-cache.json) ─────────────────────────
   if (doCache) {
     console.log(`\n  Restoring description cache (.desc-cache.json)...`);
-    const cache = new DescriptionCache(targetDir);
+    const cache = new DescriptionCache(targetDir, cfg.indexing?.descriptionCache);
     await cache.load();
     const descHash = computeDescriptionConfigHash(cfg) ?? "";
     let offset = 0;
@@ -690,7 +700,10 @@ export async function executeClickHouseRestore(
 
       const entriesToAdd: Array<[string, string]> = [];
       for (const row of rows) {
-        const context = `${row.file_path}:${row.start_line}-${row.end_line}`;
+        // The indexer keys descriptions by the chunk's absolute path, while
+        // the store holds relative keys.
+        const absolute = resolveStoredPath(normalizeFilePath(row.file_path, cwd), cwd);
+        const context = `${absolute}:${row.start_line}-${row.end_line}`;
         const key = DescriptionCache.codeKey(row.content, descHash, context);
         if (!cache.get(key)) {
           entriesToAdd.push([key, row.description]);
@@ -704,7 +717,7 @@ export async function executeClickHouseRestore(
       if (rows.length < limit) break;
     }
     await cache.save();
-    const totalInCache = (cache as any).cache?.entries ? Object.keys((cache as any).cache.entries).length : added;
+    const totalInCache = cache.size();
     result.cacheEntries = totalInCache;
     console.log(`  ${c.success("Cache restored:")} +${added} descriptions from chunks (total ${totalInCache} entries)`);
   }
@@ -759,6 +772,8 @@ export async function executeClickHouseRestore(
         let size: number | undefined;
         let hash = "";
         try {
+          // The key comes from the central store: never read outside the workspace.
+          if (!isInScanScope(abs, cwd)) throw new Error("outside the workspace");
           const st = await fs.stat(abs);
           mtime = st.mtimeMs;
           size = st.size;
@@ -804,7 +819,7 @@ export async function executeClickHouseRestore(
       `SELECT count() AS n FROM ${db}.state_${ns} FINAL WHERE name = 'keyword-index'`,
     );
     if (Number(kwRow[0]?.n ?? 0) > 0) {
-      const store = storeOverride ?? (createVectorStore(cfg, targetDir, 1024, cwd) as ClickHouseStore);
+      const store = storeOverride ?? (createVectorStore(cfg, targetDir, dimension, cwd) as ClickHouseStore);
       if (typeof store.readStateToFile === "function") {
         const targetFile = path.join(targetDir, "keyword-index.json");
         const streamRes = await store.readStateToFile("keyword-index", targetFile);
@@ -842,7 +857,7 @@ export async function executeClickHouseRestore(
   // ── 6. Sync back to ClickHouse if requested ─────────────────────────
   if (options.upload) {
     console.log(`\n  Uploading restored state back to ClickHouse...`);
-    const store = storeOverride ?? createVectorStore(cfg, targetDir, 1024, cwd);
+    const store = storeOverride ?? createVectorStore(cfg, targetDir, dimension, cwd);
     const sync = new StateSync({
       store,
       storePath: targetDir,

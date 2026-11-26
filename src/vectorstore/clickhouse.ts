@@ -47,6 +47,18 @@ const QUIRK_FILE_PREFIX = "quirk:";
 /** State payloads above this size are inserted as a stream. */
 const STATE_STREAM_THRESHOLD_CHARS = 16 * 1024 * 1024;
 
+/**
+ * Settings for transferring a state bundle, which can be hundreds of megabytes:
+ * progress headers keep an idle-looking connection open, and one oversized row
+ * must not be split by the parallel parser.
+ */
+const STATE_TRANSFER_SETTINGS: ClickHouseSettings = {
+  send_progress_in_http_headers: 1,
+  http_headers_progress_interval_ms: "1000",
+  input_format_parallel_parsing: 0,
+  min_chunk_bytes_for_parallel_parsing: "536870912",
+};
+
 const META_NAME = "_meta";
 const LEASE_NAME = "_lease";
 
@@ -281,12 +293,6 @@ export class ClickHouseStore implements ChunkBrowseStore {
       request_timeout: this.opts.requestTimeoutMs,
       max_open_connections: this.opts.maxOpenConnections,
       compression: this.opts.compression ? { request: true, response: true } : undefined,
-      clickhouse_settings: {
-        send_progress_in_http_headers: 1,
-        http_headers_progress_interval_ms: "1000",
-        input_format_parallel_parsing: 0,
-        min_chunk_bytes_for_parallel_parsing: "536870912",
-      },
     });
     return this.client;
   }
@@ -538,6 +544,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
         `SELECT data FROM ${this.table(this.opts.stateTable)} FINAL ` +
         "WHERE name = {name:String} LIMIT 1 FORMAT RawBLOB",
       query_params: { name },
+      clickhouse_settings: STATE_TRANSFER_SETTINGS,
     });
     const { createWriteStream } = await import("node:fs");
     const { mkdir, rename, rm, stat } = await import("node:fs/promises");
@@ -574,6 +581,8 @@ export class ClickHouseStore implements ChunkBrowseStore {
       throw err;
     }
   }
+
+  /** Generic state-bundle read used by `StateSync`. */
   async readState(name: string): Promise<{ data: string; ver: string } | undefined> {
     await this.ensureSchema();
     const rows = await this.select<{ data: string; ver: string }>(
@@ -599,17 +608,12 @@ export class ClickHouseStore implements ChunkBrowseStore {
   async writeState(name: string, data: string, sha256 = ""): Promise<void> {
     await this.ensureSchema();
     const client = await this.getClient();
-    const settings: ClickHouseSettings = {
-      input_format_parallel_parsing: 0,
-      min_chunk_bytes_for_parallel_parsing: "536870912",
-    };
-
     if (data.length < STATE_STREAM_THRESHOLD_CHARS) {
       await client.insert({
         table: this.insertTable(this.opts.stateTable),
         values: [{ name, data, sha256, bytes: Buffer.byteLength(data) }],
         format: "JSONEachRow",
-        clickhouse_settings: settings,
+        clickhouse_settings: STATE_TRANSFER_SETTINGS,
       });
       return;
     }
@@ -642,7 +646,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
     const result = await client.exec({
       query: `INSERT INTO ${this.insertTable(this.opts.stateTable)} FORMAT JSONEachRow`,
       values: Readable.from(generateChunks()),
-      clickhouse_settings: settings,
+      clickhouse_settings: STATE_TRANSFER_SETTINGS,
     });
     for await (const _ of result.stream) {}
   }
@@ -682,15 +686,22 @@ export class ClickHouseStore implements ChunkBrowseStore {
       },
     });
 
-    await client.exec({
-      query: `INSERT INTO ${this.insertTable(this.opts.stateTable)} FORMAT JSONEachRow`,
-      values: input.pipe(escape),
-      clickhouse_settings: {
-        input_format_parallel_parsing: 0,
-        min_chunk_bytes_for_parallel_parsing: "536870912",
-      },
-    });
+    // pipe() does not forward read errors; without this the request would hang.
+    input.once("error", (err) => escape.destroy(err));
+    try {
+      const result = await client.exec({
+        query: `INSERT INTO ${this.insertTable(this.opts.stateTable)} FORMAT JSONEachRow`,
+        values: input.pipe(escape),
+        clickhouse_settings: STATE_TRANSFER_SETTINGS,
+      });
+      // An undrained response keeps its pooled connection occupied.
+      for await (const _ of result.stream) {}
+    } finally {
+      input.destroy();
+    }
   }
+
+  /** Names currently present in the state bundle (newest row per name). */
   async listStateNames(): Promise<string[]> {
     await this.ensureSchema();
     const rows = await this.select<{ name: string }>(

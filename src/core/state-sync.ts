@@ -42,6 +42,19 @@ const VERSIONS_FILE = ".state-sync.json";
 /** Large files must never be loaded as one JavaScript string. */
 const STATE_FILE_STREAM_THRESHOLD_BYTES = 32 * 1024 * 1024;
 
+/**
+ * Streaming cannot merge, so a mergeable state (manifest, quirks, description
+ * cache) is streamed only once parsing it as a string would no longer work.
+ */
+const MERGEABLE_STREAM_THRESHOLD_BYTES = 256 * 1024 * 1024;
+
+/** Size above which a state file bypasses the in-memory path. */
+function streamThreshold(spec: (typeof STATE_FILES)[StateName]): number {
+  return "merge" in spec && spec.merge
+    ? MERGEABLE_STREAM_THRESHOLD_BYTES
+    : STATE_FILE_STREAM_THRESHOLD_BYTES;
+}
+
 /** Remote (ClickHouse) half of the state store. */
 interface RemoteStateStore {
   readState(name: string): Promise<{ data: string; ver: string } | undefined>;
@@ -335,12 +348,22 @@ export class StateSync {
     for (const [name, spec] of this.entries()) {
       const localPath = this.localPath(name);
       const localStat = await fs.stat(localPath).catch(() => undefined);
-      if (this.remote?.readStateToFile && localStat?.size && localStat.size > STATE_FILE_STREAM_THRESHOLD_BYTES) {
+      // A missing file that cannot be merged anyway is streamed too: the remote
+      // copy may be too large for one string on a fresh machine.
+      const stream = localStat
+        ? localStat.size > streamThreshold(spec)
+        : !("merge" in spec && spec.merge);
+      if (this.remote?.readStateToFile && stream) {
         try {
           const remoteMeta = await this.remote.readStateToFile(name, `${localPath}.remote`);
           if (!remoteMeta) continue;
+          const remoteHash = remoteMeta.sha256 || await sha256File(`${localPath}.remote`);
+          if (!localStat) {
+            await fs.rename(`${localPath}.remote`, localPath);
+            versions[name] = { sha256: remoteHash };
+            continue;
+          }
           const localHash = await sha256File(localPath);
-          const remoteHash = remoteMeta.sha256 ?? await sha256File(`${localPath}.remote`);
           if (localHash === remoteHash) {
             await fs.unlink(`${localPath}.remote`).catch(() => {});
             versions[name] = { sha256: remoteHash };
@@ -438,7 +461,7 @@ export class StateSync {
       // Very large state (especially keyword-index.json) cannot be represented
       // as one JS string. Keep it on disk, hash it incrementally, and let the
       // remote store stream it directly into ClickHouse.
-      if (stat.size > STATE_FILE_STREAM_THRESHOLD_BYTES && this.remote!.writeStateFile) {
+      if (stat.size > streamThreshold(spec) && this.remote!.writeStateFile) {
         const hash = await sha256File(localPath);
         if (versions[name]?.sha256 === hash) continue;
         try {
