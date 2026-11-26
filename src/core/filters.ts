@@ -2,6 +2,7 @@
  * @fileoverview Shared helpers for MetadataFilter matching across stores
  * (LanceDB, memory, keyword index) so extension handling stays consistent.
  */
+import path from "node:path";
 
 /**
  * Normalize a raw file-extension list: lowercase, strip leading dots so both
@@ -32,4 +33,25 @@ export function matchesFileExtension(filePath: string, extensions: string[]): bo
   if (extensions.length === 0) return true;
   const lower = filePath.toLowerCase();
   return extensions.some((ext) => lower.endsWith(ext));
+}
+
+/**
+ * Rewrite `pathPatterns` so they match workspace-relative keys, which is what
+ * the stores and the keyword index compare them against: an absolute pattern
+ * inside the workspace is relativised, and a leading `**\/` also matches at the
+ * workspace root.
+ *
+ * @param patterns     - Glob-style patterns as the caller wrote them.
+ * @param workspaceDir - Workspace root, when known.
+ */
+export function toKeyPatterns(patterns: string[], workspaceDir?: string): string[] {
+  const root = workspaceDir ? `${path.resolve(workspaceDir).replace(/\\/g, "/")}/` : undefined;
+  const out = new Set<string>();
+  for (const raw of patterns) {
+    let pattern = raw.replace(/\\/g, "/").replace(/^\.\//, "");
+    if (root && pattern.startsWith(root)) pattern = pattern.slice(root.length);
+    out.add(pattern);
+    if (pattern.startsWith("**/")) out.add(pattern.slice(3));
+  }
+  return [...out];
 }

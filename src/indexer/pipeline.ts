@@ -313,7 +313,11 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       // Case-insensitive on Windows: the store may hold `c:/...` while the
       // manifest keys `C:/...` (path.resolve keeps the drive-letter case).
       // A case-sensitive compare re-indexes every such file on every pass.
-      const storedSet = new Set(storedPaths.map((p) => p.toLowerCase()));
+      // Rows written before keys became relative still hold absolute paths;
+      // normalize them or every file looks missing after an upgrade.
+      const storedSet = new Set(
+        storedPaths.map((p) => normalizeFilePath(p, options.cwd).toLowerCase()),
+      );
       let removedCount = 0;
       for (const [p, entry] of Object.entries(manifest.files)) {
         // Path missing from store entirely (aborted before store finished)

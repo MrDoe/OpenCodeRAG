@@ -168,6 +168,22 @@ describe("indexer", () => {
     assert.equal(Object.keys(manifest.manifest.files).length, 2);
   });
 
+  it("does not re-embed legacy absolute rows after the upgrade", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+    const run = () => runIndexPass({ cwd: workspaceDir, storePath: storeDir, config: testConfig(), store, embedder });
+    await run();
+
+    // Rewrite the row to the pre-upgrade absolute key format.
+    const table = await (store as unknown as { getTable(): Promise<{ update(o: object): Promise<unknown> }> }).getTable();
+    const legacy = path.join(workspaceDir, "src", "a.ts").replace(/\\/g, "/");
+    await table.update({ values: { filePath: legacy } });
+
+    const stats = await run();
+    assert.equal(stats.unchangedFiles, 1);
+    assert.equal(stats.newFiles, 0);
+    assert.equal(stats.finalCount, 1);
+  });
+
   it("skips unchanged files and updates modified or deleted files", async () => {
     const fileA = path.join(workspaceDir, "src", "a.ts");
     const fileB = path.join(workspaceDir, "src", "b.ts");

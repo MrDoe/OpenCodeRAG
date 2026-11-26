@@ -7,8 +7,8 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import type { Chunk, ChunkSummary, SearchResult, MetadataFilter, ChunkBrowseStore } from "../core/interfaces.js";
-import { legacyAbsoluteKey, normalizeFilePath, manifestPathFor } from "../core/manifest.js";
-import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
+import { legacyAbsoluteKey, normalizeFilePath, manifestPathFor, resolveStoredPath } from "../core/manifest.js";
+import { normalizeFileExtensions, matchesFileExtension, toKeyPatterns } from "../core/filters.js";
 
 const TABLE_NAME = "chunks";
 
@@ -964,7 +964,7 @@ export class LanceDbStore implements ChunkBrowseStore {
         content: row.content as string,
         description: (row.description as string) ?? "",
         metadata: {
-          filePath: row.filePath as string,
+          filePath: resolveStoredPath(row.filePath as string, this.workspaceDir),
           startLine: row.startLine as number,
           endLine: row.endLine as number,
           language: row.language as string,
@@ -1032,7 +1032,7 @@ export class LanceDbStore implements ChunkBrowseStore {
             content: row.content as string,
             description: (row.description as string) ?? "",
             metadata: {
-              filePath: row.filePath as string,
+              filePath: resolveStoredPath(row.filePath as string, this.workspaceDir),
               startLine: row.startLine as number,
               endLine: row.endLine as number,
               language: row.language as string,
@@ -1096,7 +1096,11 @@ export class LanceDbStore implements ChunkBrowseStore {
   ): Promise<{ chunks: ChunkSummary[]; total: number }> {
     const conditions: string[] = [];
     if (lang) conditions.push(`language = '${lang.replace(/'/g, "''")}'`);
-    if (filePrefix) conditions.push(`filePath LIKE '${filePrefix.replace(/'/g, "''")}%'`);
+    if (filePrefix) {
+      // Search results carry absolute paths; the column holds relative keys.
+      const [keyPrefix] = toKeyPatterns([filePrefix], this.workspaceDir);
+      conditions.push(`filePath LIKE '${keyPrefix!.replace(/'/g, "''")}%'`);
+    }
     const where = conditions.length > 0 ? conditions.join(" AND ") : undefined;
 
     return this.withCorruptionRecovery(async () => {
@@ -1231,7 +1235,10 @@ export class LanceDbStore implements ChunkBrowseStore {
     // to brute-force. Await it so the repair completes before this search.
     await this.withWriteLock(() => this.ensureCosineIndex());
 
-    const whereClause = buildWhereClause(filter);
+    const keyFilter = filter?.pathPatterns?.length
+      ? { ...filter, pathPatterns: toKeyPatterns(filter.pathPatterns, this.workspaceDir) }
+      : filter;
+    const whereClause = buildWhereClause(keyFilter);
 
     let results: Record<string, unknown>[];
     try {
@@ -1245,7 +1252,10 @@ export class LanceDbStore implements ChunkBrowseStore {
         return rawResults
           .map((row: Record<string, unknown>) => this.rowToSearchResult(row))
           .filter((r: SearchResult) => r.chunk.id !== "__seed__")
-          .filter((r: SearchResult) => matchesFilterLocal(r.chunk, filter))
+          .filter((r: SearchResult) => matchesFilterLocal(
+            { ...r.chunk, metadata: { ...r.chunk.metadata, filePath: normalizeFilePath(r.chunk.metadata.filePath, this.workspaceDir) } },
+            keyFilter,
+          ))
           .slice(0, topK);
       }
       throw err;

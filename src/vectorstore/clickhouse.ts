@@ -37,8 +37,8 @@ import type {
   VectorStore,
 } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
-import { legacyAbsoluteKeyVariants, normalizeFilePath } from "../core/manifest.js";
-import { normalizeFileExtensions } from "../core/filters.js";
+import { legacyAbsoluteKeyVariants, normalizeFilePath, resolveStoredPath } from "../core/manifest.js";
+import { normalizeFileExtensions, toKeyPatterns } from "../core/filters.js";
 import { getOriginRemote } from "../indexer/git-diff.js";
 
 /** Synthetic filePath prefix for quirk chunks — mirrors lancedb.ts and quirk-store.ts. */
@@ -961,7 +961,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
         params.kinds = filter.kinds;
       }
       if (filter?.pathPatterns?.length) {
-        const likes = filter.pathPatterns.map((pattern, index) => {
+        const likes = toKeyPatterns(filter.pathPatterns, this.opts.workspaceDir).map((pattern, index) => {
           params[`path${index}`] = globToLike(pattern);
           return `file_path LIKE {path${index}:String}`;
         });
@@ -1021,7 +1021,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
         content: row.content,
         description: row.description ?? "",
         metadata: {
-          filePath: row.file_path,
+          filePath: resolveStoredPath(row.file_path, this.opts.workspaceDir),
           startLine: row.start_line,
           endLine: row.end_line,
           language: row.language,
@@ -1100,7 +1100,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
     }
     if (filePrefix) {
       where.push("file_path LIKE {prefix:String}");
-      params.prefix = `${filePrefix}%`;
+      params.prefix = `${toKeyPatterns([filePrefix], this.opts.workspaceDir)[0]}%`;
     }
     const whereSql = where.join(" AND ");
     const [rows, totals] = await Promise.all([
@@ -1240,7 +1240,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
       description: row.description ?? "",
       embedding: withEmbedding ? Array.from(row.embedding ?? []) : undefined,
       metadata: {
-        filePath: row.file_path,
+        filePath: resolveStoredPath(row.file_path, this.opts.workspaceDir),
         startLine: row.start_line,
         endLine: row.end_line,
         language: row.language,

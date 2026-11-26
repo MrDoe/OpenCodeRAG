@@ -17,8 +17,8 @@
  * while the steady-state structures stay compact.
  */
 import type { Chunk, SearchResult, MetadataFilter } from "../core/interfaces.js";
-import { normalizeFilePath } from "../core/manifest.js";
-import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
+import { normalizeFilePath, resolveStoredPath } from "../core/manifest.js";
+import { normalizeFileExtensions, matchesFileExtension, toKeyPatterns } from "../core/filters.js";
 
 const INDEX_VERSION = 4;
 
@@ -199,6 +199,21 @@ export class KeywordIndex {
   /** Per-file bookkeeping key, matching the manifest's key for the same file. */
   private fileKey(filePath: string): string {
     return normalizeFilePath(filePath, this.workspaceDir);
+  }
+
+  /**
+   * Path as persisted: relative, so an index synced through a central store
+   * does not carry the writing machine's directory layout.
+   */
+  private persistedPath(filePath: string): string {
+    if (!this.workspaceDir || filePath.startsWith("quirk:")) return filePath;
+    return this.fileKey(filePath);
+  }
+
+  /** Absolute in-memory form of a persisted path on this machine. */
+  private restorePath(chunk: Chunk): void {
+    if (!this.workspaceDir) return;
+    chunk.metadata.filePath = resolveStoredPath(chunk.metadata.filePath, this.workspaceDir);
   }
 
   addChunks(chunks: Chunk[]): void {
@@ -383,7 +398,7 @@ export class KeywordIndex {
           dangling.push(idx);
           return false;
         }
-        return matchesFilter(chunk, filter);
+        return matchesFilter(chunk, filter, this.workspaceDir);
       })
       .sort((a, b) => b[1] - a[1])
       .slice(0, topK);
@@ -619,7 +634,7 @@ export class KeywordIndex {
           id: chunk.id,
           content: chunk.content,
           description: chunk.description ?? "",
-          filePath: chunk.metadata.filePath,
+          filePath: this.persistedPath(chunk.metadata.filePath),
           startLine: chunk.metadata.startLine,
           endLine: chunk.metadata.endLine,
           language: chunk.metadata.language,
@@ -704,6 +719,7 @@ export class KeywordIndex {
     for (const [id, data] of Object.entries(parsed.chunkMap)) {
       const chunk = decodeChunk(id, data);
       if (!chunk) continue;
+      index.restorePath(chunk);
       index.chunkMap.set(id, chunk);
       const fileKey = index.fileKey(chunk.metadata.filePath);
       let ids = index.fileToIds.get(fileKey);
@@ -882,6 +898,7 @@ export class KeywordIndex {
       const idx = index.idxToId.length;
       index.idxToId.push(id);
       index.idToIdx.set(id, idx);
+      index.restorePath(chunk);
       index.chunkMap.set(id, chunk);
       const fileKey = index.fileKey(chunk.metadata.filePath);
       let ids = index.fileToIds.get(fileKey);
@@ -989,12 +1006,13 @@ function globMatch(pattern: string, filePath: string): boolean {
   return new RegExp("^" + re + "$").test(filePath);
 }
 
-function matchesFilter(chunk: Chunk, filter?: MetadataFilter): boolean {
+function matchesFilter(chunk: Chunk, filter?: MetadataFilter, workspaceDir?: string): boolean {
   if (!filter) return true;
   if (filter.languages?.length && !filter.languages.includes(chunk.metadata.language)) return false;
   if (filter.kinds?.length && !filter.kinds.includes(chunk.metadata.kind ?? "")) return false;
   if (filter.pathPatterns?.length) {
-    return filter.pathPatterns.some((p) => globMatch(p, chunk.metadata.filePath));
+    const key = normalizeFilePath(chunk.metadata.filePath, workspaceDir);
+    return toKeyPatterns(filter.pathPatterns, workspaceDir).some((p) => globMatch(p, key));
   }
   if (!matchesFileExtension(chunk.metadata.filePath, normalizeFileExtensions(filter.fileExtensions))) return false;
   return true;

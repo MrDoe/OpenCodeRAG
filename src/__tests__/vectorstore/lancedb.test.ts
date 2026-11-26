@@ -180,7 +180,8 @@ describe("LanceDbStore (memory)", () => {
 
     const results = await store.search(new Array(384).fill(0.2), 5);
     assert.equal(results.length, 1);
-    assert.equal(results[0]!.chunk.metadata.filePath, normalizeFilePath("src/keep-me.ts"));
+    // Stored relative, handed back absolute for this workspace.
+    assert.equal(results[0]!.chunk.metadata.filePath, path.resolve("src/keep-me.ts"));
   });
 
   it("stores and retrieves description field", async () => {
@@ -352,6 +353,30 @@ describe("LanceDbStore (memory)", () => {
     // deleteByFilePath using relative path must also clean up any legacy absolute variants
     await store.deleteByFilePath(relative);
     assert.equal(await store.count(), 0);
+  });
+
+  it("persists relative keys but returns absolute chunk paths", async () => {
+    await store.clear({ noBackup: true });
+    const workspace = path.resolve("some-workspace");
+    const scoped = new LanceDbStore("memory://", 384, workspace);
+    const absolute = path.join(workspace, "src", "a.ts");
+    await scoped.addChunks([{
+      id: "abs-1",
+      content: "alpha",
+      embedding: new Array(384).fill(0.1),
+      metadata: { filePath: absolute, startLine: 1, endLine: 1, language: "typescript" },
+    }]);
+
+    assert.deepEqual(await scoped.getFilePaths(), ["src/a.ts"]);
+    assert.equal((await scoped.getChunksByFilePath("src/a.ts"))[0]!.metadata.filePath, absolute);
+    // Relative, root-anchored and absolute patterns all reach the same row.
+    for (const pattern of ["src/**", "**/src/**", `${workspace.replace(/\\/g, "/")}/src/**`]) {
+      const filtered = await scoped.searchWithFilter(new Array(384).fill(0.1), 5, { pathPatterns: [pattern] });
+      assert.equal(filtered.length, 1, pattern);
+      assert.equal(filtered[0]!.chunk.metadata.filePath, absolute, pattern);
+    }
+    await scoped.clear({ noBackup: true });
+    await scoped.close();
   });
 
   it("retrieves chunks with pagination via getChunks", async () => {

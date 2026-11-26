@@ -141,6 +141,22 @@ export function legacyAbsoluteKeyVariants(
   return [...new Set([key, key[0]!.toUpperCase() + rest, key[0]!.toLowerCase() + rest])];
 }
 
+/**
+ * The inverse of {@link normalizeFilePath}: turn a persisted key back into the
+ * absolute path on THIS machine. Everything persisted is workspace-relative;
+ * every in-memory chunk carries an absolute path, which is what the read tool,
+ * result formatting and the indexer compare against.
+ *
+ * Synthetic quirk paths (`quirk:<id>`) are not files and are returned as is.
+ *
+ * @param key          - A stored key (relative, or a legacy absolute path).
+ * @param workspaceDir - Workspace root.
+ */
+export function resolveStoredPath(key: string, workspaceDir: string): string {
+  if (!key || path.basename(key).startsWith("quirk:")) return key;
+  return path.resolve(workspaceDir, key);
+}
+
 /** Compute the SHA-256 hex hash of a string. */
 export function computeFileHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
