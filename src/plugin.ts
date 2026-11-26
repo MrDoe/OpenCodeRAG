@@ -2433,10 +2433,15 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
  * Load the persistent keyword index from disk, falling back to an empty
  * index if loading fails.
  */
-async function loadKeywordIndex(storePath: string, logFilePath: string, logLevel?: string): Promise<KeywordIndex> {
+async function loadKeywordIndex(
+  storePath: string,
+  workspaceDir: string,
+  logFilePath: string,
+  logLevel?: string,
+): Promise<KeywordIndex> {
   const { KeywordIndex } = await import("./retriever/keyword-index.js");
   try {
-    const index = await KeywordIndex.load(storePath);
+    const index = await KeywordIndex.load(storePath, workspaceDir);
     appendDebugLog(logFilePath, {
       scope: "plugin",
       message: `Keyword index loaded (${index.count()} chunks, ${index.postingCount()} postings)`,
@@ -2468,7 +2473,7 @@ async function loadKeywordIndex(storePath: string, logFilePath: string, logLevel
       message: "Failed to load keyword index, creating empty",
       error: err,
     }, logLevel);
-    return new KeywordIndex(storePath);
+    return new KeywordIndex(storePath, workspaceDir);
   }
 }
 
@@ -2673,7 +2678,7 @@ export const ragPlugin: Plugin = async (
   // cache when the workspace explicitly selects vector-only search.
   const hybridSearchEnabled = effectiveCfg.retrieval.hybridSearch?.enabled !== false;
   const keywordIndex = hybridSearchEnabled
-    ? await loadKeywordIndex(storePath, logFilePath, logLevel)
+    ? await loadKeywordIndex(storePath, input.directory, logFilePath, logLevel)
     : undefined;
 
   // Restore quirks that are in quirks.jsonl but missing from the vector store

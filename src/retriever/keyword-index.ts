@@ -182,11 +182,24 @@ export class KeywordIndex {
   /** Set by a v3-format load; the plugin re-saves once to migrate. */
   private migratedFromV3 = false;
 
-  constructor(storePath?: string) {
+  /**
+   * @param storePath    - Directory holding `keyword-index.json`.
+   * @param workspaceDir - Workspace root that per-file keys are relative to.
+   *   Defaults to `process.cwd()`, which is wrong inside a host process (the
+   *   OpenCode service) whose cwd is not the indexed workspace.
+   */
+  constructor(storePath?: string, workspaceDir?: string) {
     this.storePath = storePath;
+    this.workspaceDir = workspaceDir;
   }
 
   private readonly storePath?: string;
+  private readonly workspaceDir?: string;
+
+  /** Per-file bookkeeping key, matching the manifest's key for the same file. */
+  private fileKey(filePath: string): string {
+    return normalizeFilePath(filePath, this.workspaceDir);
+  }
 
   addChunks(chunks: Chunk[]): void {
     for (const chunk of chunks) {
@@ -199,7 +212,7 @@ export class KeywordIndex {
       }
       this.chunkMap.set(id, chunk);
 
-      const fileKey = normalizeFilePath(chunk.metadata.filePath);
+      const fileKey = this.fileKey(chunk.metadata.filePath);
       let ids = this.fileToIds.get(fileKey);
       if (!ids) {
         ids = new Set();
@@ -255,7 +268,7 @@ export class KeywordIndex {
   }
 
   removeByFilePath(filePath: string): void {
-    const fileKey = normalizeFilePath(filePath);
+    const fileKey = this.fileKey(filePath);
 
     // Fast path: per-file slot set. Falls back to a full chunkMap scan when
     // the path is not tracked (should not happen for loaded indexes — load()
@@ -268,7 +281,7 @@ export class KeywordIndex {
     } else {
       slots = [];
       for (const [id, chunk] of this.chunkMap) {
-        if (normalizeFilePath(chunk.metadata.filePath) === fileKey) {
+        if (this.fileKey(chunk.metadata.filePath) === fileKey) {
           const idx = this.idToIdx.get(id);
           if (idx !== undefined) slots.push(idx);
         }
@@ -639,14 +652,20 @@ export class KeywordIndex {
     this.migratedFromV3 = false;
   }
 
-  static async load(storePath: string): Promise<KeywordIndex> {
+  /**
+   * Load the persisted index, or return an empty one when there is none.
+   *
+   * @param storePath    - Directory holding `keyword-index.json`.
+   * @param workspaceDir - Workspace root that per-file keys are relative to.
+   */
+  static async load(storePath: string, workspaceDir?: string): Promise<KeywordIndex> {
     const targetPath = indexPathFor(storePath);
     const { readFile, access, stat } = await import("node:fs/promises");
 
     try {
       await access(targetPath);
     } catch {
-      return new KeywordIndex(storePath);
+      return new KeywordIndex(storePath, workspaceDir);
     }
 
     const fileStat = await stat(targetPath);
@@ -656,24 +675,24 @@ export class KeywordIndex {
       try {
         parsed = JSON.parse(raw) as SerializedKeywordIndexV4 | SerializedKeywordIndexV3;
       } catch {
-        return new KeywordIndex(storePath);
+        return new KeywordIndex(storePath, workspaceDir);
       }
     } else {
       try {
         parsed = await KeywordIndex.loadLargeV4(targetPath, fileStat.size);
       } catch {
-        return new KeywordIndex(storePath);
+        return new KeywordIndex(storePath, workspaceDir);
       }
     }
 
     if (parsed.version === 3) {
-      return KeywordIndex.loadV3(storePath, parsed);
+      return KeywordIndex.loadV3(storePath, parsed, workspaceDir);
     }
     if (parsed.version !== INDEX_VERSION) {
-      return new KeywordIndex(storePath);
+      return new KeywordIndex(storePath, workspaceDir);
     }
 
-    const index = new KeywordIndex(storePath);
+    const index = new KeywordIndex(storePath, workspaceDir);
 
     // Chunk slots follow the serialized ids array; ids missing from chunkMap
     // stay a slot so dangling-posting self-healing behaves as it did with v3.
@@ -686,7 +705,7 @@ export class KeywordIndex {
       const chunk = decodeChunk(id, data);
       if (!chunk) continue;
       index.chunkMap.set(id, chunk);
-      const fileKey = normalizeFilePath(chunk.metadata.filePath);
+      const fileKey = index.fileKey(chunk.metadata.filePath);
       let ids = index.fileToIds.get(fileKey);
       if (!ids) {
         ids = new Set();
@@ -849,8 +868,12 @@ export class KeywordIndex {
   /** Read the legacy Map-era format and build the CSR representation.
    *  Transient parse peaks exist for this ONE read; the plugin migrates to v4
    *  immediately after (needsFormatMigration) so later boots are cheap. */
-  private static loadV3(storePath: string, parsed: SerializedKeywordIndexV3): KeywordIndex {
-    const index = new KeywordIndex(storePath);
+  private static loadV3(
+    storePath: string,
+    parsed: SerializedKeywordIndexV3,
+    workspaceDir?: string,
+  ): KeywordIndex {
+    const index = new KeywordIndex(storePath, workspaceDir);
     index.migratedFromV3 = true;
 
     for (const [id, data] of Object.entries(parsed.chunkMap)) {
@@ -860,7 +883,7 @@ export class KeywordIndex {
       index.idxToId.push(id);
       index.idToIdx.set(id, idx);
       index.chunkMap.set(id, chunk);
-      const fileKey = normalizeFilePath(chunk.metadata.filePath);
+      const fileKey = index.fileKey(chunk.metadata.filePath);
       let ids = index.fileToIds.get(fileKey);
       if (!ids) {
         ids = new Set();

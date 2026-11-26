@@ -122,8 +122,8 @@ export async function startWebUi(
     }
   }
   const keywordIndex = cfg?.retrieval.hybridSearch?.enabled === false
-    ? new KeywordIndex(storePath)
-    : await KeywordIndex.load(storePath);
+    ? new KeywordIndex(storePath, cwd)
+    : await KeywordIndex.load(storePath, cwd);
   const browseStore = asBrowseStore(store);
 
   // Lazy embedder for /api/retrieve — initialized on first use.

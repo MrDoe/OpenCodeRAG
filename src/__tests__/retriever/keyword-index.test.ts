@@ -14,6 +14,24 @@ function makeChunk(id: string, content: string, filePath = "test.ts", startLine 
   };
 }
 
+describe("KeywordIndex file keys", () => {
+  it("removes a file by workspace-relative key when the process cwd differs", async () => {
+    // The OpenCode service runs outside the workspace: chunks arrive with
+    // absolute paths, the indexer removes them by the manifest's relative key.
+    const workspace = mkdtempSync(path.join(tmpdir(), "keyword-index-ws-"));
+    const storePath = path.join(workspace, "rag_db");
+    const index = new KeywordIndex(storePath, workspace);
+    index.addChunks([makeChunk("c1", "function foo", path.join(workspace, "src", "a.ts"))]);
+    assert.deepEqual(index.getIndexedFilePaths(), ["src/a.ts"]);
+
+    await index.save();
+    const loaded = await KeywordIndex.load(storePath, workspace);
+    assert.deepEqual(loaded.getIndexedFilePaths(), ["src/a.ts"]);
+    loaded.removeByFilePath("src/a.ts");
+    assert.equal(loaded.count(), 0);
+  });
+});
+
 describe("tokenize", () => {
   it("splits on non-alphanumeric characters", () => {
     const tokens = tokenize("hello world foo-bar");

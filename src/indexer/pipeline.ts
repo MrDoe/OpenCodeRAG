@@ -490,6 +490,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       await rehydrateKeywordIndex({
         store: effectiveStore,
         keywordIndex: options.keywordIndex,
+        cwd: options.cwd,
         logger: {
           info: (message) => logger.info(message),
           warn: (message) => logger.warn(message),

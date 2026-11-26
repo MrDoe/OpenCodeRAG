@@ -119,12 +119,12 @@ async function resolveDimension(
 }
 
 /** Load the keyword index from disk, or create a new empty one if loading fails. */
-async function loadKeywordIndex(storePath: string): Promise<IKeywordIndex> {
+async function loadKeywordIndex(storePath: string, workspaceDir: string): Promise<IKeywordIndex> {
   try {
-    const idx = await KeywordIndex.load(storePath);
+    const idx = await KeywordIndex.load(storePath, workspaceDir);
     return idx;
   } catch {
-    return new KeywordIndex(storePath);
+    return new KeywordIndex(storePath, workspaceDir);
   }
 }
 
@@ -213,8 +213,8 @@ export async function resolveRagContext(
   }
 
   const keywordIndex = opts.skipKeywordIndex
-    ? new KeywordIndex(storePath)
-    : await loadKeywordIndex(storePath);
+    ? new KeywordIndex(storePath, workDir)
+    : await loadKeywordIndex(storePath, workDir);
 
   // Reconcile quirks.jsonl into the store + keyword index (best-effort).
   // Full rebuilds rebuild the table from workspace files only — the preserved

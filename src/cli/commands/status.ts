@@ -262,7 +262,7 @@ export function registerStatusCommand(program: Command): void {
         // not cover is unreachable through keyword search — report the gap
         // instead of printing two unrelated chunk counts.
         if (config.retrieval.hybridSearch?.enabled && keywordIndex) {
-          const gaps = await findKeywordIndexGaps(store, keywordIndex);
+          const gaps = await findKeywordIndexGaps(store, keywordIndex, cwd);
           if (gaps.length > 0) {
             logCliInfo(
               logFilePath,

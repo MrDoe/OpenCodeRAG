@@ -31,6 +31,11 @@ export interface KeywordRehydrationOptions {
     warn?(message: string): void;
     debug?(message: string): void;
   };
+  /**
+   * Workspace root that the keyword index's file keys are relative to.
+   * Defaults to `process.cwd()`.
+   */
+  cwd?: string;
   /** Maximum number of files to rehydrate in one call (0/undefined = unlimited). */
   maxFiles?: number;
   /**
@@ -100,7 +105,7 @@ export async function rehydrateKeywordIndex(
   const missing = storePaths.filter((p) => {
     // Quirk rows belong to quirks.jsonl — reconcileQuirks() owns them.
     if (path.basename(p).startsWith(QUIRK_FILE_PREFIX)) return false;
-    return !indexed.has(normalizeFilePath(p));
+    return !indexed.has(normalizeFilePath(p, options.cwd));
   });
   result.missingFiles = missing.length;
   if (missing.length === 0) return result;
@@ -172,14 +177,14 @@ export async function rehydrateKeywordIndex(
 
       const byPath = new Map<string, Chunk[]>();
       for (const chunk of rows) {
-        const key = normalizeFilePath(chunk.metadata.filePath);
+        const key = normalizeFilePath(chunk.metadata.filePath, options.cwd);
         const bucket = byPath.get(key);
         if (bucket) bucket.push(chunk);
         else byPath.set(key, [chunk]);
       }
       for (const filePath of batch) {
         try {
-          addFileChunks(byPath.get(normalizeFilePath(filePath)) ?? []);
+          addFileChunks(byPath.get(normalizeFilePath(filePath, options.cwd)) ?? []);
         } catch (err) {
           result.failedFiles.push(filePath);
           logger?.warn?.(
@@ -204,11 +209,13 @@ export async function rehydrateKeywordIndex(
  *
  * @param store - The vector store holding the authoritative chunk rows.
  * @param keywordIndex - The keyword index to compare.
+ * @param cwd - Workspace root that the keyword index's file keys are relative to.
  * @returns The files the store has that the keyword index does not cover.
  */
 export async function findKeywordIndexGaps(
   store: VectorStore,
   keywordIndex: KeywordIndex,
+  cwd?: string,
 ): Promise<string[]> {
   let storePaths: string[];
   try {
@@ -219,6 +226,6 @@ export async function findKeywordIndexGaps(
   const indexed = new Set(keywordIndex.getIndexedFilePaths());
   return storePaths.filter((p) => {
     if (path.basename(p).startsWith(QUIRK_FILE_PREFIX)) return false;
-    return !indexed.has(normalizeFilePath(p));
+    return !indexed.has(normalizeFilePath(p, cwd));
   });
 }
