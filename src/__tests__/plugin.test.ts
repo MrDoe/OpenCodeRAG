@@ -1373,6 +1373,93 @@ describe("ragPlugin", () => {
     );
   });
 
+  it("freezes the system-prompt gotcha block per session so the prompt prefix stays cacheable", async () => {
+    const store = new InMemoryVectorStore();
+    const keywordIndex = new KeywordIndex();
+    const embedder: EmbeddingProvider = {
+      name: "test",
+      embed: async (texts) => texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+    };
+    const storePath = "memory://gotcha-freeze-1";
+    const cfg = makeConfig({
+      memory: {
+        ...DEFAULT_CONFIG.memory,
+        enabled: true,
+        autoInject: false,
+        injectOnToolError: true,
+        toolErrorProactiveInject: true,
+        autoCreateOnToolError: true,
+        toolErrorCreateCooldownMs: 0,
+      },
+    });
+    const { dependencies } = makeDependencies([], 1);
+    const hooks = createRagHooks({
+      cfg,
+      storePath,
+      logFilePath: path.join(tmpdir(), "opencode-rag.log"),
+      store,
+      embedder,
+      keywordIndex,
+      dependencies,
+      worktree: testWorktree,
+    });
+    const qDeps = { embedder, store, keywordIndex, cfg, storePath };
+    await addQuirk(qDeps, {
+      content: "Tool `write` failed: Unknown tool 'write'",
+      quirkType: "gotcha",
+      tags: ["tool-error", "auto-created", "tool:write", "cause:unknown-tool"],
+      confidence: 0.6,
+    });
+
+    const systemHook = hooks["experimental.chat.system.transform"];
+    assert.ok(systemHook);
+    const input = {
+      sessionID: "session-freeze",
+      model: { providerID: "test", modelID: "test" },
+      tools: { write: { description: "write", input: {} }, bash: { description: "bash", input: {} } },
+    };
+    const first = { system: [] as string[] };
+    await systemHook?.(input as never, first as never);
+    assert.ok(
+      first.system.find((s) => /Known tool gotchas/.test(s)),
+      "the known gotcha must be injected on the first request",
+    );
+
+    // A failure in ANOTHER session creates a new gotcha mid-way and drops the
+    // 30 s quirk cache — the worst case for prompt-prefix stability.
+    const after = hooks["tool.execute.after"];
+    assert.ok(after);
+    await after(
+      { tool: "bash", sessionID: "session-other", callID: "call-1", status: "error" } as never,
+      {
+        title: "bash",
+        output: "",
+        metadata: {},
+        error: 'Invalid arguments for tool "bash":\n- command: Missing key',
+      } as never,
+    );
+    const created = (await store.getChunks(0, 50)).filter(
+      (c) => c.kind === "quirk" && c.tags.includes("tool-error") && c.tags.includes("tool:bash"),
+    );
+    assert.equal(created.length, 1, "the mid-session failure must create a new gotcha");
+
+    // Same session: the injected system prompt must be byte-identical — a
+    // changed prefix would invalidate the provider's cache for the whole
+    // conversation (issue #43).
+    const second = { system: [] as string[] };
+    await systemHook?.(input as never, second as never);
+    assert.deepEqual(
+      second.system,
+      first.system,
+      "the system prompt must not change within a session (prompt-cache safety)",
+    );
+
+    // A new session picks up the gotcha created in between.
+    const other = { system: [] as string[] };
+    await systemHook?.({ ...input, sessionID: "session-freeze-2" } as never, other as never);
+    assert.match(other.system.join("\n"), /bash/, "a new session sees the new gotcha");
+  });
+
   it("does not create a quirk when the tool-error path is disabled", async () => {    const store = new InMemoryVectorStore();
     const embedder: EmbeddingProvider = {
       name: "test",

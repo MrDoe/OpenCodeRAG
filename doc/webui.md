@@ -17,10 +17,22 @@ Opens `http://127.0.0.1:3210` in your browser automatically.
 | Flag | Default | Description |
 |---|---|---|
 | `-p, --port <number>` | `3210` | Port to listen on |
+| `-a, --address <host>` | `127.0.0.1` | Address to bind (`0.0.0.0` exposes the dashboard beyond this machine, e.g. inside a container) |
 | `--no-open` | — | Skip automatic browser launch |
 | `-c, --config <path>` | auto-detected | Path to config file |
 
-The server binds to `127.0.0.1` only (localhost). Press `Ctrl+C` to stop.
+The server binds to `127.0.0.1` (localhost) by default. Press `Ctrl+C` to stop.
+
+**Containers / port forwarding:** a published container port forwards to the container's public IP, so a loopback-only bind is unreachable from the host. Bind wider — `opencode-rag ui -a 0.0.0.0` or `"ui": { "host": "0.0.0.0" }` — and the printed output lists the reachable URLs (loopback first, then the machine's LAN addresses). The per-run token in the URL is then the only protection: never expose the port to the internet.
+
+```yaml
+services:
+  opencode-rag-ui:
+    image: ghcr.io/anomalyco/opencode:2.3.0
+    ports:
+      - 3210:3210
+    command: ["opencode-rag", "ui", "-a", "0.0.0.0"]
+```
 
 `opencode-rag setup` reuses the same server: a successful interactive run opens the **Configuration** view directly (`…/?token=…#config`) and keeps the server running until you press `Ctrl+C`. The launch is skipped with `--no-ui`, with `--yes`, and in non-interactive terminals.
 
@@ -30,6 +42,7 @@ The server binds to `127.0.0.1` only (localhost). Press `Ctrl+C` to stop.
 {
   "ui": {
     "port": 3210,
+    "host": "127.0.0.1",
     "openBrowser": true
   }
 }
@@ -38,6 +51,7 @@ The server binds to `127.0.0.1` only (localhost). Press `Ctrl+C` to stop.
 | Option | Default | Description |
 |---|---|---|
 | `port` | `3210` | HTTP server port |
+| `host` | `"127.0.0.1"` | Bind address. `0.0.0.0` exposes the dashboard beyond the machine (containers, port forwards); the per-run token is the only protection then |
 | `openBrowser` | `true` | Open browser on start |
 
 ## Views

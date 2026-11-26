@@ -347,6 +347,14 @@ export interface ShellGuardConfig {
 export interface UiConfig {
   /** HTTP port for the UI server. */
   port: number;
+  /**
+   * Host/address the UI server binds to.
+   *
+   * `127.0.0.1` keeps the dashboard local. Set `0.0.0.0` (or `::`) when the
+   * UI runs inside a container with a published port — the per-run API token
+   * is then the only protection, so never expose it to the internet.
+   */
+  host: string;
   /** Whether to automatically open the browser on startup. */
   openBrowser: boolean;
   /**
@@ -1257,6 +1265,7 @@ export const DEFAULT_CONFIG: RagConfig = {
   },
   ui: {
     port: 3210,
+    host: "127.0.0.1",
     openBrowser: true,
     theme: "dark",
   },

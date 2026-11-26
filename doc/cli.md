@@ -283,9 +283,10 @@ opencode-rag ui [options]
 |---|---|---|
 | `-c, --config <path>` | auto-detected | Path to config file |
 | `-p, --port <number>` | `3210` | Port to listen on (`ui.port` in the config) |
+| `-a, --address <host>` | `127.0.0.1` | Address to bind (`ui.host` in the config; use `0.0.0.0` in containers/port-forward setups) |
 | `--no-open` | — | Skip the automatic browser launch |
 
-Launches a local HTTP server (default port `3210`, configurable via `ui.port`). Opens the browser automatically unless `ui.openBrowser` is `false`. The hash route selects the initial view — `#config` opens the Configuration page, `#search` the search playground. See [Web UI documentation](webui.md).
+Launches a local HTTP server (default port `3210`, configurable via `ui.port`). It binds to `127.0.0.1` unless `ui.host` / `--address` widens it — with a wildcard bind the printed output lists the reachable URLs (loopback first, then LAN addresses) and warns that the per-run token is the only protection. Opens the browser automatically unless `ui.openBrowser` is `false`. The hash route selects the initial view — `#config` opens the Configuration page, `#search` the search playground. See [Web UI documentation](webui.md).
 
 ### `mcp`
 

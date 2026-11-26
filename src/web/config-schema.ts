@@ -1174,6 +1174,10 @@ export const SETTINGS_SECTIONS: SettingSection[] = [
         impact: "restart",
         description: "HTTP port of this dashboard. Changing it requires a restart.",
       }),
+      string(["ui", "host"], "Bind address", {
+        impact: "restart",
+        description: "Address this dashboard binds to. 127.0.0.1 keeps it local; 0.0.0.0 exposes it beyond the machine (e.g. inside a container with a published port). The per-run token is then the only protection.",
+      }),
       boolean(["ui", "openBrowser"], "Open browser on start", {
         impact: "restart",
         description: "Open the dashboard in the default browser when the server starts.",

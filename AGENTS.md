@@ -48,7 +48,7 @@ Full architecture: [doc/architecture.md](doc/architecture.md).
 - **Auto-capture dedup**: candidate quirks are deduped against existing quirks via lexical similarity (`autoCaptureDedupThreshold`, default 0.85) before being added.
 - **Tool-error quirks are auto-created** (`memory.autoCreateOnToolError`, default true): a failed tool call with no matching memory gets a NEW quirk — a deterministic template (`Tool \`x\` failed: <error>` + a classified cause), no LLM, so it works with `description.enabled: false`. Four rules keep it from polluting memory: (1) the recall runs ONCE and the "does an equivalent quirk already exist?" check is **EXACT** — a metadata match on the `tool:<name>` + `cause:<class>` tags, NOT a loose similarity floor (measured 2026-10-20: an error query scores **0.55-0.63** against arbitrary stored quirks, so a 0.6 floor sits inside the noise band and matches unrelated quirks — it suppressed creation on every real failure); (2) creation is bounded by a per-session budget (`toolErrorCreateMaxPerSession`, 2) + a per-signature cooldown (`toolErrorCreateCooldownMs`, 10 min); (3) the created quirk is tagged `tool-error` and is EXCLUDED from the generic auto-inject paths (`recallQuirks`' new `excludeTags` option) so a raw error dump never leaks into an unrelated turn; (4) the INJECTION budget limits context, not memory, so it no longer blocks creation — the two are decoupled. The created quirk is persisted for future sessions, NOT injected into the failing turn (`toolErrorInjectCreated`, default false). The trust monitor is NOT bypassed: an error text containing a blocked pattern (e.g. a shell error echoing `rm -rf`) is rejected and only logged. Threshold on `rawSimilarity` (`explanation.scoreBreakdown.rawVectorScore`), never on `recallQuirks`' `score` — that one is confidence-discounted (`similarity * confidence`) and is not comparable to a similarity threshold.
 - **All errors are intercepted, not just host-reported ones** (`memory.interceptAllErrors`, default true): OpenCode reports only a *host-level* rejection (schema/argument validation) as `status=error` — a command that exits non-zero, a script that raises, a file that cannot be read are all delivered as `status=completed` with the failure mentioned only in the output, so the quirk path was blind to the most common real failure. `src/quirks/error-signals.ts` scans the completed branch's output for **high-precision** markers (OpenCode's own `Exited with code N` — the only machine-readable failure signal in a command's output, measured live 2026-10-21; Node errno codes; Python tracebacks; `npm ERR!`; uncaught JS exceptions; process crashes) plus the `session.execution.failed` event for model/provider failures (V2's name — `session.error` is never emitted). Generic `Error:` anywhere and localized "not found" are deliberately NOT matched: a false positive costs a recall, a possible quirk write, and an injected block in the next request. Detected failures re-use the whole recall→inject→create path; `causeClassOverride` supplies a stable cause class (e.g. `exit-code`) so the EXACT duplicate check still works on raw stderr, which is too varied for the classifier alone. TWO rules keep the false-positive rate at zero, both learned from live probes: (1) the **structured exit code wins** — the shell tool reports `{ status, truncated, exit }` in the result metadata, and a non-zero code is definitive while a ZERO code means the command SUCCEEDED, so a marker-looking string in a successful command's output is not a failure; (2) the **text rules apply only to command-execution tools** (`shell`/`bash`/`run`/`exec`/`command`) — a `grep` or `read` returns FILE CONTENT, and a file documenting "EACCES / EPERM" was reported as a permission failure and wrote a quirk. Non-command tools get one exception: the plugin's own `Could not read file:` message, which is the whole output when it happens.
-- **Proactive tool gotchas** (`memory.toolErrorProactiveInject`, default true): the known tool gotchas are injected into the SYSTEM PROMPT *before* the model picks a tool, so a failure that already happened in an earlier session is not repeated. The injection point is `experimental.chat.system.transform` (V2: `ctx.session.hook("context")`) — it is the ONLY pre-decision injection surface: `tool.execute.before` can only mutate `output.args` (and the V2 adapter does not forward it at all), and `tool.transform` can only ADD tools, not modify a built-in tool's description. The block is scoped to the session's **tool catalog** (`input.tools`, measured live: 27 tools incl. write/edit/shell/read) and to **durable** cause classes only (unknown-tool, schema, permissions, path) — a transient failure (rate limit, timeout) must NEVER be warned about in advance, because the next call will not fail the same way. Reads the tool-error quirks from `quirks.jsonl` directly (`listToolErrorQuirks`), NOT via `listQuirks`: that function falls back to scanning the whole vector store when the audit log is missing, which is far too expensive for a per-request path. Cached 30 s, invalidated when a quirk is created.
+- **Proactive tool gotchas** (`memory.toolErrorProactiveInject`, default true): the known tool gotchas are injected into the SYSTEM PROMPT *before* the model picks a tool, so a failure that already happened in an earlier session is not repeated. The injection point is `experimental.chat.system.transform` (V2: `ctx.session.hook("context")`) — it is the ONLY pre-decision injection surface: `tool.execute.before` can only mutate `output.args` (and the V2 adapter does not forward it at all), and `tool.transform` can only ADD tools, not modify a built-in tool's description. The block is scoped to the session's **tool catalog** (`input.tools`, measured live: 27 tools incl. write/edit/shell/read) and to **durable** cause classes only (unknown-tool, schema, permissions, path) — a transient failure (rate limit, timeout) must NEVER be warned about in advance, because the next call will not fail the same way. Reads the tool-error quirks from `quirks.jsonl` directly (`listToolErrorQuirks`), NOT via `listQuirks`: that function falls back to scanning the whole vector store when the audit log is missing, which is far too expensive for a per-request path. The block is **frozen per session** (the 30 s read cache only feeds the first request of a session): recomputing it per request changed the first bytes of the system prompt whenever quirk state changed and invalidated the provider's prompt-prefix cache (issue #43). A gotcha created mid-session surfaces in the next session.
 - **OpenCode reports only SOME failures as tool errors**: a bash command with a non-zero exit is `status=completed` (the exit code is in the output text), and a tool that handles its own error internally (e.g. the RAG `read` override on a missing file) is also `completed`. Only a host-level rejection (schema/argument validation) is `status=error`. With `memory.interceptAllErrors` (default true) the plugin ALSO scans the *completed* branch's output for failure markers, so those failures are recorded too — but only when a high-precision marker is present. A tool that swallows its error with no marker in the output stays invisible, by design.
 - **OpenCode V2 renamed the event stream — a V1 event name never fires and fails silently.** The payload lives in `data` and V2 never sets `properties` (measured live 2026-10-21: `hasData=true, hasProperties=false` for every event of a full session); the V1 names `message.updated` / `message.part.updated` had **zero** occurrences. The real names are `session.execution.{started,succeeded,failed}`, `session.text.{started,delta,ended}`, `session.reasoning.*`, `session.step.*`, `session.tool.*`. Two consequences fixed in this release: the session-failure interception listens for **`session.execution.failed`** (`{ sessionID, error }` in `data`) — `session.error` exists in the schema but V2 never emits it; and the assistant-text accumulation (which feeds the 2-message auto-inject query) now listens for `session.text.delta` (`{ sessionID, assistantMessageID, delta }`) — the V1 branch was DEAD on V2, so the query silently fell back to the user message only. RULE: verify the event vocabulary empirically (a probe plugin that logs `{ type, keys, hasData }` over one `opencode run --standalone` gives the whole vocabulary); an event-name mismatch cannot fail loudly, it just makes a feature do nothing forever.
 - **The `tool.execute.after` hook fires AFTER the tool result reaches the model**: the hook writes its log line and updates state in the same turn the tool result is delivered, so a log check issued in that turn sees the pre-write state. Read the log in a LATER turn — otherwise the feature looks broken when it is not.
@@ -105,60 +105,27 @@ afterwards if you want the bump commit on `origin/main` — the scripts push `ma
 <!-- BEGIN opencode-rag -->
 ## Code Navigation
 
-ALWAYS use OpenCodeRAG tools before reading or editing:
-- **Search first** — `search_semantic(query)` instead of grep/glob
-- **Skeleton before read** — `get_file_skeleton(filePath)` then read specific lines
-- **Usages before edit** — `find_usages(symbolName)` before modifying any symbol
-- **Images via describe** — `describe_image(filePath, systemPrompt?)` — never read raw bytes
-- **Recall quirks** — `recall_quirks(query)` when you hit a known pitfall
-- **Add quirks** — `add_quirk(content)` when you discover a non-obvious fact
-- **Fix quirks** — `update_quirk(id, ...)` / `delete_quirk(id)` when a stored quirk is outdated or wrong
+OpenCodeRAG indexes this workspace.
 
-If no results, run `opencode-rag index`.
+- First move, every task: `search_semantic` goes IN the first tool batch - an orientation call may share that batch, it never precedes it.
+- Re-search when the working area changes: one search per area, not one per task.
+- Authoritative elsewhere? When another system owns the current copy (source control, an MCP server, a database, an API), fetch it there first - `search_semantic` covers the local mirror and cross-cutting questions.
+- A weak result is a lead, not an answer: read the printed relevance, then verify with `read` before concluding.
 
-### Decision tree — ALWAYS follow this order
-1. User mentions code behavior/architecture → `search_semantic(query)`
-2. User mentions a file path → `get_file_skeleton(filePath)` THEN `read` on specific lines
-3. User mentions a function/class/variable to edit → `find_usages(symbolName)` THEN `search_semantic` THEN `edit`
-4. User asks a code question → `search_semantic` to gather context before answering
-5. User asks about an image or visual asset → `describe_image(filePath)` (optionally pass `systemPrompt` to focus on specific features) to retrieve its generated description, then optionally `search_semantic` for related code
-6. You encounter an error or need to recall a known pitfall → `recall_quirks(query)`
-7. You discover a non-obvious fact or workaround → `add_quirk(content)` to persist it for future sessions
-8. A recalled quirk is outdated or wrong → `update_quirk(id, ...)` to fix it, or `delete_quirk(id)` if it no longer applies
+Tools: `search_semantic` finds code by meaning - use it before grep; `get_file_skeleton` before reading a file; `find_usages` before editing a symbol; `describe_image` for images, never raw bytes; `recall_quirks` / `add_quirk` / `update_quirk` / `delete_quirk` for experiential memory. Signatures live in the tool schema, not here.
 
-### Proactive triggers — you MUST call these tools when
-- User asks about code behavior, architecture, or implementation details
-- User asks to edit, refactor, or fix code — call `find_usages` first
-- User references files or functions you haven't read yet
-- User says "find", "search", "look up", "where is", "how does"
-- User refers to an image, screenshot, diagram, or visual asset
-- Before answering ANY code-related question, retrieve context first
-- Before reading ANY file, call `get_file_skeleton` to orient first
+A search that returns nothing useful usually means the workspace is not indexed: run `opencode-rag index` (or `opencode-rag status` to check).
 
-### Anti-patterns — NEVER do these
-- Reading full files without calling `get_file_skeleton` first (wastes tokens)
-- Editing a function without calling `find_usages` first (breaks call sites)
-- Answering code questions without calling `search_semantic` first (you guess at behavior)
-- Using `grep`/`glob` when `search_semantic` would find the answer faster
-- Treating image files as text — use `describe_image` instead of reading raw bytes
-- Using `npx opencode-rag quirk` shell commands instead of the built-in quirk tools (`add_quirk` / `recall_quirks` / `update_quirk` / `delete_quirk`) (the tools are faster, already loaded in-process, and go through the trust monitor)
+`make_decision(state, questions)` classifies/routes/scores short text with the local decision model; with `decision.routeBeforeAsking` set, route option choices through it before asking the user.
 
-### MANDATORY quirk capture rules — you MUST call `add_quirk` when
-- A build, test, or type-check command fails and you resolve it
-- You discover an undocumented library constraint, peer dep, or workaround
-- You learn an environment-specific requirement (OS, tool version, etc.)
-- You make a design decision that future sessions should remember
-- You resolve a gotcha that cost more than one attempt
-
-### MANDATORY quirk hygiene — you MUST call `update_quirk` or `delete_quirk` when
-- A stored quirk is outdated, wrong, or has been fixed — update it or delete it instead of adding a contradicting duplicate
-- NEVER finish a coding session without adding quirks for resolved errors.
+Quirks: call `add_quirk` after resolving a failed build/test/type-check, an undocumented constraint, or a gotcha that cost more than one attempt; `update_quirk`/`delete_quirk` instead of storing a contradicting duplicate.
 
 ### Long-running commands
-Long-running commands:
 - Any `shell` call expected to take more than 30s MUST set `background: true` (returns immediately; the session is notified on completion) or set an explicit `timeout` (ms).
 - Default foreground timeout: 120000ms. Never run builds/tests/indexes in the foreground beyond 30s; if a call is already running, press Ctrl+B to background it (OpenCode: `session.background`).
 - OpenCodeRAG measures foreground shell duration and records a quirk when a call exceeds the threshold, so repeated foreground runs become visible.
+
+The full protocol (decision tree, proactive triggers, anti-patterns) is injected into the system prompt by the plugin - `openCode.injectSystemPrompt`. Do not restate it here.
 <!-- END opencode-rag -->
 
 <!-- opencode-crosstalk:begin -->

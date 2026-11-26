@@ -13,6 +13,7 @@ import type { ChunkBrowseStore, VectorStore } from "../core/interfaces.js";
 import { KeywordIndex } from "../retriever/keyword-index.js";
 import { createApiHandler } from "./api.js";
 import { getStaticHtml, resolveDistAsset } from "./static.js";
+import { resolveUiBindHost } from "./bind.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const uiDir = join(__dirname, "ui");
@@ -75,6 +76,8 @@ function serveUiAsset(res: ServerResponse, filePath: string): void {
 
 /** Describes a running OpenCodeRAG Web UI instance, providing the bound port and a graceful shutdown method. */
 export interface WebUiServer {
+  /** The host the HTTP server is bound to (`127.0.0.1` by default, `0.0.0.0` when widened). */
+  host: string;
   /** The port the HTTP server is listening on. */
   port: number;
   /** Random per-run token required on every `/api/*` request (Bearer header or `?token=`). */
@@ -103,7 +106,8 @@ export async function startWebUi(
   cwd?: string,
   vectorDimension: number = 384,
   cfg?: import("../core/config.js").RagConfig,
-  configPath?: string
+  configPath?: string,
+  host?: string
 ): Promise<WebUiServer> {
   const store = cfg
     ? createVectorStore(cfg, storePath, vectorDimension, cwd ?? process.cwd())
@@ -212,13 +216,17 @@ export async function startWebUi(
   });
 
   return new Promise((resolve, reject) => {
+    // Explicit CLI value > `ui.host` > loopback. Binding wider than loopback
+    // is opt-in (containers, port forwards); the API token stays required.
+    const bindHost = resolveUiBindHost(host, cfg?.ui?.host);
     server.on("error", reject);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, bindHost, () => {
       // Report the bound port, not the requested one: `port: 0` asks the OS
       // for a free port and callers print this value in the UI URL.
       const address = server.address();
       const boundPort = typeof address === "object" && address ? address.port : port;
       resolve({
+        host: bindHost,
         port: boundPort,
         token,
         close: () =>
