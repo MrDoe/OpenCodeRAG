@@ -1189,7 +1189,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       store,
       embedder,
       cfg: effectiveCfg,
-      keywordIndex: keywordIndex!,
+      keywordIndex: keywordIndex,
       storePath: options.storePath,
     });
     tools["recall_quirks"] = recallQuirksTool;
@@ -1206,7 +1206,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       store,
       embedder,
       cfg: effectiveCfg,
-      keywordIndex: keywordIndex!,
+      keywordIndex: keywordIndex,
       storePath: options.storePath,
     });
     tools["add_quirk"] = addQuirkTool;
@@ -1223,7 +1223,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       store,
       embedder,
       cfg: effectiveCfg,
-      keywordIndex: keywordIndex!,
+      keywordIndex: keywordIndex,
       storePath: options.storePath,
     });
     tools["update_quirk"] = updateQuirkTool;
@@ -1240,7 +1240,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       store,
       embedder,
       cfg: effectiveCfg,
-      keywordIndex: keywordIndex!,
+      keywordIndex: keywordIndex,
       storePath: options.storePath,
     });
     tools["delete_quirk"] = deleteQuirkTool;
@@ -1361,7 +1361,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       });
       boundedSet(sessionToolErrorState, sessionID, state, MAX_SESSION_MAP_SIZE);
 
-      const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
+      const qDeps = { embedder, store, keywordIndex: keywordIndex, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
       // `explain: true` keeps the raw vector similarity on each result —
       // the confidence-discounted `score` is not comparable to a
       // similarity threshold, and the tiering below needs the raw value.
@@ -1631,7 +1631,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
               const effCfg = getEffectiveCfg();
               const memCfg = effCfg.memory;
               if (memCfg?.sessionEndExtraction && options.descriptionProvider) {
-                const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: effCfg, storePath: options.storePath, flushState: flushState };
+                const qDeps = { embedder, store, keywordIndex: keywordIndex, cfg: effCfg, storePath: options.storePath, flushState: flushState };
                 void autoCaptureQuirks(qDeps, options.descriptionProvider, transcript, effCfg, { captureAll: true }).catch(() => {});
               }
               boundedSet(sessionTranscript, sessionID, [], MAX_SESSION_MAP_SIZE);
@@ -1692,7 +1692,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
                 const current = (sessionShellLongCount.get(counterKey) ?? 0);
                 if (current < 3) {
                   sessionShellLongCount.set(counterKey, current + 1);
-                  const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
+                  const quirkDeps = { embedder, store, keywordIndex: keywordIndex, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
                   void addQuirk(quirkDeps, {
                     content: `A foreground shell command took ${durSec}s: \`${cmd}\`. Prefer \`background: true\` or an explicit \`timeout\` for long commands; press Ctrl+B to background a running call.`,
                     quirkType: "gotcha",
@@ -1787,7 +1787,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         if (toolNames.length > 0) {
           const memCfg = getEffectiveCfg().memory;
           if (memCfg?.enabled && memCfg.toolErrorProactiveInject) {
-            const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
+            const qDeps = { embedder, store, keywordIndex: keywordIndex, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
             const gotchas = selectToolGotchas(
               await getToolErrorQuirks(qDeps),
               toolNames,
@@ -1862,7 +1862,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             const userReq = sessionPrevUserReq.get(quirkSessionId) ?? "";
             const query = [assistantText, userReq].filter((t) => t.length > 0).join("\n");
             if (query.length > 0) {
-              const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
+              const quirkDeps = { embedder, store, keywordIndex: keywordIndex, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
               const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, quirkSessionId, MAX_SESSION_MAP_SIZE);
               const selection = await selectAutoInjectQuirksWithinBudget(
                 (q, o) => recallQuirks(quirkDeps, q, { ...o, excludeTags: [TOOL_ERROR_QUIRK_TAG] }),
@@ -1946,7 +1946,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             const assistantText = sessionAssistantText.get(input.sessionID) ?? "";
             const toolResults = sessionToolResults.get(input.sessionID) ?? [];
             if (assistantText) {
-              const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: effCfg, storePath: options.storePath, flushState: flushState };
+              const qDeps = { embedder, store, keywordIndex: keywordIndex, cfg: effCfg, storePath: options.storePath, flushState: flushState };
               const exchange: CaptureExchange = { userReq: prevUserReq, assistantText, toolResults };
               if (memCfg?.passiveCapture) {
                 void autoCaptureQuirks(qDeps, options.descriptionProvider, [exchange], effCfg).catch(() => {});
@@ -2221,7 +2221,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
           const lines: string[] = [];
 
           if (arg === "lint") {
-            const deps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
+            const deps = { embedder, store, keywordIndex: keywordIndex, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
             const issues = await lintQuirks(deps);
             lines.push("## Quirk Lint", "");
             if (issues.length === 0) {
@@ -2245,7 +2245,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             );
           } else {
             // Status / list
-            const deps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
+            const deps = { embedder, store, keywordIndex: keywordIndex, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
             const quirks = await listQuirks(deps);
             lines.push("## Quirk Memory", "");
             if (quirks.length === 0) {
@@ -2294,7 +2294,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             const assistantText = sessionAssistantText.get(input.sessionID) ?? "";
             const quirkQuery = [assistantText, text].filter((t) => t.length > 0).join("\n");
             if (quirkQuery.length > 0) {
-              const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
+              const quirkDeps = { embedder, store, keywordIndex: keywordIndex, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
               const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, input.sessionID, MAX_SESSION_MAP_SIZE);
               const selection = await selectAutoInjectQuirksWithinBudget(
                 (q, o) => recallQuirks(quirkDeps, q, { ...o, excludeTags: [TOOL_ERROR_QUIRK_TAG] }),
@@ -2367,6 +2367,7 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             minScore: 0,
             keywordIndex,
             keywordWeight: hybridCfg?.keywordWeight,
+            hybridEnabled: hybridCfg?.enabled,
             queryPrefix: effectiveCfg.embedding.queryPrefix,
             reranker: getRerankerFor(effectiveCfg.reranking) ?? undefined,
             reranking: effectiveCfg.reranking,
@@ -2682,8 +2683,13 @@ export const ragPlugin: Plugin = async (
     // best-effort — dimension introspection must never block plugin startup
   }
 
-  // Load or create keyword index for hybrid search
-  const keywordIndex = await loadKeywordIndex(storePath, logFilePath, logLevel);
+  // The keyword index is only needed for hybrid retrieval and keyword-aware
+  // index maintenance. Avoid downloading/parsing the potentially huge local
+  // cache when the workspace explicitly selects vector-only search.
+  const hybridSearchEnabled = effectiveCfg.retrieval.hybridSearch?.enabled !== false;
+  const keywordIndex = hybridSearchEnabled
+    ? await loadKeywordIndex(storePath, logFilePath, logLevel)
+    : undefined;
 
   // Restore quirks that are in quirks.jsonl but missing from the vector store
   // or keyword index (full rebuilds drop quirk chunks — see reconcileQuirks).

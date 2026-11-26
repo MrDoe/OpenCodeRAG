@@ -64,6 +64,8 @@ export interface StateSyncOptions {
   storePath: string;
   config: RagConfig;
   cwd?: string;
+  /** Override the config gate for explicit keyword-index restore operations. */
+  syncKeywordIndex?: boolean;
   /** Optional logger override (tests). */
   warn?: (message: string) => void;
 }
@@ -237,6 +239,7 @@ export class StateSync {
   private readonly storePath: string;
   private readonly enabled: boolean;
   private readonly syncDescCache: boolean;
+  private readonly syncKeywordIndex: boolean;
   private readonly warn: (message: string) => void;
   private readonly remote: RemoteStateStore | undefined;
   private readonly cwd?: string;
@@ -249,6 +252,8 @@ export class StateSync {
     this.warn = options.warn ?? ((message) => console.warn(message));
     this.enabled = (options.config.vectorStore.provider ?? "lancedb") === "clickhouse";
     this.syncDescCache = options.config.vectorStore.clickhouse?.state?.syncDescCache ?? false;
+    this.syncKeywordIndex = options.syncKeywordIndex
+      ?? (options.config.retrieval.hybridSearch?.enabled !== false);
     const candidate = options.store as unknown as Partial<RemoteStateStore>;
     this.remote =
       typeof candidate.readState === "function" && typeof candidate.writeState === "function"
@@ -277,7 +282,10 @@ export class StateSync {
 
   private entries(): [StateName, (typeof STATE_FILES)[StateName]][] {
     return (Object.entries(STATE_FILES) as [StateName, (typeof STATE_FILES)[StateName]][])
-      .filter(([, spec]) => !("cache" in spec && spec.cache) || this.syncDescCache);
+      .filter(([name, spec]) => {
+        if (name === "keyword-index" && !this.syncKeywordIndex) return false;
+        return !("cache" in spec && spec.cache) || this.syncDescCache;
+      });
   }
 
   private versionsPath(): string {
@@ -405,7 +413,8 @@ export class StateSync {
   async flush(names?: StateName[], existingVersions?: SyncVersions): Promise<void> {
     if (!this.active) return;
     const versions = existingVersions ?? (await this.loadVersions());
-    const targets = names ?? this.entries().map(([name]) => name);
+    const targets = (names ?? this.entries().map(([name]) => name))
+      .filter((name) => name !== "keyword-index" || this.syncKeywordIndex);
 
     for (const name of targets) {
       const spec = STATE_FILES[name];

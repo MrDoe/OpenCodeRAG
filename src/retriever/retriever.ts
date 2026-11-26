@@ -10,6 +10,7 @@ const FETCH_OVERFETCH_FACTOR = 3;
 const RRF_K = 60;
 /** Multiply raw RRF scores by (K+1) to normalize to ~[0,1]. */
 const RRF_NORMALIZE = RRF_K + 1;
+let warnedMissingHybridIndex = false;
 
 /**
  * How the `minScore` gate reads the score.
@@ -258,6 +259,13 @@ export async function retrieve(
     const vectorResults = await store.searchWithFilter(embedding as number[], topK * FETCH_OVERFETCH_FACTOR, options.filter);
 
     let keywordResults: SearchResult[] = [];
+    if (options.hybridEnabled === true && !options.keywordIndex && !warnedMissingHybridIndex) {
+      warnedMissingHybridIndex = true;
+      console.warn(
+        "[retriever] Hybrid search is enabled but the keyword index was not loaded at startup; " +
+        "restart OpenCode to apply the setting.",
+      );
+    }
     if (options.keywordIndex && options.hybridEnabled !== false) {
       keywordResults = options.keywordIndex.search(query, topK * FETCH_OVERFETCH_FACTOR, options.filter);
     }

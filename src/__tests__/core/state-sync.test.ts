@@ -25,6 +25,36 @@ function clickhouseConfig(): RagConfig {
 }
 
 describe("StateSync hydrate/flush", () => {
+  it("does not hydrate or flush the keyword index when hybrid search is disabled", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-rag-state-sync-"));
+    const reads: string[] = [];
+    const writes: string[] = [];
+    const store = {
+      readState: async (name: string) => {
+        reads.push(name);
+        return name === "keyword-index" ? { data: "remote-keywords", ver: "1" } : undefined;
+      },
+      writeState: async (name: string) => { writes.push(name); },
+    } as unknown as VectorStore;
+
+    try {
+      const config = clickhouseConfig();
+      config.retrieval.hybridSearch!.enabled = false;
+      fs.writeFileSync(path.join(dir, "keyword-index.json"), "local-keywords", "utf-8");
+
+      const sync = new StateSync({ store, storePath: dir, config });
+      await sync.hydrate();
+      await sync.flush(["keyword-index"]);
+      await sync.flush();
+
+      assert.ok(!reads.includes("keyword-index"), "keyword index must not be downloaded");
+      assert.ok(!writes.includes("keyword-index"), "keyword index must not be uploaded");
+      assert.equal(fs.readFileSync(path.join(dir, "keyword-index.json"), "utf-8"), "local-keywords");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("uploads a merged quirk log and keeps the merged records on the next hydrate", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-rag-state-sync-"));
     const remote = new Map<string, string>();

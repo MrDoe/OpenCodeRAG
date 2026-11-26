@@ -843,7 +843,13 @@ export async function executeClickHouseRestore(
   if (options.upload) {
     console.log(`\n  Uploading restored state back to ClickHouse...`);
     const store = storeOverride ?? createVectorStore(cfg, targetDir, 1024, cwd);
-    const sync = new StateSync({ store, storePath: targetDir, config: cfg, cwd });
+    const sync = new StateSync({
+      store,
+      storePath: targetDir,
+      config: cfg,
+      cwd,
+      syncKeywordIndex: doKeywordIndex ? true : undefined,
+    });
     const targets = [];
     if (doManifest) targets.push("manifest");
     if (doCache) targets.push(".desc-cache");

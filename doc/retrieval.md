@@ -40,7 +40,7 @@ User Query
 
 ## Hybrid Search (Keyword + Vector)
 
-When `retrieval.hybridSearch.enabled` is `true` (default), both searches run and results are fused.
+When `retrieval.hybridSearch.enabled` is `true` (default), both searches run and results are fused. When it is `false`, OpenCode plugin and Web UI startup do not load the local keyword index, and ClickHouse state sync excludes it. Changing this setting requires restarting the host process to apply the new startup mode.
 
 ### Keyword Search
 The `KeywordIndex` (`src/retriever/keyword-index.ts`) is a zero-dependency inverted index:

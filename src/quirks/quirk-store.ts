@@ -11,7 +11,8 @@ import { TOOL_ERROR_QUIRK_TAG, type Quirk, type QuirkInput } from "./types.js";
 export interface QuirkStoreDeps {
   embedder: EmbeddingProvider;
   store: VectorStore;
-  keywordIndex: KeywordIndex;
+  /** Omitted when hybrid search is disabled; keyword updates are skipped. */
+  keywordIndex?: KeywordIndex;
   cfg: RagConfig;
   storePath: string;
   /** Upload the durable quirk log after a write (ClickHouse state bundle). */
@@ -217,7 +218,7 @@ export async function updateQuirk(deps: QuirkStoreDeps, id: string, patch: Parti
   }
 
   await deps.store.deleteByFilePath(filePath);
-  deps.keywordIndex.removeByFilePath(filePath);
+  deps.keywordIndex?.removeByFilePath(filePath);
 
   const chunk = {
     id,
@@ -238,7 +239,7 @@ export async function updateQuirk(deps: QuirkStoreDeps, id: string, patch: Parti
   };
 
   await deps.store.addChunks([chunk]);
-  deps.keywordIndex.addChunks([chunk]);
+  deps.keywordIndex?.addChunks([chunk]);
 
   if (!isMemoryStore(deps.storePath)) {
     const jp = jsonlPath(deps.storePath);
@@ -285,7 +286,7 @@ export async function addQuirk(deps: QuirkStoreDeps, input: QuirkInput): Promise
   const chunk = quirkChunk(quirk, embedding);
 
   await deps.store.addChunks([chunk]);
-  deps.keywordIndex.addChunks([chunk]);
+  deps.keywordIndex?.addChunks([chunk]);
 
   if (!isMemoryStore(deps.storePath)) {
     appendJsonl(jsonlPath(deps.storePath), quirk);
@@ -363,7 +364,7 @@ export async function removeQuirk(deps: QuirkStoreDeps, id: string): Promise<voi
   } catch {
     /* reconcile prune */
   }
-  deps.keywordIndex.removeByFilePath(filePath);
+  deps.keywordIndex?.removeByFilePath(filePath);
 
   try { await deps.flushState?.(); } catch { /* durable-state upload is best effort */ }
 }
@@ -670,7 +671,7 @@ export async function recallQuirks(
     explain: true,
     keywordIndex: deps.keywordIndex,
     keywordWeight: deps.cfg.retrieval.hybridSearch?.keywordWeight,
-    hybridEnabled: true,
+    hybridEnabled: deps.keywordIndex ? true : undefined,
     queryPrefix: deps.cfg.embedding.queryPrefix,
     filter,
   });

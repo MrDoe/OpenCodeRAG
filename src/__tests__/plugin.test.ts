@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { PluginInput } from "@opencode-ai/plugin";
@@ -150,6 +150,37 @@ describe("ragPlugin", () => {
     } finally {
       rmSync(disabledDir, { recursive: true, force: true });
       rmSync(enabledDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not load the keyword index when hybrid search is disabled", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "opencode-rag-vector-only-"));
+    const storePath = path.join(dir, ".opencode", "rag_db");
+
+    try {
+      writeFileSync(
+        path.join(dir, "opencode-rag.json"),
+        JSON.stringify({
+          openCode: { enabled: true, autoIndex: { enabled: false } },
+          embedding: { provider: "ollama", vectorDimension: 384 },
+          description: { enabled: false },
+          autoUpdate: { enabled: false },
+          vectorStore: { provider: "memory", path: ".opencode/rag_db" },
+          retrieval: { hybridSearch: { enabled: false, keywordWeight: 0.4 } },
+        }),
+      );
+      // If startup attempts KeywordIndex.load(), this file produces a
+      // diagnostic and demonstrates that the disabled feature was still read.
+      mkdirSync(storePath, { recursive: true });
+      writeFileSync(path.join(storePath, "keyword-index.json"), "not valid json", { flag: "w" });
+      const hooks = await ragPlugin({ directory: dir } as PluginInput, {});
+      assert.ok(hooks.tool?.["search_semantic"]);
+
+      const log = readFileSync(path.join(dir, ".opencode", "opencode-rag.log"), "utf-8");
+      assert.doesNotMatch(log, /Keyword index loaded/);
+      assert.doesNotMatch(log, /Failed to load keyword index/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

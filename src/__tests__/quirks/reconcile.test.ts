@@ -132,6 +132,25 @@ describe("reconcileQuirks", () => {
     await env.store.close();
   });
 
+  it("restores quirks without loading or saving a keyword index", async () => {
+    const env = await makeEnv();
+    const quirk = await addQuirk(env.deps, { content: "reconcile vector-only quirk" });
+    await env.store.deleteByFilePath(`quirk:${quirk.id}`);
+    let flushed = false;
+
+    const rec = await reconcileQuirks({
+      ...env.reconcileDeps,
+      keywordIndex: undefined,
+      flushState: async () => { flushed = true; },
+    });
+
+    assert.equal(rec.restoredToStore, 1);
+    assert.equal(rec.addedToKeywordIndex, 0);
+    assert.equal((await env.store.getChunksByFilePath(`quirk:${quirk.id}`)).length, 1);
+    assert.ok(flushed, "durable quirk state must still be flushed");
+    await env.store.close();
+  });
+
   it("heals a keyword index that lacks store-present quirks, without embedding", async () => {
     const env = await makeEnv();
     const q = await addQuirk(env.deps, { content: "reconcile gamma: present in store, absent in another process' keyword index" });

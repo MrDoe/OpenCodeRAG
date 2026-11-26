@@ -117,7 +117,9 @@ export async function startWebUi(
       console.warn(`[web] State hydration failed: ${(err as Error).message}`);
     }
   }
-  const keywordIndex = await KeywordIndex.load(storePath);
+  const keywordIndex = cfg?.retrieval.hybridSearch?.enabled === false
+    ? new KeywordIndex(storePath)
+    : await KeywordIndex.load(storePath);
   const browseStore = asBrowseStore(store);
 
   // Lazy embedder for /api/retrieve — initialized on first use.

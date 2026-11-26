@@ -540,7 +540,7 @@ export interface RecallQuirksToolOptions {
   store: VectorStore;
   embedder: EmbeddingProvider;
   cfg: RagConfig;
-  keywordIndex: KeywordIndex;
+  keywordIndex?: KeywordIndex;
   storePath: string;
 }
 
@@ -637,7 +637,7 @@ export interface AddQuirkToolOptions {
   store: VectorStore;
   embedder: EmbeddingProvider;
   cfg: RagConfig;
-  keywordIndex: KeywordIndex;
+  keywordIndex?: KeywordIndex;
   storePath: string;
 }
 
@@ -710,7 +710,7 @@ export interface UpdateQuirkToolOptions {
   store: VectorStore;
   embedder: EmbeddingProvider;
   cfg: RagConfig;
-  keywordIndex: KeywordIndex;
+  keywordIndex?: KeywordIndex;
   storePath: string;
 }
 
@@ -803,7 +803,7 @@ export interface DeleteQuirkToolOptions {
   store: VectorStore;
   embedder: EmbeddingProvider;
   cfg: RagConfig;
-  keywordIndex: KeywordIndex;
+  keywordIndex?: KeywordIndex;
   storePath: string;
 }
 
