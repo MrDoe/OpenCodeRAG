@@ -184,6 +184,10 @@ Give each repository its own namespace (the derived default already does). The f
 a pinned namespace records the repository's git `origin` (credentials stripped); a workspace
 with a different `origin` logs a warning on startup.
 
+**Upgrading from absolute keys:** older rows keep their absolute paths until their file is
+indexed again. When several machines share one namespace, run `opencode-rag index --force` once
+so every row becomes relative; otherwise each other checkout re-embeds the files it cannot match.
+
 ### Disaster Recovery & Cache Reconstruction
 
 If local cache artifacts (`.desc-cache.json`, `manifest.json`, `keyword-index.json`, `quirks.jsonl`)
