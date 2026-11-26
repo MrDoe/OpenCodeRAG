@@ -1,4 +1,5 @@
-import { isInScanScope } from "./exclude.js";
+import { isInScanScope, createIncludeMatcher } from "./exclude.js";
+import { workspaceKeyPrefix } from "./workspace-key.js";
 /**
  * @fileoverview Durable workspace-state synchronisation.
  *
@@ -179,7 +180,13 @@ export function mergeQuirkJsonl(local: string, remote: string): string {
  * Inactive (a no-op) for every provider except `"clickhouse"`.
  */
 
-export function mergeManifestJson(localRaw: string, remoteRaw: string, cwd?: string, includeDirs?: string[]): string {
+export function mergeManifestJson(
+  localRaw: string,
+  remoteRaw: string,
+  cwd?: string,
+  includeDirs?: string[],
+  pinnedNamespace?: string,
+): string {
   let local: any;
   let remote: any;
   try { local = JSON.parse(localRaw); } catch { return remoteRaw; }
@@ -190,15 +197,20 @@ export function mergeManifestJson(localRaw: string, remoteRaw: string, cwd?: str
   const remoteFiles = remote.files && typeof remote.files === "object" ? remote.files : {};
   const localFiles = local.files && typeof local.files === "object" ? local.files : {};
   const mergedFiles: Record<string, any> = {};
+  const prefix = cwd ? workspaceKeyPrefix(cwd, pinnedNamespace) : "";
+  const matcher = includeDirs && includeDirs.length > 0 ? createIncludeMatcher(includeDirs) : undefined;
 
   for (const [p, entry] of Object.entries(remoteFiles)) {
-    if (!cwd || !isInScanScope(p, cwd, includeDirs)) {
-      mergedFiles[p] = entry;
+    if (prefix) {
+      if (!p.startsWith(prefix)) mergedFiles[p] = entry;
+      continue;
     }
+    if (!cwd || !isInScanScope(p, cwd, matcher)) mergedFiles[p] = entry;
   }
 
   for (const [p, entry] of Object.entries(localFiles)) {
-    mergedFiles[p] = entry;
+    const targetKey = prefix && !p.startsWith(prefix) ? prefix + p : p;
+    mergedFiles[targetKey] = entry;
   }
 
   const merged = {
@@ -268,7 +280,13 @@ export class StateSync {
       return mergeQuirkJsonl(local, remoteData);
     }
     if (name === "manifest") {
-      return mergeManifestJson(local, remoteData, this.cwd, this.config?.indexing?.includeDirs);
+      return mergeManifestJson(
+        local,
+        remoteData,
+        this.cwd,
+        this.config?.indexing?.includeDirs,
+        this.config?.vectorStore.clickhouse?.namespace,
+      );
     }
     if (name === ".desc-cache") {
       return mergeDescCacheJson(local, remoteData);

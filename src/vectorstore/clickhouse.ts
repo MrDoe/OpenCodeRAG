@@ -38,6 +38,7 @@ import type {
 } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { normalizeFilePath } from "../core/manifest.js";
+import { workspaceKeyPrefix } from "../core/workspace-key.js";
 import { normalizeFileExtensions } from "../core/filters.js";
 
 /** Synthetic filePath prefix for quirk chunks — mirrors lancedb.ts and quirk-store.ts. */
@@ -102,6 +103,8 @@ export interface ResolvedClickHouseOptions {
    * across machines/checkouts.
    */
   workspaceDir: string;
+  /** Prefix for file keys when an explicitly shared namespace spans workspaces. */
+  workspaceKeyPrefix: string;
 }
 
 /** Sanitize a namespace so it is safe as a table suffix. */
@@ -176,7 +179,9 @@ export function resolveClickHouseOptions(
     );
   }
   const envPassword = ch.passwordEnv ? process.env[ch.passwordEnv] : undefined;
-  const namespace = sanitizeNamespace(ch.namespace?.trim() || deriveNamespace(workspaceDir));
+  const pinnedNamespace = ch.namespace?.trim() ?? "";
+  const namespace = sanitizeNamespace(pinnedNamespace || deriveNamespace(workspaceDir));
+  const keyPrefix = workspaceKeyPrefix(workspaceDir, pinnedNamespace);
   return {
     url: ch.url,
     database: ch.database,
@@ -197,6 +202,7 @@ export function resolveClickHouseOptions(
     syncDescCache: ch.state?.syncDescCache ?? false,
     embeddingModel: config.embedding.model,
     workspaceDir,
+    workspaceKeyPrefix: keyPrefix,
   };
 }
 
@@ -707,7 +713,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
 
     const tombstones: ChunkRow[] = [];
     if (dedup) {
-      const paths = Array.from(new Set(rows.map((row) => row.file_path)));
+      const paths = Array.from(new Set(rows.flatMap((row) => this.storedPathVariants(row.file_path))));
       const oldRows = await this.select<{ file_path: string; chunk_id: string; embedding: number[] }>(
         `SELECT file_path, chunk_id, embedding FROM ${this.table(this.opts.chunksTable)} FINAL ` +
         "WHERE epoch = {epoch:UInt64} AND file_path IN ({paths:Array(String)})",
@@ -735,11 +741,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
 
   private chunkToRow(chunk: Chunk, epoch: number): ChunkRow | null {
     if (!chunk.embedding || chunk.embedding.length === 0) return null;
-    const filePath = chunk.metadata.filePath.startsWith(QUIRK_FILE_PREFIX)
-      // Synthetic quirk ids stay RAW — normalizing them keys rows by the cwd
-      // of whichever process wrote them (same trap as LanceDB).
-      ? chunk.metadata.filePath
-      : normalizeFilePath(chunk.metadata.filePath, this.opts.workspaceDir);
+    const filePath = this.normalizeStoredPath(chunk.metadata.filePath);
     return {
       chunk_id: chunk.id,
       file_path: filePath,
@@ -800,19 +802,17 @@ export class ClickHouseStore implements ChunkBrowseStore {
     await this.withWriteLock(async () => {
       await this.ensureSchema();
       const epoch = this.currentEpoch();
-      const normalized = filePath.startsWith(QUIRK_FILE_PREFIX)
-        ? filePath
-        : normalizeFilePath(filePath, this.opts.workspaceDir);
-      const oldRows = await this.select<{ chunk_id: string; embedding: number[] }>(
-        `SELECT chunk_id, embedding FROM ${this.table(this.opts.chunksTable)} FINAL ` +
-        "WHERE epoch = {epoch:UInt64} AND file_path = {path:String}",
-        { epoch, path: normalized },
+      const paths = this.storedPathVariants(filePath);
+      const oldRows = await this.select<{ file_path: string; chunk_id: string; embedding: number[] }>(
+        `SELECT file_path, chunk_id, embedding FROM ${this.table(this.opts.chunksTable)} FINAL ` +
+        "WHERE epoch = {epoch:UInt64} AND file_path IN ({paths:Array(String)})",
+        { epoch, paths },
       );
       if (oldRows.length === 0) return;
       const client = await this.getClient();
       await client.insert({
         table: this.insertTable(this.opts.chunksTable),
-        values: oldRows.map((row) => this.tombstoneRow(normalized, row.chunk_id, epoch, row.embedding ?? [])),
+        values: oldRows.map((row) => this.tombstoneRow(row.file_path, row.chunk_id, epoch, row.embedding ?? [])),
         format: "JSONEachRow",
       });
     });
@@ -1146,8 +1146,8 @@ export class ClickHouseStore implements ChunkBrowseStore {
     await this.ensureSchema();
     const rows = await this.select<ChunkRow>(
       `SELECT ${this.summaryColumns()}, embedding FROM ${this.table(this.opts.chunksTable)} FINAL ` +
-      "WHERE epoch = {epoch:UInt64} AND file_path = {path:String} ORDER BY start_line",
-      { epoch: this.currentEpoch(), path: this.normalizeStoredPath(filePath) },
+      "WHERE epoch = {epoch:UInt64} AND file_path IN ({paths:Array(String)}) ORDER BY start_line",
+      { epoch: this.currentEpoch(), paths: this.storedPathVariants(filePath) },
     );
     return rows.map((row) => this.rowToChunk(row, true));
   }
@@ -1161,7 +1161,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
     filePaths: string[],
     options?: { withEmbeddings?: boolean },
   ): Promise<Chunk[]> {
-    const paths = filePaths.map((filePath) => this.normalizeStoredPath(filePath));
+    const paths = [...new Set(filePaths.flatMap((filePath) => this.storedPathVariants(filePath)))];
     if (paths.length === 0) return [];
     await this.ensureSchema();
     const withEmbeddings = options?.withEmbeddings !== false;
@@ -1179,9 +1179,22 @@ export class ClickHouseStore implements ChunkBrowseStore {
 
   /** Quirk rows keep their raw path; everything else is stored workspace-relative. */
   private normalizeStoredPath(filePath: string): string {
-    return filePath.startsWith(QUIRK_FILE_PREFIX)
-      ? filePath
+    if (filePath.startsWith(QUIRK_FILE_PREFIX)) {
+      return `${this.opts.workspaceKeyPrefix}${filePath}`;
+    }
+    if (filePath.startsWith("ws:")) return filePath;
+    return `${this.opts.workspaceKeyPrefix}${normalizeFilePath(filePath, this.opts.workspaceDir)}`;
+  }
+
+  /** All current and legacy forms for a file, used for reads and upgrade cleanup. */
+  private storedPathVariants(filePath: string): string[] {
+    if (filePath.startsWith(QUIRK_FILE_PREFIX) && !this.opts.workspaceKeyPrefix) return [filePath];
+    const relative = filePath.startsWith("ws:")
+      ? filePath.slice(filePath.indexOf(":", 3) + 1)
       : normalizeFilePath(filePath, this.opts.workspaceDir);
+    const current = this.normalizeStoredPath(relative);
+    const absolute = path.resolve(this.opts.workspaceDir, relative);
+    return [...new Set([current, relative, absolute])];
   }
 
   /** Map a stored row back to the `Chunk` shape used by the indexers. */
@@ -1337,8 +1350,10 @@ export class ClickHouseStore implements ChunkBrowseStore {
           try {
             process.kill(pid, 0);
             alive = true;
-          } catch {
-            alive = false;
+          } catch (err) {
+            // ESRCH: process does not exist -> dead. EPERM: process exists but
+            // belongs to another user/AV-restricted -> alive.
+            alive = (err as NodeJS.ErrnoException).code !== "ESRCH";
           }
         }
         if (alive) return false;
@@ -1371,8 +1386,10 @@ export class ClickHouseStore implements ChunkBrowseStore {
           try {
             process.kill(pid, 0);
             alive = true;
-          } catch {
-            alive = false;
+          } catch (err) {
+            // ESRCH: process does not exist -> dead. EPERM: process exists but
+            // belongs to another user/AV-restricted -> alive.
+            alive = (err as NodeJS.ErrnoException).code !== "ESRCH";
           }
         }
         if (alive) return false;

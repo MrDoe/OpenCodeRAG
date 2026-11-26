@@ -136,7 +136,11 @@ export function createIncludeMatcher(patterns: string[]): IncludedMatcher {
  * @param includeDirs - Optional restrict-to directories, workspace-relative.
  * @returns `true` when the path is inside the workspace and any includeDirs.
  */
-export function isInScanScope(filePath: string, cwd: string, includeDirs?: string[]): boolean {
+export function isInScanScope(
+  filePath: string,
+  cwd: string,
+  includeDirs?: string[] | IncludedMatcher,
+): boolean {
   if (!filePath || !cwd) return false;
   const normPath = filePath.replace(/\\/g, "/");
   const cleanCwd = cwd.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -155,7 +159,10 @@ export function isInScanScope(filePath: string, cwd: string, includeDirs?: strin
     rel = normPath;
   }
 
-  if (!includeDirs || includeDirs.length === 0) return true;
-  const matcher = createIncludeMatcher(includeDirs);
-  return matcher.included(rel);
+  if (!includeDirs) return true;
+  if (Array.isArray(includeDirs)) {
+    if (includeDirs.length === 0) return true;
+    return createIncludeMatcher(includeDirs).included(rel);
+  }
+  return includeDirs.included(rel);
 }

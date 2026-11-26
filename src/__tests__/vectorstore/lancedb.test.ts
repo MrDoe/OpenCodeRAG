@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
 import fs from "node:fs";
 import { join } from "node:path";
+import path from "node:path";
 import { tmpdir } from "node:os";
 import { LanceDbStore, l2Normalize, countIndexVersionDirs, sweepEmptyIndexVersionDirs, isDimensionMismatchError, readStoreDimension, swapStoreDirectories } from "../../vectorstore/lancedb.js";
 import { normalizeFilePath } from "../../core/manifest.js";
@@ -307,6 +308,50 @@ describe("LanceDbStore (memory)", () => {
     await store.clear({ noBackup: true });
     const chunks = await store.getChunksByFilePath("nonexistent.ts");
     assert.deepEqual(chunks, []);
+  });
+
+  it("matches and deletes legacy absolute file paths on upgrade", async () => {
+    await store.clear({ noBackup: true });
+    const cwd = process.cwd();
+    const relative = "src/legacy-upgrade.ts";
+    const absolute = path.resolve(cwd, relative).replace(/\\/g, "/");
+
+    // Simulate pre-upgrade row with absolute filePath directly in table
+    const table = await (store as any).getTable();
+    await table.add([{
+      id: "legacy-1",
+      content: "legacy absolute chunk",
+      description: "",
+      embedding: new Array(384).fill(0.1),
+      filePath: absolute,
+      startLine: 1,
+      endLine: 5,
+      language: "typescript",
+      kind: "",
+      role: "",
+      quirkType: "",
+      tags: "",
+    }]);
+
+    assert.equal(await store.count(), 1);
+    const beforeChunks = await store.getChunksByFilePath(relative);
+    assert.equal(beforeChunks.length, 1, "getChunksByFilePath must find legacy absolute row via relative query");
+
+    // Upgrade write: re-indexing the file with relative path must deduplicate the legacy absolute row
+    await store.addChunks([{
+      id: "new-1",
+      content: "new relative chunk",
+      embedding: new Array(384).fill(0.1),
+      metadata: { filePath: relative, startLine: 1, endLine: 5, language: "typescript" },
+    }]);
+
+    assert.equal(await store.count(), 1, "dedup must delete legacy absolute row, avoiding duplicates");
+    const afterChunks = await store.getChunksByFilePath(relative);
+    assert.equal(afterChunks[0]!.id, "new-1");
+
+    // deleteByFilePath using relative path must also clean up any legacy absolute variants
+    await store.deleteByFilePath(relative);
+    assert.equal(await store.count(), 0);
   });
 
   it("retrieves chunks with pagination via getChunks", async () => {

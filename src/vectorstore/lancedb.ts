@@ -397,7 +397,11 @@ function buildFilePathMatch(filePath: string, workspaceDir: string): string {
   // spelling (`c:/Daten/...` from a watcher event vs `C:/Daten/...` from
   // path.resolve), and a case-sensitive delete leaves the other spelling behind
   // forever - that is how 262 files ended up stored twice.
-  return `lower(filePath) = lower('${normalizeFilePath(filePath, workspaceDir).replace(/'/g, "''")}')`;
+  const relative = normalizeFilePath(filePath, workspaceDir);
+  const absolute = path.resolve(workspaceDir, relative);
+  const variants = [...new Set([relative, absolute])]
+    .map((variant) => `lower(filePath) = lower('${variant.replace(/'/g, "''")}')`);
+  return `(${variants.join(" OR ")})`;
 }
 
 /** Internal row shape stored in the LanceDB table. */
@@ -848,10 +852,7 @@ export class LanceDbStore implements ChunkBrowseStore {
     const allIds = rows.map((row) => `'${row.id.replace(/'/g, "''")}'`).join(", ");
     for (const filePath of byFile.keys()) {
       if (filePath.startsWith(QUIRK_FILE_PREFIX)) continue;
-      const escapedPath = filePath.replace(/'/g, "''");
-      await table.delete(
-        `lower(filePath) = lower('${escapedPath}') AND id NOT IN (${allIds})`,
-      );
+      await table.delete(`${buildFilePathMatch(filePath, this.workspaceDir)} AND id NOT IN (${allIds})`);
     }
   }
 
@@ -893,10 +894,7 @@ export class LanceDbStore implements ChunkBrowseStore {
     const allBulkIds = allRows.map((row) => `'${row.id.replace(/'/g, "''")}'`).join(", ");
     for (const filePath of dedupByFile.keys()) {
       if (filePath.startsWith(QUIRK_FILE_PREFIX)) continue;
-      const escapedPath = filePath.replace(/'/g, "''");
-      await table.delete(
-        `lower(filePath) = lower('${escapedPath}') AND id NOT IN (${allBulkIds})`,
-      );
+      await table.delete(`${buildFilePathMatch(filePath, this.workspaceDir)} AND id NOT IN (${allBulkIds})`);
     }
   }
 

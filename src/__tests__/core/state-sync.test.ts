@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { StateSync, mergeQuirkJsonl } from "../../core/state-sync.js";
+import { StateSync, mergeQuirkJsonl, mergeManifestJson } from "../../core/state-sync.js";
 import { DEFAULT_CONFIG, type RagConfig } from "../../core/config.js";
 import type { VectorStore } from "../../core/interfaces.js";
 
@@ -288,5 +288,41 @@ describe("StateSync hydrate/flush", () => {
     const localLive = JSON.stringify({ id: "quirk:c", content: "local", lastObserved: "2026-03-01T00:00:00Z" });
     const remoteLive = JSON.stringify({ id: "quirk:c", content: "remote", lastObserved: "2026-03-01T00:00:00Z" });
     assert.match(mergeQuirkJsonl(`${localLive}\n`, `${remoteLive}\n`), /"content":"local"/, "local wins a live tie");
+  });
+
+  it("isolates entries when two workspaces share a pinned ClickHouse namespace", () => {
+    const cwdA = "/Users/test/repo-a";
+    const cwdB = "/Users/test/repo-b";
+    const pinnedNamespace = "shared_team_ns";
+
+    // Repo A indexes its files into the shared manifest
+    const manifestA = mergeManifestJson(
+      JSON.stringify({ schemaVersion: 3, lastIndexedAt: 100, files: { "src/index.ts": { hash: "a", chunkCount: 1 } } }),
+      JSON.stringify({ schemaVersion: 3, lastIndexedAt: 0, files: {} }),
+      cwdA,
+      undefined,
+      pinnedNamespace,
+    );
+
+    const parsedA = JSON.parse(manifestA);
+    const keyA = Object.keys(parsedA.files)[0]!;
+    assert.match(keyA, /^ws:[0-9a-f]{12}:src\/index\.ts$/);
+
+    // Repo B indexes its own src/index.ts into the remote manifest containing Repo A's entries
+    const manifestB = mergeManifestJson(
+      JSON.stringify({ schemaVersion: 3, lastIndexedAt: 200, files: { "src/index.ts": { hash: "b", chunkCount: 2 } } }),
+      manifestA,
+      cwdB,
+      undefined,
+      pinnedNamespace,
+    );
+
+    const parsedB = JSON.parse(manifestB);
+    const keysB = Object.keys(parsedB.files);
+    assert.equal(keysB.length, 2, "both repos must preserve their src/index.ts without collision");
+    assert.ok(keysB.includes(keyA), "repo A's entry must survive repo B's merge");
+    const keyB = keysB.find((k) => k !== keyA)!;
+    assert.match(keyB, /^ws:[0-9a-f]{12}:src\/index\.ts$/);
+    assert.notEqual(keyA, keyB, "keys must be distinct per workspace root");
   });
 });
