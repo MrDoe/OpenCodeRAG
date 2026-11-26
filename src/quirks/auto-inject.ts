@@ -1,11 +1,14 @@
 /**
  * @fileoverview Selective auto-injection of quirks.
  *
- * Both injection surfaces (`experimental.chat.system.transform` and
- * `chat.message`) used to carry a copy of the same gates. They drifted, and
- * neither logged what it decided, so a "quirk did not show up" report could
- * not be answered without reading the plugin source. This module is the one
- * implementation both call:
+ * Quirks are delivered on the `chat.message` surface only: the block is
+ * appended to the in-flight message, so earlier history stays byte-identical
+ * and the provider's prompt-prefix cache survives. The
+ * `experimental.chat.system.transform` surface used to carry a second copy;
+ * it was removed because a per-turn block at the front of the system prompt
+ * invalidated the cached prefix on every request (issue #43).
+ *
+ * This module is the one selector every injection path calls:
  *
  * 1. recall at the auto-inject semantic bar (raw vector similarity),
  * 2. drop quirks already injected in this session,
