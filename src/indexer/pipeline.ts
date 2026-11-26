@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import pLimit from "p-limit";
 import { scanWorkspaceFiles } from "../content/reader.js";
-import { isInScanScope } from "../core/exclude.js";
+import { createIncludeMatcher, isInScanScope } from "../core/exclude.js";
 import type { RagConfig } from "../core/config.js";
 import { loadManifest, saveManifest, normalizeFilePath, computeDescriptionConfigHash } from "../core/manifest.js";
 import { DescriptionCache } from "../core/desc-cache.js";
@@ -59,6 +59,13 @@ export interface RunIndexPassOptions {
   progress?: IndexProgress;
   /** Optional abort signal – when fired, the pass finishes the current file then stops. */
   abortSignal?: AbortSignal;
+  /**
+   * Temporary scope of this pass (`index -d`), workspace-relative. Nothing
+   * outside it is deleted or marked as indexed. Distinct from the permanent
+   * `indexing.includeDirs`: narrowing that one removes the dropped directories.
+   * The caller must restrict the scan too (`config.indexing.includeDirs`).
+   */
+  scopeDirs?: string[];
   /** Embedding vector dimension — needed when creating a temporary store for atomic rebuilds. */
   dimension?: number;
   /**
@@ -286,9 +293,16 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     ? computeDescriptionConfigHash(options.config)
     : undefined;
 
+  const scopeMatcher = options.scopeDirs?.length
+    ? createIncludeMatcher(options.scopeDirs)
+    : undefined;
+  /** True when this pass is allowed to change or delete the entry for `p`. */
+  const inScope = (p: string): boolean =>
+    !scopeMatcher || isInScanScope(p, options.cwd, scopeMatcher);
+
   // Clear files that had description failures so they are fully re-indexed
   const descFailedPaths = Object.keys(manifest.files).filter(
-    (p) => manifest.files[p]?.descriptionFailed,
+    (p) => manifest.files[p]?.descriptionFailed && inScope(p),
   );
   if (descFailedPaths.length > 0) {
     logger.info(`  ${descFailedPaths.length} file(s) marked as description-failed — re-indexing`);
@@ -321,7 +335,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       let removedCount = 0;
       for (const [p, entry] of Object.entries(manifest.files)) {
         // Path missing from store entirely (aborted before store finished)
-        if (entry.chunkCount > 0 && !storedSet.has(p.toLowerCase())) {
+        if (inScope(p) && entry.chunkCount > 0 && !storedSet.has(p.toLowerCase())) {
           delete manifest.files[p];
           removedCount++;
         }
@@ -431,6 +445,14 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
   let tempStoreWroteChunks = false;
 
   if (options.force || (manifestStatus !== "ok" && (existingCount > 0 || dimensionMismatch))) {
+    // A rebuild replaces the whole index; scoped to a few directories it would
+    // silently drop everything else.
+    if (scopeMatcher) {
+      throw new Error(
+        "A full rebuild is required (--force, a missing or corrupt manifest, or a changed embedding dimension) " +
+        "but this pass is limited with -d. Run 'opencode-rag index' without -d.",
+      );
+    }
     for (const key of Object.keys(manifest.files)) {
       delete manifest.files[key];
     }
@@ -506,7 +528,9 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     }
   }
 
-  if (!options.force && manifestStatus === "ok" && manifest.lastGitCommit) {
+  // A scoped pass scans its directories completely: "changed since the last
+  // commit" says nothing about files that were never indexed.
+  if (!scopeMatcher && !options.force && manifestStatus === "ok" && manifest.lastGitCommit) {
     const repoRoot = getRepoRoot(options.cwd);
     if (repoRoot) {
       const diffResult = getChangedFilesSince(options.cwd, manifest.lastGitCommit);
@@ -602,11 +626,10 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
     const repoRoot = getRepoRoot(options.cwd) ?? options.cwd;
     stalePaths = gitDeletedPaths
       .map((p) => normalizeFilePath(path.resolve(repoRoot, p), options.cwd))
-      .filter((p) => isInScanScope(p, options.cwd, options.config.indexing.includeDirs));
+      // Deletions elsewhere in a monorepo are not this workspace's business.
+      .filter((p) => isInScanScope(p, options.cwd));
   } else {
-    stalePaths = Object.keys(manifest.files).filter((p) =>
-      isInScanScope(p, options.cwd, options.config.indexing.includeDirs) && !currentPaths.has(p),
-    );
+    stalePaths = Object.keys(manifest.files).filter((p) => inScope(p) && !currentPaths.has(p));
   }
   if (stalePaths.length > 0) {
     logger.debug(`Removing ${stalePaths.length} stale files from index...`);
@@ -1363,7 +1386,7 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
       const orphans: Array<{ filePath: string; chunkCount: number }> = [];
       for (const stored of await options.store.listFiles()) {
         const key = normalizeFilePath(stored.filePath, options.cwd);
-        if (!isInScanScope(key, options.cwd, options.config.indexing.includeDirs)) continue;
+        if (!inScope(key)) continue;
         if (manifest.files[key]) continue;
         if (manifestKeysLower.has(key.toLowerCase())) continue;
         if (writtenThisPass.has(key)) continue;
@@ -1393,7 +1416,9 @@ async function runIndexPassInner(options: RunIndexPassOptions, logger: Logger): 
 
   // Update timestamps; advance lastGitCommit ONLY on a complete pass
   manifest.lastIndexedAt = Date.now();
-  if (!aborted()) {
+  // A scoped pass never looked at the rest of the workspace, so it must not
+  // move the marker the next incremental pass diffs from.
+  if (!aborted() && !scopeMatcher) {
     tryUpdateLastGitCommit(options.cwd, manifest);
   }
 

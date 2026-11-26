@@ -184,6 +184,40 @@ describe("indexer", () => {
     assert.equal(stats.finalCount, 1);
   });
 
+  it("leaves everything outside a scoped (-d) pass untouched", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+    await writeFile(path.join(workspaceDir, "lib", "b.ts"), "function beta() { return 2; }\n");
+    const base = { cwd: workspaceDir, storePath: storeDir, store, embedder };
+    await runIndexPass({ ...base, config: testConfig() });
+    await fs.unlink(path.join(workspaceDir, "lib", "b.ts"));
+    await writeFile(path.join(workspaceDir, "src", "c.ts"), "function gamma() { return 3; }\n");
+
+    const config = testConfig();
+    const scoped = { ...config, indexing: { ...config.indexing, includeDirs: ["src"] } };
+    const stats = await runIndexPass({ ...base, config: scoped, scopeDirs: ["src"] });
+
+    assert.equal(stats.deletedFiles, 0);
+    assert.deepEqual((await store.getFilePaths()).sort(), ["lib/b.ts", "src/a.ts", "src/c.ts"]);
+    await assert.rejects(
+      runIndexPass({ ...base, config: scoped, scopeDirs: ["src"], force: true, dimension: 4 }),
+      /cannot|without -d/,
+    );
+    assert.equal(await store.count(), 3, "the refused rebuild must not touch the store");
+  });
+
+  it("removes a directory dropped from indexing.includeDirs", async () => {
+    await writeFile(path.join(workspaceDir, "src", "a.ts"), "function alpha() { return 1; }\n");
+    await writeFile(path.join(workspaceDir, "lib", "b.ts"), "function beta() { return 2; }\n");
+    const base = { cwd: workspaceDir, storePath: storeDir, store, embedder };
+    await runIndexPass({ ...base, config: testConfig() });
+
+    const config = testConfig();
+    const narrowed = { ...config, indexing: { ...config.indexing, includeDirs: ["src"] } };
+    await runIndexPass({ ...base, config: narrowed });
+
+    assert.deepEqual(await store.getFilePaths(), ["src/a.ts"]);
+  });
+
   it("skips unchanged files and updates modified or deleted files", async () => {
     const fileA = path.join(workspaceDir, "src", "a.ts");
     const fileB = path.join(workspaceDir, "src", "b.ts");

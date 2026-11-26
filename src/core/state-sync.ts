@@ -1,4 +1,3 @@
-import { isInScanScope, createIncludeMatcher } from "./exclude.js";
 /**
  * @fileoverview Durable workspace-state synchronisation.
  *
@@ -24,6 +23,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { RagConfig } from "./config.js";
 import type { VectorStore } from "./interfaces.js";
+import { createIncludeMatcher, isInScanScope } from "./exclude.js";
 
 /** State names and their local cache files. */
 const STATE_FILES = {
@@ -64,6 +64,11 @@ export interface StateSyncOptions {
   storePath: string;
   config: RagConfig;
   cwd?: string;
+  /**
+   * Temporary scope of an `index -d` pass: remote manifest entries outside it
+   * are preserved on merge. Omit for whole-workspace passes.
+   */
+  scopeDirs?: string[];
   /** Override the config gate for explicit keyword-index restore operations. */
   syncKeywordIndex?: boolean;
   /** Optional logger override (tests). */
@@ -183,7 +188,7 @@ export function mergeManifestJson(
   localRaw: string,
   remoteRaw: string,
   cwd?: string,
-  includeDirs?: string[],
+  scopeDirs?: string[],
 ): string {
   let local: any;
   let remote: any;
@@ -195,7 +200,7 @@ export function mergeManifestJson(
   const remoteFiles = remote.files && typeof remote.files === "object" ? remote.files : {};
   const localFiles = local.files && typeof local.files === "object" ? local.files : {};
   const mergedFiles: Record<string, any> = {};
-  const matcher = includeDirs && includeDirs.length > 0 ? createIncludeMatcher(includeDirs) : undefined;
+  const matcher = scopeDirs && scopeDirs.length > 0 ? createIncludeMatcher(scopeDirs) : undefined;
 
   // Inside the scan scope the local copy is authoritative (deletions must
   // propagate); entries outside it were not looked at and are preserved.
@@ -246,12 +251,12 @@ export class StateSync {
   private readonly warn: (message: string) => void;
   private readonly remote: RemoteStateStore | undefined;
   private readonly cwd?: string;
-  private readonly config?: RagConfig;
+  private readonly scopeDirs?: string[];
 
   constructor(options: StateSyncOptions) {
     this.storePath = options.storePath;
     this.cwd = options.cwd;
-    this.config = options.config;
+    this.scopeDirs = options.scopeDirs;
     this.warn = options.warn ?? ((message) => console.warn(message));
     this.enabled = (options.config.vectorStore.provider ?? "lancedb") === "clickhouse";
     this.syncDescCache = options.config.vectorStore.clickhouse?.state?.syncDescCache ?? false;
@@ -264,8 +269,7 @@ export class StateSync {
         : undefined;
   }
 
-  /** True when this instance actually talks to a central state table. */
-  
+  /** Merge the local and remote copy of a mergeable state file. */
   private mergeState(name: StateName, local: string, remoteData: string): string {
     if (name === "quirks") {
       return mergeQuirkJsonl(local, remoteData);
@@ -275,7 +279,7 @@ export class StateSync {
         local,
         remoteData,
         this.cwd,
-        this.config?.indexing?.includeDirs,
+        this.scopeDirs,
       );
     }
     if (name === ".desc-cache") {
@@ -284,6 +288,7 @@ export class StateSync {
     return local;
   }
 
+  /** True when this instance actually talks to a central state table. */
   get active(): boolean {
     return this.enabled && this.remote !== undefined;
   }

@@ -36,6 +36,8 @@ export interface BootstrapOptions {
   skipProbe?: boolean;
   /** Skip loading the keyword index from disk. Safe for read-only commands that only need store metadata. */
   skipKeywordIndex?: boolean;
+  /** Temporary indexing scope (`index -d`), forwarded to durable-state sync. */
+  scopeDirs?: string[];
 }
 
 /** Resolved runtime context with all pipeline components wired together. */
@@ -205,7 +207,7 @@ export async function resolveRagContext(
   // Durable-state sync: no-op for LanceDB (the local directory is the source
   // of truth); for ClickHouse the local directory is a disposable cache that
   // is hydrated from `state_<namespace>` before anything reads it.
-  const stateSync = new StateSync({ store, storePath, config: cfg, cwd: workDir });
+  const stateSync = new StateSync({ store, storePath, config: cfg, cwd: workDir, scopeDirs: opts.scopeDirs });
   try {
     await stateSync.hydrate();
   } catch (err) {

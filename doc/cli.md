@@ -22,6 +22,7 @@ opencode-rag index [options]
 **Options:**
 | Flag | Default | Description |
 |---|---|---|
+| `-d, --dir <dirs...>` | whole workspace | Index only these directories for this run (see below) |
 | `-f, --force` | `false` | Force full rebuild (clears existing index) |
 | `-w, --watch` | `false` | Watch for file changes and re-index automatically |
 | `--json` | `false` | Print a machine-readable JSON summary as the last stdout line of the initial pass |
@@ -39,6 +40,13 @@ opencode-rag index [options]
 **Incremental:** Only changed files are reprocessed. Unchanged files are skipped. Files with `descriptionFailed` in the manifest are automatically retried.
 
 **Scope changes (`includeDirs`):** Files that fall out of scope are removed from the index during a full pass (`index` without `--force` still runs a full scan when the stored manifest doesn't match the current file set). Git-incremental passes only remove git-deleted files, so after changing `includeDirs` run a plain `opencode-rag index` (or reindex from the Web UI) to apply the new scope.
+
+**Scoped run (`-d`):** `opencode-rag index -d src doc` indexes only those directories and
+replaces `indexing.includeDirs` for this run; `excludeDirs`/`excludeFiles` still apply. The
+rest of the index is left untouched, and the Git marker of the next incremental pass is not
+advanced. Each directory must exist inside the workspace. A run that needs a full rebuild
+(`--force`, a missing or corrupt manifest, a changed embedding dimension) is refused with
+`-d`, because it would drop everything outside the scope.
 
 **Full rebuild (`--force`):** Clears the store, clears keyword index, and re-indexes everything.
 

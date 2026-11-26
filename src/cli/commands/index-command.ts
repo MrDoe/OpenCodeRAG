@@ -11,6 +11,7 @@
 
 import type { Command } from "commander";
 import path from "node:path";
+import { stat } from "node:fs/promises";
 import readline from "node:readline";
 import chokidar from "chokidar";
 import { appendDebugLog } from "../../core/fileLogger.js";
@@ -55,6 +56,33 @@ function watchAwareLogger(logFilePath: string, scope: string, watchTriggered: bo
 }
 
 /**
+ * Validate the directories given to `index -d` and turn them into
+ * workspace-relative scope entries.
+ *
+ * @param cwd  - Workspace root.
+ * @param dirs - Raw `-d` arguments, relative to `cwd` or absolute.
+ * @returns The scope, or `undefined` when no restriction applies (no `-d`, or
+ *   one of the directories is the workspace root itself).
+ * @throws If a directory does not exist or lies outside the workspace.
+ */
+export async function resolveScopeDirs(cwd: string, dirs?: string[]): Promise<string[] | undefined> {
+  if (!dirs || dirs.length === 0) return undefined;
+  const scope = new Set<string>();
+  for (const dir of dirs) {
+    const absolute = path.resolve(cwd, dir);
+    const relative = path.relative(cwd, absolute).replace(/\\/g, "/");
+    if (relative === ".." || relative.startsWith("../") || path.isAbsolute(relative)) {
+      throw new Error(`-d ${dir}: outside the workspace ${cwd}`);
+    }
+    const info = await stat(absolute).catch(() => undefined);
+    if (!info?.isDirectory()) throw new Error(`-d ${dir}: not a directory`);
+    if (relative === "") return undefined;
+    scope.add(relative);
+  }
+  return [...scope];
+}
+
+/**
  * Register the `index` command on the given Commander program.
  *
  * Scans the workspace, chunks changed/new files, generates embeddings,
@@ -68,7 +96,10 @@ export function registerIndexCommand(program: Command): void {
     .command("index")
     .description("Index workspace files")
     .option("-c, --config <path>", "path to config file")
-    .option("-d, --dir <dirs...>", "restrict indexing to specified directories (workspace-relative)")
+    .option(
+      "-d, --dir <dirs...>",
+      "index only these workspace directories for this run (replaces indexing.includeDirs; not allowed with --force)",
+    )
     .option("-f, --force", "force full re-index")
     .option("-y, --yes", "skip confirmation prompt for full rebuild")
     .option("-w, --watch", "watch workspace and incrementally re-index on changes")
@@ -79,9 +110,15 @@ export function registerIndexCommand(program: Command): void {
       try {
         const cwd = process.cwd();
         let logFilePath = path.resolve(cwd, ".opencode", "opencode-rag.log");
-        const ctx = await resolveCliContext(options, logFilePath);
-        const { config, embedder, store, storePath, keywordIndex, descriptionProvider, dimension, stateSync } = ctx;
-        if (options.dir && options.dir.length > 0) { config.indexing.includeDirs = options.dir; }
+        const scopeDirs = await resolveScopeDirs(cwd, options.dir);
+        if (scopeDirs && options.force) {
+          throw new Error("--force rebuilds the whole index and cannot be combined with -d.");
+        }
+        const ctx = await resolveCliContext(options, logFilePath, { scopeDirs });
+        const { embedder, store, storePath, keywordIndex, descriptionProvider, dimension, stateSync } = ctx;
+        const config = scopeDirs
+          ? { ...ctx.config, indexing: { ...ctx.config.indexing, includeDirs: scopeDirs } }
+          : ctx.config;
         logFilePath = ctx.logFilePath;
 
         // ── Abort controller for graceful Ctrl+C during the initial pass ──
@@ -142,6 +179,7 @@ export function registerIndexCommand(program: Command): void {
             keywordIndex,
             descriptionProvider,
             stateSync,
+            scopeDirs,
             force: !!(options.force && !watchTriggered),
             abortSignal,
             dimension,
