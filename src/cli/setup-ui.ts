@@ -12,6 +12,7 @@ import { openInBrowser } from "./browser.js";
 import { isInteractiveTerminal } from "./prompt.js";
 import { findConfigFile, projectConfigPath } from "../core/config.js";
 import { resolveRagContext } from "../core/bootstrap.js";
+import { isWildcardHost, uiBaseUrls } from "../web/bind.js";
 import type { WebUiServer } from "../web/server.js";
 
 /** Setup options that decide whether the Configuration UI opens. */
@@ -92,9 +93,12 @@ export async function launchSetupConfigUi(cwd: string = process.cwd()): Promise<
     return;
   }
 
-  const url = `http://127.0.0.1:${server.port}/?token=${server.token}#config`;
+  const url = `${uiBaseUrls(server.host, server.port)[0]!}/?token=${server.token}#config`;
   console.log(`\n${c.heading("Configuration UI")}`);
   console.log(`  ${c.label("URL:")}   ${c.value(url)}`);
+  if (isWildcardHost(server.host)) {
+    console.log(`  ${c.warn("Bound to all interfaces:")} ${c.dim("the dashboard is reachable beyond this machine — the token in the URL is the only protection.")}`);
+  }
   console.log(`  ${c.dim("The token in the URL authenticates this session — keep it private.")}`);
   console.log(`  ${c.dim("Edit the global and project settings in the browser, then press Ctrl+C to stop.")}\n`);
 

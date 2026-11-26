@@ -566,11 +566,11 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 | Option | Default | Description |
 |---|---|---|
 | `enabled` | `true` | Enable quirk memory. When `false`, the `add_quirk` / `recall_quirks` tools are inert and quirks are not recalled. |
-| `autoInject` | `false` | Auto-inject relevant quirks on every user message. Quirks are injected into both the system prompt (`experimental.chat.system.transform`) and the user message (`chat.message`), both gated by `autoInjectMinScore`. The recall query combines the agent's previous response with the current user message. |
+| `autoInject` | `false` | Auto-inject relevant quirks on every user message. Quirks are delivered on the `chat.message` surface — appended to the user message — so the provider's cached prompt prefix stays intact (the old system-prompt surface changed the first bytes every turn, issue #43). Gated by `autoInjectMinScore`. The recall query combines the agent's previous response with the current user message. |
 | `minConfidence` | `0.5` | Minimum confidence (0–1) for a quirk to be returned by recall. |
 | `recallMinScore` | `0.72` | Minimum raw vector similarity (0–1) for a quirk to be returned by manual `recall_quirks` calls. |
-| `autoInjectMinScore` | `0.75` | Minimum raw vector similarity (0–1) for quirks to be **auto-injected** (system prompt *and* user message). Deliberately a high bar — injected quirks occupy context on every turn, so only strongly relevant ones reach the prompt. Set it high (e.g. `0.85`) for a strict semantic gate; lower it to tune how eager injection is. |
-| `autoInjectTopK` | `1` | Maximum number of quirks to auto-inject per turn (both system prompt and user message). Lower = fewer irrelevant quirks. |
+| `autoInjectMinScore` | `0.75` | Minimum raw vector similarity (0–1) for quirks to be **auto-injected** (into the user message). Deliberately a high bar — injected quirks occupy context on every turn, so only strongly relevant ones reach the prompt. Set it high (e.g. `0.85`) for a strict semantic gate; lower it to tune how eager injection is. |
+| `autoInjectTopK` | `1` | Maximum number of quirks to auto-inject per turn. Lower = fewer irrelevant quirks. |
 | `autoInjectMinTokenOverlap` | `2` | Lexical relevance gate for auto-injection. A candidate quirk is dropped unless its content shares at least this many word tokens (≥3 chars) with the user's *current* message — not just the prior assistant text. Prevents meta-quirks (quirks about quirks themselves) from being injected into unrelated tasks where they only matched the combined recall query. Set to `0` to disable. |
 | `autoInjectLatencyBudgetMs` | `2000` | Maximum latency (ms) for auto-inject quirk recall. If the embedder is slower than this, injection is skipped for that message. Set to `0` to disable the timeout. |
 | `decay.enabled` | `false` | Enable confidence decay over time for aging quirks. |
@@ -593,8 +593,8 @@ Controls the quirk/experiential memory system — persistent storage of gotchas,
 | `toolErrorCreateMinScore` | `0.7` | Minimum raw vector similarity (0–1) for an existing quirk to count as "an equivalent quirk already exists" and therefore **suppress** creation. Deliberately EQUAL to `toolErrorMinScore`: measured on a real workspace, an error query scores 0.55–0.63 against *arbitrary* stored quirks, so a lower floor sits inside the noise band and matches unrelated quirks — which suppressed creation on every real failure. The exact duplicate check (same tool + same cause class) is done by metadata, not by similarity. |
 | `toolErrorCreateLatencyBudgetMs` | `2000` | Latency budget (ms) for the creation path (embed + store write). If exceeded, the quirk is still written in the background but not confirmed within the budget. |
 | `toolErrorInjectCreated` | `false` | Also inject a freshly created tool-error quirk into the turn that produced the failure. Off by default: the agent already saw the raw error, so the created quirk carries no new information for that turn. |
-| `toolErrorProactiveInject` | `true` | Surface known tool gotchas in the **system prompt, before the model picks a tool** — so a failure that already happened in an earlier session is not repeated. Only gotchas whose tool is in the session's tool catalog are injected, and only for *durable* cause classes (unknown tool, schema mismatch, permissions, path). A transient failure (rate limit, timeout) is never warned about in advance — the next call would not fail the same way. |
-| `toolErrorProactiveMaxItems` | `5` | Maximum number of tool gotchas injected into the system prompt per request. |
+| `toolErrorProactiveInject` | `true` | Surface known tool gotchas in the **system prompt, before the model picks a tool** — so a failure that already happened in an earlier session is not repeated. Only gotchas whose tool is in the session's tool catalog are injected, and only for *durable* cause classes (unknown tool, schema mismatch, permissions, path). A transient failure (rate limit, timeout) is never warned about in advance — the next call would not fail the same way. The block is **frozen per session** so the provider's prompt-prefix cache survives; a gotcha created mid-session surfaces in the next session. |
+| `toolErrorProactiveMaxItems` | `5` | Maximum number of tool gotchas injected into the system prompt (the block is computed once per session). |
 | `interceptAllErrors` | `true` | Intercept failures the host does **not** report as tool errors. A command that exits non-zero, a script that raises, a file that cannot be read, a failed model call — OpenCode reports all of them as `status=completed`, so without this the quirk path never saw them. Detection is high-precision on purpose: only real failure markers qualify (OpenCode's own `Exited with code N`, Node errno codes, Python tracebacks, `npm ERR!`, uncaught JS exceptions, process crashes). A generic `Error:` anywhere or a localized "not found" is deliberately **not** matched — a false positive costs a recall, a possible quirk write, and an injected block in the next model request. |
 | `autoCreateOnInterceptedError` | `true` | Allow a failure detected that way to **create** a quirk. The exact duplicate check (same tool + same cause class) keeps it bounded to one quirk per failure kind, so a command that fails differently each time still yields a single entry. Set to `false` to keep the interception recall-only. |
 
@@ -646,6 +646,7 @@ Controls the web dashboard UI server.
 {
   "ui": {
     "port": 3210,
+    "host": "127.0.0.1",
     "openBrowser": true,
     "theme": "dark"
   }
@@ -655,6 +656,7 @@ Controls the web dashboard UI server.
 | Option | Default | Description |
 |---|---|---|
 | `port` | `3210` | HTTP port for the UI server |
+| `host` | `"127.0.0.1"` | Bind address. `0.0.0.0` exposes the dashboard beyond the machine (containers, port forwards); the per-run token is the only protection then |
 | `openBrowser` | `true` | Automatically open the browser on startup |
 | `theme` | `"dark"` | Dashboard theme: `"dark"`, `"light"`, `"plasma"` or `"drama"`. Machine-wide preference — always saved to the global config, editable in the Web UI Config view or via the header toggle (which writes it back). |
 

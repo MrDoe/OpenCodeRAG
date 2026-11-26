@@ -978,6 +978,13 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   // Tool-gotcha cache: the tool-error quirks change rarely, so the audit log is
   // read at most every TOOL_GOTCHA_CACHE_MS instead of on every model request.
   const toolGotchaCache = new Map<string, { quirks: Quirk[]; fetchedAt: number }>();
+  // The tool-gotcha block injected into the system prompt is FROZEN per
+  // session. It sits at the front of the provider's cached prompt prefix, so a
+  // block that changes between requests invalidates the whole prefix and forces
+  // a full re-prefill (issue #43). A gotcha created mid-session surfaces in the
+  // next session; the per-turn `injectOnToolError` path still covers the
+  // failure that just happened.
+  const sessionToolGotchaBlocks = new Map<string, { block: string; tools: string[] }>();
 
   // Evaluation session logger — captures OpenCode events for analysis
   const sessionLogger: SessionLogger = createSessionLogger(options.storePath);
@@ -992,9 +999,10 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
   /**
    * Read the auto-created tool-error quirks, cached briefly.
    *
-   * Runs on every model request (the proactive tool-gotcha injection), so it
-   * must not hit the disk every time. The cache is invalidated explicitly
-   * when a new tool-error quirk is created.
+   * Runs on the first model request of a session (the proactive tool-gotcha
+   * block is frozen per session) and on the tool-error path, so it must not hit
+   * the disk every time. The cache is invalidated explicitly when a new
+   * tool-error quirk is created.
    */
   async function getToolErrorQuirks(deps: QuirkStoreDeps): Promise<Quirk[]> {
     const key = options.storePath;
@@ -1463,8 +1471,9 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
             if (created?.created && created.id) {
               createState.record(info, true);
               createdQuirk = true;
-              // The proactive gotcha list changed — drop the cache so
-              // the next model request sees the new gotcha.
+              // The proactive gotcha list changed — drop the cache so the
+              // next SESSION sees the new gotcha. This session keeps its
+              // frozen system-prompt block (prompt-cache stability, #43).
               toolGotchaCache.delete(options.storePath);
               appendDebugLog(options.logFilePath, {
                 scope: "quirk.tool-error",
@@ -1787,17 +1796,30 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
         if (toolNames.length > 0) {
           const memCfg = getEffectiveCfg().memory;
           if (memCfg?.enabled && memCfg.toolErrorProactiveInject) {
-            const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
-            const gotchas = selectToolGotchas(
-              await getToolErrorQuirks(qDeps),
-              toolNames,
-              memCfg.toolErrorProactiveMaxItems ?? TOOL_ERROR_CREATE_DEFAULTS.maxProactiveItems,
-            );
-            if (gotchas.length > 0) {
-              output.system.unshift(formatToolGotchaBlock(gotchas));
+            const gotchaSessionId = (input as { sessionID?: string })?.sessionID;
+            // Frozen per session — see `sessionToolGotchaBlocks`. Recomputing
+            // per request changes the cached prompt prefix (issue #43).
+            let frozen = gotchaSessionId !== undefined ? sessionToolGotchaBlocks.get(gotchaSessionId) : undefined;
+            if (frozen === undefined) {
+              const qDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
+              const gotchas = selectToolGotchas(
+                await getToolErrorQuirks(qDeps),
+                toolNames,
+                memCfg.toolErrorProactiveMaxItems ?? TOOL_ERROR_CREATE_DEFAULTS.maxProactiveItems,
+              );
+              frozen = {
+                block: gotchas.length > 0 ? formatToolGotchaBlock(gotchas) : "",
+                tools: gotchas.map((g) => g.tool),
+              };
+              if (gotchaSessionId !== undefined) {
+                boundedSet(sessionToolGotchaBlocks, gotchaSessionId, frozen, MAX_SESSION_MAP_SIZE);
+              }
+            }
+            if (frozen.block.length > 0) {
+              output.system.unshift(frozen.block);
               appendDebugLog(options.logFilePath, {
                 scope: "quirk.tool-error",
-                message: `proactively injected ${gotchas.length} tool gotcha(s): ${gotchas.map((g) => g.tool).join(", ")}`,
+                message: `proactively injected ${frozen.tools.length} tool gotcha(s): ${frozen.tools.join(", ")}`,
               });
             }
           }
@@ -1851,49 +1873,12 @@ export function createRagHooks(options: CreateRagHooksOptions): Hooks {
       }
 
       try {
-        // Inject relevant quirks into the system prompt (memory.autoInject).
-        // The selector is shared with the chat.message path — one gate, one
-        // ranking, one log line — so the two surfaces cannot drift apart again.
-        const quirkSessionId = (input as { sessionID?: string })?.sessionID;
-        if (quirkSessionId) {
-          const memCfg = getEffectiveCfg().memory;
-          if (memCfg?.enabled && memCfg?.autoInject) {
-            const assistantText = sessionAssistantText.get(quirkSessionId) ?? "";
-            const userReq = sessionPrevUserReq.get(quirkSessionId) ?? "";
-            const query = [assistantText, userReq].filter((t) => t.length > 0).join("\n");
-            if (query.length > 0) {
-              const quirkDeps = { embedder, store, keywordIndex: keywordIndex!, cfg: getEffectiveCfg(), storePath: options.storePath, flushState: flushState };
-              const injectedSet = getOrCreateSessionSet(sessionInjectedQuirks, quirkSessionId, MAX_SESSION_MAP_SIZE);
-              const selection = await selectAutoInjectQuirksWithinBudget(
-                (q, o) => recallQuirks(quirkDeps, q, { ...o, excludeTags: [TOOL_ERROR_QUIRK_TAG] }),
-                {
-                  query,
-                  userText: userReq,
-                  options: {
-                    topK: memCfg.autoInjectTopK ?? 1,
-                    minTokenOverlap: memCfg.autoInjectMinTokenOverlap ?? 2,
-                    minScore: memCfg.autoInjectMinScore ?? 0.75,
-                    injectedIds: injectedSet,
-                  },
-                },
-                memCfg.autoInjectLatencyBudgetMs ?? 2000,
-              );
-              appendDebugLog(options.logFilePath, {
-                scope: "quirk.auto-inject",
-                message: `system: ${describeAutoInjectSelection(selection)} req="${userReq.slice(0, 120)}"`,
-              });
-              if (selection.hits.length > 0) {
-                for (const hit of selection.hits) injectedSet.add(hit.id);
-                output.system.unshift(
-                  formatAutoInjectBlock(selection.hits, {
-                    heading: "⚠ **Relevant quirks for this task:**",
-                    separator: false,
-                  }),
-                );
-              }
-            }
-          }
-        }
+        // Quirk auto-injection deliberately does NOT run here. Writing a
+        // per-turn quirk block into the system prompt changed the provider's
+        // cached prompt prefix on every request and forced a full re-prefill of
+        // the conversation (issue #43). Per-turn delivery stays on the
+        // `chat.message` path, which appends to the in-flight message and never
+        // rewrites earlier content.
 
         // Tool-error quirks: flush the pending block captured in tool.execute.after.
         // Freshness-bounded — a stale error must not leak into a later turn.
