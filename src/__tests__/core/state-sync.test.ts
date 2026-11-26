@@ -290,39 +290,22 @@ describe("StateSync hydrate/flush", () => {
     assert.match(mergeQuirkJsonl(`${localLive}\n`, `${remoteLive}\n`), /"content":"local"/, "local wins a live tie");
   });
 
-  it("isolates entries when two workspaces share a pinned ClickHouse namespace", () => {
-    const cwdA = "/Users/test/repo-a";
-    const cwdB = "/Users/test/repo-b";
-    const pinnedNamespace = "shared_team_ns";
-
-    // Repo A indexes its files into the shared manifest
+  it("shares relative keys between two checkouts at different paths", () => {
+    // A pinned namespace means one repository: another machine or worktree must
+    // see the same keys, so the merge neither prefixes nor duplicates them.
     const manifestA = mergeManifestJson(
       JSON.stringify({ schemaVersion: 3, lastIndexedAt: 100, files: { "src/index.ts": { hash: "a", chunkCount: 1 } } }),
       JSON.stringify({ schemaVersion: 3, lastIndexedAt: 0, files: {} }),
-      cwdA,
-      undefined,
-      pinnedNamespace,
+      "/Users/alice/repo",
     );
-
-    const parsedA = JSON.parse(manifestA);
-    const keyA = Object.keys(parsedA.files)[0]!;
-    assert.match(keyA, /^ws:[0-9a-f]{12}:src\/index\.ts$/);
-
-    // Repo B indexes its own src/index.ts into the remote manifest containing Repo A's entries
     const manifestB = mergeManifestJson(
       JSON.stringify({ schemaVersion: 3, lastIndexedAt: 200, files: { "src/index.ts": { hash: "b", chunkCount: 2 } } }),
       manifestA,
-      cwdB,
-      undefined,
-      pinnedNamespace,
+      "/home/bob/work/repo",
     );
 
-    const parsedB = JSON.parse(manifestB);
-    const keysB = Object.keys(parsedB.files);
-    assert.equal(keysB.length, 2, "both repos must preserve their src/index.ts without collision");
-    assert.ok(keysB.includes(keyA), "repo A's entry must survive repo B's merge");
-    const keyB = keysB.find((k) => k !== keyA)!;
-    assert.match(keyB, /^ws:[0-9a-f]{12}:src\/index\.ts$/);
-    assert.notEqual(keyA, keyB, "keys must be distinct per workspace root");
+    const files = JSON.parse(manifestB).files as Record<string, { hash: string }>;
+    assert.deepEqual(Object.keys(files), ["src/index.ts"]);
+    assert.equal(files["src/index.ts"]!.hash, "b");
   });
 });

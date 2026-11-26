@@ -177,6 +177,13 @@ re-embedding it (dry run by default, `--apply` to rename, `--from` to pick the s
 several exist). If a repository is opened under genuinely different paths, pin
 `vectorStore.clickhouse.namespace` - a pinned namespace never splits.
 
+**A pinned namespace holds exactly one repository.** File keys are stored relative to the
+workspace root, so every machine and worktree of that repository shares one index - and two
+*different* repositories in the same namespace would overwrite each other's `src/index.ts`.
+Give each repository its own namespace (the derived default already does). The first write into
+a pinned namespace records the repository's git `origin` (credentials stripped); a workspace
+with a different `origin` logs a warning on startup.
+
 ### Disaster Recovery & Cache Reconstruction
 
 If local cache artifacts (`.desc-cache.json`, `manifest.json`, `keyword-index.json`, `quirks.jsonl`)

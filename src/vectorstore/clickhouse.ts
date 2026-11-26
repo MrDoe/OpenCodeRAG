@@ -37,9 +37,9 @@ import type {
   VectorStore,
 } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
-import { normalizeFilePath } from "../core/manifest.js";
-import { workspaceKeyPrefix } from "../core/workspace-key.js";
+import { legacyAbsoluteKeyVariants, normalizeFilePath } from "../core/manifest.js";
 import { normalizeFileExtensions } from "../core/filters.js";
+import { getOriginRemote } from "../indexer/git-diff.js";
 
 /** Synthetic filePath prefix for quirk chunks — mirrors lancedb.ts and quirk-store.ts. */
 const QUIRK_FILE_PREFIX = "quirk:";
@@ -56,6 +56,8 @@ interface StoreMeta {
   pendingEpoch: number;
   dimension: number;
   embeddingModel: string;
+  /** Git `origin` of the repository that owns a pinned namespace. */
+  repoRemote?: string;
 }
 
 /** One DB row in `chunks_<ns>`. `ver` is filled by the column DEFAULT. */
@@ -103,8 +105,11 @@ export interface ResolvedClickHouseOptions {
    * across machines/checkouts.
    */
   workspaceDir: string;
-  /** Prefix for file keys when an explicitly shared namespace spans workspaces. */
-  workspaceKeyPrefix: string;
+  /**
+   * True when `namespace` comes from the config. A pinned namespace is shared by
+   * every checkout of ONE repository, so the store warns when another one uses it.
+   */
+  pinnedNamespace: boolean;
 }
 
 /** Sanitize a namespace so it is safe as a table suffix. */
@@ -179,9 +184,7 @@ export function resolveClickHouseOptions(
     );
   }
   const envPassword = ch.passwordEnv ? process.env[ch.passwordEnv] : undefined;
-  const pinnedNamespace = ch.namespace?.trim() ?? "";
-  const namespace = sanitizeNamespace(pinnedNamespace || deriveNamespace(workspaceDir));
-  const keyPrefix = workspaceKeyPrefix(workspaceDir, pinnedNamespace);
+  const namespace = sanitizeNamespace(ch.namespace?.trim() || deriveNamespace(workspaceDir));
   return {
     url: ch.url,
     database: ch.database,
@@ -202,7 +205,7 @@ export function resolveClickHouseOptions(
     syncDescCache: ch.state?.syncDescCache ?? false,
     embeddingModel: config.embedding.model,
     workspaceDir,
-    workspaceKeyPrefix: keyPrefix,
+    pinnedNamespace: Boolean(ch.namespace?.trim()),
   };
 }
 
@@ -230,6 +233,8 @@ function globToLike(pattern: string): string {
  * the constructor only records options and opens the client lazily.
  */
 export class ClickHouseStore implements ChunkBrowseStore {
+  private cachedRepoRemote: { value: string | null } | undefined;
+  private repoRemoteRecorded = false;
   private readonly opts: ResolvedClickHouseOptions;
   private readonly dimensions: number;
   /** Set on a rebuild target: all writes/reads are bound to this epoch. */
@@ -375,6 +380,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
     }
 
     this.activeEpoch = meta.activeEpoch;
+    this.warnOnForeignRepo(meta);
     if (meta.dimension !== this.dimensions) {
       if (this.opts.ann === "hnsw") {
         // The ANN index is bound to the dimension in its DDL and rejects rows
@@ -397,6 +403,34 @@ export class ClickHouseStore implements ChunkBrowseStore {
         "Run 'opencode-rag index' to rebuild the index with the current model.",
       );
     }
+  }
+
+  /** This checkout's `origin`, resolved once and only for pinned namespaces. */
+  private repoRemote(): string | null {
+    if (!this.opts.pinnedNamespace) return null;
+    this.cachedRepoRemote ??= { value: getOriginRemote(this.opts.workspaceDir) };
+    return this.cachedRepoRemote.value;
+  }
+
+  /** Two repositories in one namespace overwrite each other's relative keys. */
+  private warnOnForeignRepo(meta: StoreMeta): void {
+    const remote = this.repoRemote();
+    if (!remote || !meta.repoRemote || meta.repoRemote === remote) return;
+    console.warn(
+      `[clickhouse] Namespace "${this.opts.namespace}" belongs to ${meta.repoRemote}, ` +
+      `but this workspace is ${remote}. A pinned namespace holds ONE repository — ` +
+      "set a different vectorStore.clickhouse.namespace, or the two will overwrite each other.",
+    );
+  }
+
+  /** Record the owning repository on the first write into a pinned namespace. */
+  private async recordRepoRemote(): Promise<void> {
+    const remote = this.repoRemote();
+    if (!remote || this.repoRemoteRecorded) return;
+    const meta = await this.readMeta();
+    if (!meta) return;
+    if (!meta.repoRemote) await this.writeMeta({ ...meta, repoRemote: remote });
+    this.repoRemoteRecorded = true;
   }
 
   /** Add + materialize the HNSW index on a table created before ANN was enabled. */
@@ -466,6 +500,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
         pendingEpoch: Number(parsed.pendingEpoch ?? 0),
         dimension: Number(parsed.dimension ?? this.dimensions),
         embeddingModel: String(parsed.embeddingModel ?? ""),
+        repoRemote: typeof parsed.repoRemote === "string" ? parsed.repoRemote : undefined,
       };
     } catch {
       return undefined;
@@ -479,10 +514,6 @@ export class ClickHouseStore implements ChunkBrowseStore {
       table: this.insertTable(this.opts.stateTable),
       values: [{ name: META_NAME, data, sha256: "", bytes: Buffer.byteLength(data) }],
       format: "JSONEachRow",
-      clickhouse_settings: {
-        input_format_parallel_parsing: 0,
-        min_chunk_bytes_for_parallel_parsing: "536870912",
-      },
     });
     this.activeEpoch = meta.activeEpoch;
   }
@@ -710,6 +741,7 @@ export class ClickHouseStore implements ChunkBrowseStore {
       .map((chunk) => this.chunkToRow(chunk, epoch))
       .filter((row): row is ChunkRow => row !== null);
     if (rows.length === 0) return;
+    await this.recordRepoRemote();
 
     const tombstones: ChunkRow[] = [];
     if (dedup) {
@@ -1177,24 +1209,27 @@ export class ClickHouseStore implements ChunkBrowseStore {
     return rows.map((row) => this.rowToChunk(row, withEmbeddings));
   }
 
-  /** Quirk rows keep their raw path; everything else is stored workspace-relative. */
+  /**
+   * Quirk rows keep their raw synthetic path; everything else is stored
+   * workspace-relative. Relative keys are what make a pinned namespace
+   * shareable: the same repository checked out at different absolute paths
+   * (other machine, other worktree) produces identical keys.
+   */
   private normalizeStoredPath(filePath: string): string {
-    if (filePath.startsWith(QUIRK_FILE_PREFIX)) {
-      return `${this.opts.workspaceKeyPrefix}${filePath}`;
-    }
-    if (filePath.startsWith("ws:")) return filePath;
-    return `${this.opts.workspaceKeyPrefix}${normalizeFilePath(filePath, this.opts.workspaceDir)}`;
+    if (filePath.startsWith(QUIRK_FILE_PREFIX)) return filePath;
+    return normalizeFilePath(filePath, this.opts.workspaceDir);
   }
 
-  /** All current and legacy forms for a file, used for reads and upgrade cleanup. */
+  /**
+   * All current and legacy forms of a file key, used for reads and for the
+   * upgrade cleanup of rows written before keys became relative. Legacy rows
+   * hold `path.resolve(p)` with forward slashes; `IN` is case-sensitive, so a
+   * Windows drive letter is matched in both spellings.
+   */
   private storedPathVariants(filePath: string): string[] {
-    if (filePath.startsWith(QUIRK_FILE_PREFIX) && !this.opts.workspaceKeyPrefix) return [filePath];
-    const relative = filePath.startsWith("ws:")
-      ? filePath.slice(filePath.indexOf(":", 3) + 1)
-      : normalizeFilePath(filePath, this.opts.workspaceDir);
-    const current = this.normalizeStoredPath(relative);
-    const absolute = path.resolve(this.opts.workspaceDir, relative);
-    return [...new Set([current, relative, absolute])];
+    if (filePath.startsWith(QUIRK_FILE_PREFIX)) return [filePath];
+    const relative = normalizeFilePath(filePath, this.opts.workspaceDir);
+    return [...new Set([relative, ...legacyAbsoluteKeyVariants(relative, this.opts.workspaceDir)])];
   }
 
   /** Map a stored row back to the `Chunk` shape used by the indexers. */

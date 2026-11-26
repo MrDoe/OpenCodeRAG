@@ -7,6 +7,8 @@ import {
   computeFileHash,
   computeDescriptionConfigHash,
   createEmptyManifest,
+  legacyAbsoluteKey,
+  legacyAbsoluteKeyVariants,
   loadManifest,
   manifestPathFor,
   normalizeFilePath,
@@ -19,6 +21,19 @@ async function makeTempDir(name: string): Promise<string> {
 }
 
 describe("manifest", () => {
+  it("rebuilds the legacy absolute key with forward slashes on Windows", () => {
+    // Pre-upgrade rows hold `C:/...`; win32 resolve() alone yields backslashes.
+    assert.equal(legacyAbsoluteKey("src/a.ts", "C:\\work\\repo", path.win32), "C:/work/repo/src/a.ts");
+    assert.deepEqual(
+      legacyAbsoluteKeyVariants("src/a.ts", "c:\\work\\repo", path.win32),
+      ["c:/work/repo/src/a.ts", "C:/work/repo/src/a.ts"],
+    );
+    assert.deepEqual(
+      legacyAbsoluteKeyVariants("src/a.ts", "/work/repo", path.posix),
+      ["/work/repo/src/a.ts"],
+    );
+  });
+
   it("creates an empty manifest", () => {
     assert.deepStrictEqual(createEmptyManifest(), { files: {}, schemaVersion: 3 });
   });

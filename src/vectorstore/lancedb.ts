@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import type { Chunk, ChunkSummary, SearchResult, MetadataFilter, ChunkBrowseStore } from "../core/interfaces.js";
-import { normalizeFilePath, manifestPathFor } from "../core/manifest.js";
+import { legacyAbsoluteKey, normalizeFilePath, manifestPathFor } from "../core/manifest.js";
 import { normalizeFileExtensions, matchesFileExtension } from "../core/filters.js";
 
 const TABLE_NAME = "chunks";
@@ -398,7 +398,7 @@ function buildFilePathMatch(filePath: string, workspaceDir: string): string {
   // path.resolve), and a case-sensitive delete leaves the other spelling behind
   // forever - that is how 262 files ended up stored twice.
   const relative = normalizeFilePath(filePath, workspaceDir);
-  const absolute = path.resolve(workspaceDir, relative);
+  const absolute = legacyAbsoluteKey(relative, workspaceDir);
   const variants = [...new Set([relative, absolute])]
     .map((variant) => `lower(filePath) = lower('${variant.replace(/'/g, "''")}')`);
   return `(${variants.join(" OR ")})`;

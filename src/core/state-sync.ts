@@ -1,5 +1,4 @@
 import { isInScanScope, createIncludeMatcher } from "./exclude.js";
-import { workspaceKeyPrefix } from "./workspace-key.js";
 /**
  * @fileoverview Durable workspace-state synchronisation.
  *
@@ -185,7 +184,6 @@ export function mergeManifestJson(
   remoteRaw: string,
   cwd?: string,
   includeDirs?: string[],
-  pinnedNamespace?: string,
 ): string {
   let local: any;
   let remote: any;
@@ -197,21 +195,14 @@ export function mergeManifestJson(
   const remoteFiles = remote.files && typeof remote.files === "object" ? remote.files : {};
   const localFiles = local.files && typeof local.files === "object" ? local.files : {};
   const mergedFiles: Record<string, any> = {};
-  const prefix = cwd ? workspaceKeyPrefix(cwd, pinnedNamespace) : "";
   const matcher = includeDirs && includeDirs.length > 0 ? createIncludeMatcher(includeDirs) : undefined;
 
+  // Inside the scan scope the local copy is authoritative (deletions must
+  // propagate); entries outside it were not looked at and are preserved.
   for (const [p, entry] of Object.entries(remoteFiles)) {
-    if (prefix) {
-      if (!p.startsWith(prefix)) mergedFiles[p] = entry;
-      continue;
-    }
     if (!cwd || !isInScanScope(p, cwd, matcher)) mergedFiles[p] = entry;
   }
-
-  for (const [p, entry] of Object.entries(localFiles)) {
-    const targetKey = prefix && !p.startsWith(prefix) ? prefix + p : p;
-    mergedFiles[targetKey] = entry;
-  }
+  Object.assign(mergedFiles, localFiles);
 
   const merged = {
     schemaVersion: Math.max(local.schemaVersion ?? 3, remote.schemaVersion ?? 3),
@@ -285,7 +276,6 @@ export class StateSync {
         remoteData,
         this.cwd,
         this.config?.indexing?.includeDirs,
-        this.config?.vectorStore.clickhouse?.namespace,
       );
     }
     if (name === ".desc-cache") {

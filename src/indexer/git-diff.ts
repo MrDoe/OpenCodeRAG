@@ -57,6 +57,49 @@ export function getCurrentCommit(cwd: string): string | null {
 }
 
 /**
+ * Reduce a git remote URL to `host/path` so that the HTTPS, SSH and scp-style
+ * spellings of one repository compare equal. Credentials embedded in the URL
+ * are dropped — the result is safe to persist.
+ *
+ * @param url - A remote URL as git reports it.
+ * @returns The normalized identity, e.g. `github.com/org/repo`.
+ */
+export function normalizeRemoteUrl(url: string): string {
+  let value = url.trim();
+  const scheme = /^[a-z][a-z0-9+.-]*:\/\//i;
+  if (scheme.test(value)) {
+    value = value.replace(scheme, "");
+  } else {
+    // scp style: [user@]host:path — a single letter before ":" is a drive.
+    value = value.replace(/^((?:[^/@]+@)?[^/:]{2,}):\/?/, "$1/");
+  }
+  value = value.replace(/^[^/]*@/, "").replace(/\/+$/, "").replace(/\.git$/i, "");
+  return value.toLowerCase();
+}
+
+/**
+ * Identity of the `origin` remote of the repository containing `cwd`.
+ *
+ * @param cwd - A path inside the repository.
+ * @returns The normalized remote (see {@link normalizeRemoteUrl}), or `null`
+ *   when there is no repository or no `origin`.
+ */
+export function getOriginRemote(cwd: string): string | null {
+  try {
+    const url = execFileSync("git", ["remote", "get-url", "origin"], {
+      cwd,
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    }).trim();
+    return url ? normalizeRemoteUrl(url) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * List changed, added, and deleted files between `fromCommit` and HEAD.
  *
  * @param cwd - A path inside the repository.

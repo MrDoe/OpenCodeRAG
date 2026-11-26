@@ -106,6 +106,41 @@ export function normalizeFilePath(filePath: string, cwd?: string): string {
   return path.relative(cwd ?? process.cwd(), path.resolve(filePath)).replace(/\\/g, "/");
 }
 
+/**
+ * The key format used before keys became workspace-relative:
+ * `path.resolve(p)` with forward slashes.
+ *
+ * Needed to find (and replace) rows written by older versions. The slash
+ * conversion matters on Windows, where `path.resolve()` returns backslashes
+ * that never match a stored `C:/...` key.
+ *
+ * @param relative     - Workspace-relative key.
+ * @param workspaceDir - Workspace root.
+ * @param pathImpl     - Path flavour; tests pass `path.win32`.
+ */
+export function legacyAbsoluteKey(
+  relative: string,
+  workspaceDir: string,
+  pathImpl: Pick<typeof path, "resolve"> = path,
+): string {
+  return pathImpl.resolve(workspaceDir, relative).replace(/\\/g, "/");
+}
+
+/**
+ * {@link legacyAbsoluteKey} in every drive-letter spelling, for stores that
+ * compare keys case-sensitively. POSIX paths yield a single entry.
+ */
+export function legacyAbsoluteKeyVariants(
+  relative: string,
+  workspaceDir: string,
+  pathImpl: Pick<typeof path, "resolve"> = path,
+): string[] {
+  const key = legacyAbsoluteKey(relative, workspaceDir, pathImpl);
+  if (!/^[A-Za-z]:\//.test(key)) return [key];
+  const rest = key.slice(1);
+  return [...new Set([key, key[0]!.toUpperCase() + rest, key[0]!.toLowerCase() + rest])];
+}
+
 /** Compute the SHA-256 hex hash of a string. */
 export function computeFileHash(content: string): string {
   return createHash("sha256").update(content).digest("hex");
