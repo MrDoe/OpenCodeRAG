@@ -561,7 +561,6 @@ export class ClickHouseStore implements ChunkBrowseStore {
           await new Promise<void>((resolve) => output.once("drain", resolve));
         }
         remaining -= payload.length;
-        if (remaining === 0) break;
       }
       if (remaining !== 0) {
         throw new Error(`Incomplete ClickHouse state stream for ${name}`);
