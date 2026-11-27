@@ -43,7 +43,12 @@
     "optimizeIntervalWindows": 8
   },
   "vectorStore": {
-    "path": "./.opencode/rag_db"
+    "path": "./.opencode/rag_db",
+    "lancedb": {
+      "indexCacheSizeBytes": 268435456,
+      "metadataCacheSizeBytes": 134217728,
+      "buildIndex": true
+    }
   },
   "retrieval": {
     "topK": 20,

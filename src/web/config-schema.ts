@@ -750,6 +750,23 @@ export const SETTINGS_SECTIONS: SettingSection[] = [
         impact: "restart",
         description: "Storage backend: lancedb (local default), memory (tests only, not persistent), clickhouse (shared server).",
       }),
+      number(["vectorStore", "lancedb", "indexCacheSizeBytes"], "Index cache cap (bytes)", {
+        advanced: true,
+        minimum: 0,
+        impact: "restart",
+        description: "Upper bound for LanceDB's native index cache. Default 256 MiB; the SDK default is 6 GiB.",
+      }),
+      number(["vectorStore", "lancedb", "metadataCacheSizeBytes"], "Metadata cache cap (bytes)", {
+        advanced: true,
+        minimum: 0,
+        impact: "restart",
+        description: "Upper bound for LanceDB's native metadata cache. Default 128 MiB; the SDK default is 1 GiB.",
+      }),
+      boolean(["vectorStore", "lancedb", "buildIndex"], "Build vector index", {
+        advanced: true,
+        impact: "restart",
+        description: "Build/maintain the IVF index. Off keeps brute-force scans: slower queries, flat native memory (no KMeans training).",
+      }),
       string(["vectorStore", "clickhouse", "url"], "ClickHouse URL", {
         advanced: true,
         impact: "restart",

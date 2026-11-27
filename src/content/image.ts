@@ -3,7 +3,6 @@
  */
 
 import path from "node:path";
-import sharp from "sharp";
 import type { ExtractResult } from "./types.js";
 import {
   getMimeType,
@@ -12,6 +11,24 @@ import {
 } from "../chunker/image.js";
 
 export { SUPPORTED_IMAGE_EXTENSIONS };
+
+/**
+ * Lazily-imported sharp module (native binding + libvips).
+ *
+ * sharp is imported dynamically on purpose: it must never be part of the
+ * plugin's static module graph. A broken or partial sharp install then only
+ * fails the single image operation that needs it, instead of killing the host
+ * process while the plugin loads (the issue #44 failure class).
+ */
+let sharpFn: typeof import("sharp").default | undefined;
+
+/** Load sharp on first use and cache the module. */
+async function getSharp(): Promise<typeof import("sharp").default> {
+  if (!sharpFn) {
+    sharpFn = (await import("sharp")).default;
+  }
+  return sharpFn;
+}
 
 /**
  * Check whether a file path points to a supported image file based on its extension.
@@ -116,6 +133,9 @@ export async function resizeImage(
   maxDimension: number,
 ): Promise<Buffer> {
   if (maxDimension <= 0) return buffer;
+
+  // sharp is loaded lazily — never at module import time (see getSharp).
+  const sharp = await getSharp();
 
   try {
     if (isBmpFile(filePath)) {

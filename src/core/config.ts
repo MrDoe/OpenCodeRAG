@@ -761,6 +761,27 @@ export interface RagConfig {
     provider?: "lancedb" | "memory" | "clickhouse";
     /** ClickHouse connection settings (required when provider is "clickhouse"). */
     clickhouse?: ClickHouseConfig;
+    /**
+     * LanceDB-specific bounds (`provider: "lancedb"`).
+     *
+     * The native core keeps two in-memory caches whose caps default to 6 GiB
+     * (index data) and 1 GiB (file metadata) — far beyond what a code-index
+     * store needs, and they grow inside the host process (the OpenCode server).
+     * These settings pass an explicit cache-bounded `Session` to
+     * `lancedb.connect` so the caps are predictable.
+     */
+    lancedb?: {
+      /** Cap for the native index cache in bytes. @default 268435456 (256 MiB) */
+      indexCacheSizeBytes?: number;
+      /** Cap for the native metadata cache in bytes. @default 134217728 (128 MiB) */
+      metadataCacheSizeBytes?: number;
+      /**
+       * Build and maintain the IVF vector index. `false` keeps every query on
+       * the brute-force scan path — slower on large stores, but with flat
+       * native memory (no KMeans training pass). @default true
+       */
+      buildIndex?: boolean;
+    };
   };
   /** Retrieval settings for query-time search. */
   retrieval: {
@@ -1041,6 +1062,11 @@ export const DEFAULT_CONFIG: RagConfig = {
       ann: "off",
       annFetchMultiplier: 4,
       annWithRescoring: true,
+    },
+    lancedb: {
+      indexCacheSizeBytes: 256 * 1024 * 1024,
+      metadataCacheSizeBytes: 128 * 1024 * 1024,
+      buildIndex: true,
     },
   },
   retrieval: {

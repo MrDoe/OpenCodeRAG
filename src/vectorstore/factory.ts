@@ -35,7 +35,7 @@ export function createVectorStore(
   const provider = config.vectorStore.provider ?? "lancedb";
 
   if (provider === "lancedb") {
-    return new LanceDbStore(storePath, dimension, workspaceDir);
+    return new LanceDbStore(storePath, dimension, workspaceDir, config.vectorStore.lancedb);
   }
 
   if (provider === "memory") {

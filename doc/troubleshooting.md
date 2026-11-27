@@ -233,6 +233,13 @@ export NODE_TLS_REJECT_UNAUTHORIZED=0  # Linux/macOS
 npm install -g opencode-rag-plugin
 ```
 
+In this repository's own dev checkout, `tree-sitter-cli`'s postinstall hits the
+same TLS interception when downloading its binary from GitHub — run
+`npm install --ignore-scripts` there (the binary is only needed for grammar
+builds, not for build or test). After any reinstall, verify sharp still loads
+(`node -e "import('sharp').then(()=>console.log('ok'))"`): npm can drop the
+lockfile-listed `@img/colour` package and the platform package's `index.cjs`.
+
 ### Proxy Issues with OpenCode
 
 When running inside OpenCode, the runtime can interfere with the normal Node HTTP stack, causing localhost Ollama calls to be redirected through the proxy.
@@ -436,6 +443,53 @@ If the LLM description provider is unavailable or times out, affected files are 
 1. Ensure the description provider is running (e.g., `ollama serve`)
 2. Run `opencode-rag index` — flagged files will be retried automatically
 3. If the issue persists, check `description.timeoutMs` and `description.retryMax` in your config
+
+## Windows/Bun: server crashes or RAM spikes while the plugin loads
+
+**Symptom:** enabling the plugin makes the OpenCode server process die within
+seconds — often with no `failed to load plugin` line. With the desktop app the
+service is respawned in a loop, each respawn re-runs plugin setup, and the
+overlap looks like "100% RAM" on the machine.
+
+**Why there is no error to read:** a native crash (LanceDB/sharp bindings,
+Bun-on-Windows panics) or an out-of-memory kill takes the process away without
+a JS exception. Setup phases themselves do the heavy work: state hydration,
+the keyword-index parse, quirk reconcile, the optional watcher pass.
+
+**Read the phase markers.** The plugin log (`.opencode/opencode-rag.log`)
+starts with a `scope: "setup"` header line — plugin version, Bun/Node version,
+platform, CPU model, `rag_db` size and `keyword-index.json` size — then writes
+`phase begin: <name> rss=<n>MB` / `phase end: <name> rss=<n>MB` around each
+phase. **The last `phase begin` without a matching `phase end` names the phase
+that killed the process.**
+
+**Bisect without rebuilding** — set these in the environment the OpenCode
+service runs in:
+
+```powershell
+# Skip every skippable phase (probe, keyword, quirks, watcher, update).
+# Tools stay registered; the store opens on first use and keyword search
+# degrades to vector-only for the session.
+$env:OPENCODE_RAG_SAFE_MODE = "1"
+
+# Or skip a named subset:
+$env:OPENCODE_RAG_SETUP_SKIP = "keyword,quirks"
+```
+
+Phases: `probe` (embedding-dimension HTTP probe), `keyword`
+(`keyword-index.json` load), `quirks` (quirk reconcile), `watcher`
+(background auto-index), `update` (auto-update check).
+
+**Related levers:** `retrieval.hybridSearch.enabled: false` skips the keyword
+index entirely; `vectorStore.lancedb.indexCacheSizeBytes` /
+`metadataCacheSizeBytes` cap the native caches (SDK defaults are 6 GiB / 1 GiB);
+`vectorStore.lancedb.buildIndex: false` avoids IVF KMeans training. A legacy
+`keyword-index.json` older than the v4 format is parsed whole and migrated once —
+on huge workspaces that single read is a multi-hundred-MB spike (2.13.10+
+streams files ≥256 MB instead).
+
+**Also:** run `opencode-rag setup` with OpenCode closed. Rewriting plugin and
+config files under a live service triggers a reload storm.
 
 ## Debugging Plugin Loading
 

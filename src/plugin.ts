@@ -82,7 +82,9 @@ import {
   selectAutoInjectQuirksWithinBudget,
 } from "./quirks/auto-inject.js";
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { parseSetupFlags, setupPhaseSkipped, SKIPPABLE_SETUP_PHASES } from "./core/setup-flags.js";
 
 /** Maximum entries per session map before oldest entries are evicted. */
 const MAX_SESSION_MAP_SIZE = 50;
@@ -93,6 +95,40 @@ const TOOL_ERROR_PENDING_TTL_MS = 120_000;
 const SHELL_NUDGE_TTL_MS = 60_000;
 /** How long the tool-error quirk list is cached before it is re-read (ms). */
 const TOOL_GOTCHA_CACHE_MS = 30_000;
+
+/** Current RSS in MiB (startup phase diagnostics). */
+function rssMb(): number {
+  return Math.round(process.memoryUsage().rss / (1024 * 1024));
+}
+
+/** File size as a short display string ("n/a" when unreadable). */
+function safeFileSizeMb(filePath: string): string {
+  try {
+    return `${(statSync(filePath).size / (1024 * 1024)).toFixed(1)}MB`;
+  } catch {
+    return "n/a";
+  }
+}
+
+/** Recursive directory size as a short display string ("n/a" when unreadable). */
+function safeDirSizeMb(dirPath: string): string {
+  let total = 0;
+  try {
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.isFile()) {
+          try { total += statSync(full).size; } catch { /* racing delete */ }
+        }
+      }
+    };
+    walk(dirPath);
+    return `${(total / (1024 * 1024)).toFixed(1)}MB`;
+  } catch {
+    return "n/a";
+  }
+}
 
 /**
  * A cached RAG configuration together with the identity of the file it was
@@ -2528,11 +2564,41 @@ export const ragPlugin: Plugin = async (
 
   const storePath = path.resolve(input.directory, cfg.vectorStore.path);
 
+  // Setup gating + phase markers (see src/core/setup-flags.ts).
+  //
+  // A crash during plugin setup leaves no JS error to read — the process just
+  // dies (native crash or OOM). These lines are written BEFORE each phase, so
+  // the last `phase begin` line in the log names the phase that killed the
+  // host. `OPENCODE_RAG_SAFE_MODE=1` / `OPENCODE_RAG_SETUP_SKIP=...` let a
+  // user bisect from the environment without rebuilding anything.
+  const setupFlags = parseSetupFlags();
+  // Setup diagnostics are written at "warn" severity so they survive ANY
+  // configured logging level except an explicit "none": when the process dies
+  // during setup there is no other trace, and a reporter may run at "error".
+  const setupLog = (message: string): void => {
+    appendDebugLog(logFilePath, { scope: "setup", message, severity: "warn" }, logLevel);
+  };
+  const setupPhase = (phase: string, state: "begin" | "end"): void => {
+    setupLog(`phase ${state}: ${phase} rss=${rssMb()}MB`);
+  };
+  setupLog(
+    `start: v${getCurrentVersion()} bun=${process.versions.bun ?? "n/a"} node=${process.versions.node} ` +
+    `${process.platform}/${process.arch} cpu="${os.cpus()[0]?.model?.trim() ?? "unknown"}" ` +
+    `dir=${input.directory} rag_db=${safeDirSizeMb(storePath)} ` +
+    `keyword-index=${safeFileSizeMb(path.join(storePath, "keyword-index.json"))}`,
+  );
+  if (setupFlags.safeMode) {
+    setupLog(`Safe mode active (OPENCODE_RAG_SAFE_MODE) — skipping: ${SKIPPABLE_SETUP_PHASES.join(", ")}`);
+  } else if (setupFlags.skip.size > 0) {
+    setupLog(`Setup phases skipped via OPENCODE_RAG_SETUP_SKIP: ${[...setupFlags.skip].join(", ")}`);
+  }
+
   // Apply runtime overrides before creating services
   const overrides = loadRuntimeOverrides(storePath);
   const effectiveCfg = applyRuntimeOverrides(cfg, overrides);
 
   // Resolve API keys from env vars or OpenCode provider config if not set in opencode-rag.json
+  setupPhase("keys", "begin");
   const hadEmbeddingKey = !!effectiveCfg.embedding.apiKey;
   const hadDescriptionKey = !!effectiveCfg.description?.apiKey;
   resolveApiKey(effectiveCfg, input.directory);
@@ -2548,6 +2614,8 @@ export const ragPlugin: Plugin = async (
       message: `Resolved OpenAI API key for description from ${process.env.OPENAI_API_KEY ? "OPENAI_API_KEY env var" : "OpenCode provider config"}`,
     }, logLevel);
   }
+
+  setupPhase("keys", "end");
 
   // Close existing indexer for this directory if one exists (e.g. on plugin reload)
   const existingIndexer = backgroundIndexers.get(input.directory);
@@ -2613,12 +2681,18 @@ export const ragPlugin: Plugin = async (
     (cfg) => createEmbedder(cfg),
     embedder,
   );
+  setupPhase("probe", "begin");
   let vectorDimension = effectiveCfg.embedding.vectorDimension;
   if (vectorDimension && vectorDimension > 0) {
     appendDebugLog(logFilePath, {
       scope: "plugin",
       message: `Vector dimension: ${vectorDimension} (cached in config)`,
     }, logLevel);
+  } else if (setupPhaseSkipped(setupFlags, "probe")) {
+    // Safe mode / explicit skip: avoid the provider round-trip. The store
+    // schema (when present) keeps the dimension correct without a probe.
+    vectorDimension = (await readConfiguredStoreDimension(effectiveCfg, storePath, input.directory)) ?? 384;
+    setupLog(`phase skipped: probe — dimension falls back to ${vectorDimension}`);
   } else {
     const probe = await probeEmbeddingDimension(embedder);
     if (probe.dimension !== undefined) {
@@ -2641,6 +2715,9 @@ export const ragPlugin: Plugin = async (
     }
   }
 
+  setupPhase("probe", "end");
+  setupPhase("store", "begin");
+
   const store = createVectorStore(effectiveCfg, storePath, vectorDimension, input.directory);
   ragStores.set(input.directory, store);
 
@@ -2657,50 +2734,53 @@ export const ragPlugin: Plugin = async (
     }, logLevel);
   }
 
-  // Warn when the store was built by a different embedding model — vector
-  // search fails (or silently degrades) until the index is rebuilt.
-  try {
-    const storeDimension = await store.getVectorDimension?.();
-    if (storeDimension !== undefined && storeDimension !== vectorDimension) {
-      appendDebugLog(logFilePath, {
-        scope: "plugin",
-        message:
-          `Store vector dimension is ${storeDimension} but the configured embedder produces ${vectorDimension} — ` +
-          "run 'opencode-rag index' to rebuild the index with the current model.",
-      }, logLevel);
-    }
-  } catch {
-    // best-effort — dimension introspection must never block plugin startup
-  }
+  // NOTE: no eager dimension introspection here. Calling
+  // store.getVectorDimension() at setup forced the FIRST native LanceDB call
+  // (connect + openTable) into plugin load — the most dangerous window for a
+  // silent process death. It was informational only: searchWithFilter()
+  // validates the query dimension against the live table schema on first use
+  // and warns there instead.
+  setupPhase("store", "end");
 
   // The keyword index is only needed for hybrid retrieval and keyword-aware
-  // index maintenance. Avoid downloading/parsing the potentially huge local
-  // cache when the workspace explicitly selects vector-only search.
+  // index maintenance. Avoid parsing the potentially huge local cache when
+  // the workspace explicitly selects vector-only search — or when setup
+  // gating (safe mode) skips the phase.
+  setupPhase("keyword", "begin");
   const hybridSearchEnabled = effectiveCfg.retrieval.hybridSearch?.enabled !== false;
-  const keywordIndex = hybridSearchEnabled
+  const skipKeywordIndex = setupPhaseSkipped(setupFlags, "keyword");
+  const keywordIndex = hybridSearchEnabled && !skipKeywordIndex
     ? await loadKeywordIndex(storePath, input.directory, logFilePath, logLevel)
     : undefined;
+  setupPhase("keyword", "end");
+  if (skipKeywordIndex) {
+    setupLog("phase skipped: keyword — hybrid search degrades to vector-only for this session");
+  }
 
   // Restore quirks that are in quirks.jsonl but missing from the vector store
   // or keyword index (full rebuilds drop quirk chunks — see reconcileQuirks).
   // Fire-and-forget: must never block plugin startup, and the embedder may be
   // offline. The background watcher re-runs this at every pass end.
-  void reconcileQuirks({ embedder: liveEmbedder, store, keywordIndex, cfg: effectiveCfg, storePath, flushState: () => stateSync.flush(["quirks"]) })
-    .then((r) => {
-      if (r.restoredToStore > 0 || r.addedToKeywordIndex > 0 || r.removedOrphans > 0) {
+  if (setupPhaseSkipped(setupFlags, "quirks")) {
+    setupLog("phase skipped: quirks — quirk reconcile deferred to the next normal start");
+  } else {
+    void reconcileQuirks({ embedder: liveEmbedder, store, keywordIndex, cfg: effectiveCfg, storePath, flushState: () => stateSync.flush(["quirks"]) })
+      .then((r) => {
+        if (r.restoredToStore > 0 || r.addedToKeywordIndex > 0 || r.removedOrphans > 0) {
+          appendDebugLog(logFilePath, {
+            scope: "plugin",
+            message: `Quirk reconcile: restored ${r.restoredToStore} to store, deduplicated ${r.deduplicated}, added ${r.addedToKeywordIndex} to keyword index, removed ${r.removedOrphans} orphans`,
+          }, logLevel);
+        }
+      })
+      .catch((err) => {
         appendDebugLog(logFilePath, {
           scope: "plugin",
-          message: `Quirk reconcile: restored ${r.restoredToStore} to store, deduplicated ${r.deduplicated}, added ${r.addedToKeywordIndex} to keyword index, removed ${r.removedOrphans} orphans`,
+          message: "Quirk reconcile failed",
+          error: err,
         }, logLevel);
-      }
-    })
-    .catch((err) => {
-      appendDebugLog(logFilePath, {
-        scope: "plugin",
-        message: "Quirk reconcile failed",
-        error: err,
-      }, logLevel);
-    });
+      });
+  }
 
   // Create description provider (enabled by default)
   const descriptionConfig = effectiveCfg.description ?? { enabled: true, provider: "ollama" as const, baseUrl: "http://127.0.0.1:11434/api", model: "qwen2.5:3b", systemPrompt: "" };
@@ -2708,6 +2788,7 @@ export const ragPlugin: Plugin = async (
     ? createDescriptionProvider(descriptionConfig)
     : undefined;
 
+  setupPhase("hooks", "begin");
   const hooks = createRagHooks({
     cfg: effectiveCfg,
     storePath,
@@ -2721,9 +2802,14 @@ export const ragPlugin: Plugin = async (
     stateSync,
   });
 
+  setupPhase("hooks", "end");
+
   // Start background auto-indexer if enabled
+  setupPhase("watcher", "begin");
   const autoIndexCfg = effectiveCfg.openCode.autoIndex ?? { enabled: false, debounceMs: 5000, intervalMs: 300000 };
-  if (autoIndexCfg.enabled) {
+  if (setupPhaseSkipped(setupFlags, "watcher")) {
+    setupLog("phase skipped: watcher — background auto-index disabled for this session");
+  } else if (autoIndexCfg.enabled) {
     const indexer = createBackgroundIndexer({
       cwd: input.directory,
       storePath,
@@ -2749,6 +2835,8 @@ export const ragPlugin: Plugin = async (
     }
   }
 
+  setupPhase("watcher", "end");
+
   // NOTE: no MCP child-process autostart — a stdio MCP server is only
   // reachable by the client that spawns it. External MCP clients run
   // `opencode-rag mcp` themselves; agent tools run in-process regardless.
@@ -2764,8 +2852,11 @@ export const ragPlugin: Plugin = async (
   // release is found it is either surfaced as a one-time install prompt via
   // the system transform hook (default) or automatically installed in the
   // background when `autoUpdate.autoInstall: true` is configured.
+  setupPhase("update", "begin");
   const autoUpdateCfg = effectiveCfg.autoUpdate;
-  if (autoUpdateCfg?.enabled) {
+  if (setupPhaseSkipped(setupFlags, "update")) {
+    setupLog("phase skipped: update — auto-update check disabled for this session");
+  } else if (autoUpdateCfg?.enabled) {
     const currentVersion = getCurrentVersion();
     checkForUpdate(currentVersion)
       .then((info: UpdateInfo) => {
@@ -2839,6 +2930,9 @@ export const ragPlugin: Plugin = async (
       })
       .catch(() => { /* best-effort */ });
   }
+
+  setupPhase("update", "end");
+  setupLog(`setup complete rss=${rssMb()}MB`);
 
   return hooks;
 };

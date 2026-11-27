@@ -120,7 +120,12 @@ Controls file discovery and chunking behavior.
 ```json
 {
   "vectorStore": {
-    "path": "./.opencode/rag_db"
+    "path": "./.opencode/rag_db",
+    "lancedb": {
+      "indexCacheSizeBytes": 268435456,
+      "metadataCacheSizeBytes": 134217728,
+      "buildIndex": true
+    }
   }
 }
 ```
@@ -129,6 +134,9 @@ Controls file discovery and chunking behavior.
 |---|---|---|
 | `path` | `"./.opencode/rag_db"` | Path to the LanceDB database directory. With `provider: "clickhouse"` this is only a **disposable local cache** for the manifest, keyword index, quirks and other workspace state |
 | `provider` | `"lancedb"` | Backend: `"lancedb"` (local, default), `"memory"` (ephemeral), or `"clickhouse"` (central server) |
+| `lancedb.indexCacheSizeBytes` | `268435456` (256 MiB) | Cap for LanceDB's native index cache. The SDK default is **6 GiB** — far beyond a code-index store, and it grows inside the host process (the OpenCode server). `LanceDbStore` passes an explicit cache-bounded `Session` to `lancedb.connect` |
+| `lancedb.metadataCacheSizeBytes` | `134217728` (128 MiB) | Cap for the native metadata cache. SDK default: **1 GiB** |
+| `lancedb.buildIndex` | `true` | Build/maintain the IVF vector index. `false` keeps every query on the brute-force scan path — slower queries on large stores, but flat native memory (no KMeans training pass) |
 | `clickhouse.url` | `"http://localhost:8123"` | ClickHouse HTTP endpoint |
 | `clickhouse.database` | `"OpenCodeRAG"` | Database holding the per-project tables (created on first use) |
 | `clickhouse.username` | `"default"` | ClickHouse user |

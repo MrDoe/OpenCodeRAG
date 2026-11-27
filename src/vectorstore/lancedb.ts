@@ -15,6 +15,37 @@ const TABLE_NAME = "chunks";
 const QUERY_COLUMNS = ["id", "content", "description", "filePath", "startLine", "endLine", "language", "kind", "role", "quirkType", "tags"];
 
 /**
+ * Default caps for the LanceDB native session caches.
+ *
+ * The SDK defaults are enormous — 6 GiB for the index cache and 1 GiB for the
+ * metadata cache per connection — and they grow inside the host process (the
+ * OpenCode server). A code-index store needs a fraction of that; capping keeps
+ * the native side from contributing gigabytes to the server's RSS.
+ */
+const DEFAULT_INDEX_CACHE_BYTES = 256 * 1024 * 1024;
+const DEFAULT_METADATA_CACHE_BYTES = 128 * 1024 * 1024;
+
+/**
+ * Maximum rows per `table.add()` call in bulk writes. Bounds the JS-side row
+ * array and the Arrow buffer for one insert; larger batches are split into
+ * slices, each still insert-first + per-file dedup.
+ */
+const MAX_BULK_ADD_ROWS = 2_000;
+
+/** Row page size for full-table sweeps (`listFiles` / `getFilePaths`). */
+const SWEEP_PAGE_ROWS = 10_000;
+
+/** Cache/metric bounds for a {@link LanceDbStore} (mirrors `vectorStore.lancedb`). */
+export interface LanceDbStoreOptions {
+  /** Cap for the native index cache in bytes. Default 256 MiB (SDK default: 6 GiB). */
+  indexCacheSizeBytes?: number;
+  /** Cap for the native metadata cache in bytes. Default 128 MiB (SDK default: 1 GiB). */
+  metadataCacheSizeBytes?: number;
+  /** Build and maintain the IVF vector index. Default true. */
+  buildIndex?: boolean;
+}
+
+/**
  * Upper bound for the number of failed index-creation attempts per process.
  * Beyond this the repair gives up for the process lifetime instead of
  * retraining the IVF index on every optimize/search call (each attempt runs
@@ -508,14 +539,31 @@ export class LanceDbStore implements ChunkBrowseStore {
    *   Keys are persisted workspace-relative (see `normalizeFilePath`) so the
    *   store stays valid when the checkout moves between machines.
    */
-  constructor(dbPath: string, vectorDimension: number = 384, private readonly workspaceDir: string = process.cwd()) {
+  constructor(
+    dbPath: string,
+    vectorDimension: number = 384,
+    private readonly workspaceDir: string = process.cwd(),
+    private readonly options: LanceDbStoreOptions = {},
+  ) {
     this.dbPath = dbPath;
     this.vectorDimension = vectorDimension;
   }
 
   private async getDb(): Promise<Connection> {
     if (!this.db) {
-      this.db = await lancedb.connect(this.dbPath);
+      // Pass an explicit Session so the native caches are BOUNDED. Without a
+      // session the SDK defaults apply (6 GiB index cache + 1 GiB metadata
+      // cache) and they grow inside the host process — the OpenCode server.
+      const indexBytes = this.options.indexCacheSizeBytes ?? DEFAULT_INDEX_CACHE_BYTES;
+      const metadataBytes = this.options.metadataCacheSizeBytes ?? DEFAULT_METADATA_CACHE_BYTES;
+      let session: InstanceType<typeof lancedb.Session> | undefined;
+      try {
+        session = new lancedb.Session(BigInt(indexBytes), BigInt(metadataBytes));
+      } catch {
+        // Very old native binding without Session support — connect unbounded.
+        session = undefined;
+      }
+      this.db = await lancedb.connect(this.dbPath, undefined, session);
     }
     return this.db;
   }
@@ -859,7 +907,8 @@ export class LanceDbStore implements ChunkBrowseStore {
   private async addChunksBulkInternal(items: BulkChunkWrite[]): Promise<void> {
     const table = await this.getTable();
     const allRows: ChunkRow[] = [];
-    const dedupByFile = new Map<string, string[]>();
+    // Ids whose files participate in dedup (rows from items with dedup: true).
+    const dedupIds = new Set<string>();
 
     for (const item of items) {
       const rows = item.chunks
@@ -868,14 +917,7 @@ export class LanceDbStore implements ChunkBrowseStore {
       if (rows.length === 0) continue;
       allRows.push(...rows);
       if (item.dedup) {
-        for (const [filePath, ids] of this.rowsByFilePath(rows)) {
-          const existing = dedupByFile.get(filePath);
-          if (existing) {
-            existing.push(...ids);
-          } else {
-            dedupByFile.set(filePath, [...ids]);
-          }
-        }
+        for (const row of rows) dedupIds.add(row.id);
       }
     }
 
@@ -888,13 +930,22 @@ export class LanceDbStore implements ChunkBrowseStore {
       await table.delete(buildFilePathMatch(p, this.workspaceDir));
     }
 
-    // INSERT FIRST (single add for the whole batch), then per-file dedup
-    await table.add(allRows as unknown as Record<string, unknown>[]);
+    // INSERT FIRST, then per-file dedup — in bounded slices. A single add of
+    // every chunk in a big pass used to materialize the whole batch (content
+    // + description + embedding per row) and one NOT IN () list with every
+    // id; slicing bounds the JS array, the Arrow buffer and the SQL string.
+    for (let start = 0; start < allRows.length; start += MAX_BULK_ADD_ROWS) {
+      const slice = allRows.slice(start, start + MAX_BULK_ADD_ROWS);
+      await table.add(slice as unknown as Record<string, unknown>[]);
 
-    const allBulkIds = allRows.map((row) => `'${row.id.replace(/'/g, "''")}'`).join(", ");
-    for (const filePath of dedupByFile.keys()) {
-      if (filePath.startsWith(QUIRK_FILE_PREFIX)) continue;
-      await table.delete(`${buildFilePathMatch(filePath, this.workspaceDir)} AND id NOT IN (${allBulkIds})`);
+      const sliceIds = slice.map((row) => `'${row.id.replace(/'/g, "''")}'`).join(", ");
+      for (const [filePath, ids] of this.rowsByFilePath(slice)) {
+        if (filePath.startsWith(QUIRK_FILE_PREFIX)) continue;
+        // Dedup only files that came from a dedup item; insert-only items
+        // (fresh rebuilds) must never trigger deletes.
+        if (!ids.some((id) => dedupIds.has(id))) continue;
+        await table.delete(`${buildFilePathMatch(filePath, this.workspaceDir)} AND id NOT IN (${sliceIds})`);
+      }
     }
   }
 
@@ -987,16 +1038,26 @@ export class LanceDbStore implements ChunkBrowseStore {
       const count = await table.countRows();
       if (count === 0) return [];
 
-      const rows = await table.query().select(["filePath", "language"]).limit(count).toArray();
+      // Page through the table instead of materializing every row at once:
+      // the store can hold hundreds of thousands of chunks and this runs on
+      // the status/read paths.
       const fileMap = new Map<string, { language: string; chunkCount: number }>();
-      for (const row of rows) {
-        const filePath = row.filePath as string;
-        const language = row.language as string;
-        const existing = fileMap.get(filePath);
-        if (existing) {
-          existing.chunkCount++;
-        } else {
-          fileMap.set(filePath, { language, chunkCount: 1 });
+      for (let offset = 0; offset < count; offset += SWEEP_PAGE_ROWS) {
+        const rows = await table.query()
+          .select(["filePath", "language"])
+          .offset(offset)
+          .limit(SWEEP_PAGE_ROWS)
+          .toArray();
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          const filePath = row.filePath as string;
+          const language = row.language as string;
+          const existing = fileMap.get(filePath);
+          if (existing) {
+            existing.chunkCount++;
+          } else {
+            fileMap.set(filePath, { language, chunkCount: 1 });
+          }
         }
       }
       return Array.from(fileMap.entries())
@@ -1242,12 +1303,21 @@ export class LanceDbStore implements ChunkBrowseStore {
 
     let results: Record<string, unknown>[];
     try {
-      let query = table.vectorSearch(l2Normalize(embedding)).distanceType("cosine");
+      // Project only the columns the result objects need: `vectorSearch`
+      // returns every column including `embedding` (16 KB/row at 4096 dims)
+      // that rowToSearchResult never reads.
+      let query = table
+        .vectorSearch(l2Normalize(embedding))
+        .distanceType("cosine")
+        .select([...QUERY_COLUMNS, "_distance"]);
       if (whereClause) query = query.where(whereClause);
       results = await query.limit(topK).toArray() as Record<string, unknown>[];
     } catch (err) {
       if (err instanceof Error && err.message.includes("non-nullable") && filter) {
-        const fallbackQuery = table.vectorSearch(l2Normalize(embedding)).distanceType("cosine");
+        const fallbackQuery = table
+          .vectorSearch(l2Normalize(embedding))
+          .distanceType("cosine")
+          .select([...QUERY_COLUMNS, "_distance"]);
         const rawResults = await fallbackQuery.limit(topK * 5).toArray() as Record<string, unknown>[];
         return rawResults
           .map((row: Record<string, unknown>) => this.rowToSearchResult(row))
@@ -1311,6 +1381,10 @@ export class LanceDbStore implements ChunkBrowseStore {
    * withWriteLock; optimize runs under it already).
    */
   private ensureCosineIndex(warn?: StoreWarn): Promise<void> {
+    // `vectorStore.lancedb.buildIndex: false` opts out of IVF maintenance
+    // entirely: brute-force scans are slower but keep native memory flat
+    // (no KMeans training pass over the vector column).
+    if (this.options.buildIndex === false) return Promise.resolve();
     if (!this.indexRepairPromise) {
       this.indexRepairPromise = this.repairIndexMetricOnce(warn);
     }
@@ -1472,7 +1546,7 @@ export class LanceDbStore implements ChunkBrowseStore {
         // an index with the correct cosine metric already exists, and can be
         // skipped entirely for a private temporary store that is never
         // searched (the rebuild pipeline builds the index once at the end).
-        if (!options?.skipIndex) {
+        if (!options?.skipIndex && this.options.buildIndex !== false) {
           await this.ensureCosineIndex(options?.logger);
           await this.reclaimIndexBuilds(preExistingDirs, options?.logger);
         }
@@ -1593,11 +1667,22 @@ export class LanceDbStore implements ChunkBrowseStore {
 
       return this.withCorruptionRecovery(async () => {
         const table = await this.getTable();
-        const rows = await table.query().select(["filePath"]).toArray();
+        const count = await table.countRows();
+        if (count === 0) return [];
+        // Page through the table instead of one full-table materialization —
+        // the orphan sweep runs this on every index pass.
         const paths = new Set<string>();
-        for (const row of rows) {
-          const fp = row.filePath as string;
-          if (fp) paths.add(fp);
+        for (let offset = 0; offset < count; offset += SWEEP_PAGE_ROWS) {
+          const rows = await table.query()
+            .select(["filePath"])
+            .offset(offset)
+            .limit(SWEEP_PAGE_ROWS)
+            .toArray();
+          if (rows.length === 0) break;
+          for (const row of rows) {
+            const fp = row.filePath as string;
+            if (fp) paths.add(fp);
+          }
         }
         return Array.from(paths);
       });

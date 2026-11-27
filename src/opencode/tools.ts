@@ -19,7 +19,6 @@ import type { ToolDefinition } from "@opencode-ai/plugin";
 import { CODE_SEARCH_FILTER, type EmbeddingProvider, type VectorStore, type KeywordIndex, type SearchResult, type DecisionProvider } from "../core/interfaces.js";
 import type { RagConfig } from "../core/config.js";
 import { SUPPORTED_IMAGE_EXTENSIONS, createImageVisionProvider, resolveOnDemandImageConfig, getMimeType, type ImageVisionProvider } from "../chunker/image.js";
-import { resizeImage } from "../content/image.js";
 import { retrieve } from "../retriever/retriever.js";
 import { extractSkeleton, getExtension } from "../chunker/skeleton.js";
 import type { ParserOverrides } from "../core/parser-overrides.js";
@@ -270,7 +269,13 @@ export function createDescribeImageTool(
         const buffer = readFileSync(resolvedPath);
         const mimeType = getMimeType(ext);
         const maxDimension = effectiveImageConfig.resizeMaxDimension ?? 1024;
-        const sized = maxDimension > 0 ? await resizeImage(buffer, resolvedPath, maxDimension) : buffer;
+        // Loaded lazily on purpose: sharp (native binding + libvips) must never
+        // be in the plugin's STATIC import graph — a broken or partial sharp
+        // install would otherwise kill the whole server at plugin load instead
+        // of failing this one tool call.
+        const sized = maxDimension > 0
+          ? await (await import("../content/image.js")).resizeImage(buffer, resolvedPath, maxDimension)
+          : buffer;
         const b64 = sized.toString("base64");
 
         const provider = visionProvider ?? createImageVisionProvider(effectiveImageConfig);
